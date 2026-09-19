@@ -1,0 +1,20 @@
+---
+description: Diretrizes gerais de desenvolvimento do projeto, com foco em implementação objetiva e baixo consumo de contexto.
+alwaysApply: true
+---
+
+# Diretrizes gerais
+
+- Responda e documente em português brasileiro, salvo solicitação explícita em contrário.
+- Antes de implementar, leia somente os arquivos necessários para a tarefa. Use `GESTAO_FINANCEIRA_FAMILIAR.md` como referência de visão e escopo quando a tarefa envolver regras do produto.
+- Trabalhe apenas com o agente atual. Não crie subagentes nem delegue tarefas para outros agentes.
+- Implemente apenas o que foi solicitado. Não amplie escopo, não faça refatorações gerais e não altere áreas não relacionadas sem necessidade real.
+- Preserve padrões já existentes no repositório. Antes de criar uma nova abordagem, procure rapidamente por uma implementação equivalente próxima.
+- Evite auditorias extensas, releituras completas do projeto e verificações repetidas a cada alteração.
+- Faça validações proporcionais à mudança: testes diretamente afetados, lint/typecheck quando aplicável e verificação objetiva da funcionalidade alterada.
+- Não execute suítes completas, builds longos ou análises globais sem necessidade técnica ou solicitação explícita.
+- Não adicione dependências se a funcionalidade puder ser resolvida de forma simples com a stack já existente.
+- Prefira código simples, legível e fácil de manter. Evite abstrações antecipadas e engenharia excessiva.
+- Não crie documentos de planejamento, auditoria ou relatórios adicionais sem solicitação.
+- Ao concluir uma tarefa, informe de forma curta: o que foi alterado, arquivos principais, validações realizadas e eventual pendência real.
+- Só faça commit ou push quando isso for solicitado explicitamente.
