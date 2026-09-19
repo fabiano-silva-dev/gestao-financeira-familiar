@@ -860,3 +860,322 @@ Sempre que uma nova funcionalidade for proposta, deverá ser feita a pergunta:
 > Esta funcionalidade reduz o trabalho manual ou aumenta a clareza sobre a situação financeira da família?
 
 Se não cumprir pelo menos um desses objetivos, provavelmente não deverá ser priorizada.
+
+---
+
+## 31. Direção de Produto e Arquitetura SaaS
+
+Embora o primeiro uso seja financeiro familiar, o projeto deve nascer preparado para futura comercialização como SaaS.
+
+A arquitetura deve considerar desde o início:
+
+- múltiplos usuários;
+- múltiplas famílias ou organizações;
+- isolamento rigoroso dos dados;
+- autenticação segura;
+- auditoria de operações sensíveis;
+- integrações externas;
+- filas para processamento assíncrono;
+- APIs;
+- webhooks;
+- possibilidade futura de planos e cobrança.
+
+O conceito central de isolamento deverá ser um **workspace**.
+
+Exemplos:
+
+- Workspace: Família Silva
+- Workspace: Família João
+- Workspace: outra família ou organização no futuro
+
+Os dados financeiros pertencem ao workspace, e não diretamente a um usuário isolado.
+
+Um usuário poderá futuramente participar de um ou mais workspaces.
+
+A aplicação deverá ser construída inicialmente como **monólito modular**, evitando microserviços prematuros, mas mantendo separação clara entre domínio financeiro, integrações, autenticação, importações e demais módulos.
+
+---
+
+## 32. Múltiplas Formas de Entrada de Dados
+
+O sistema não deverá depender somente de digitação manual.
+
+O motor financeiro deverá estar preparado para receber informações através de diferentes canais:
+
+- interface web;
+- PWA/mobile web;
+- importação OFX;
+- importação de faturas;
+- WhatsApp;
+- Gmail;
+- inteligência artificial;
+- Open Finance;
+- outras APIs futuras.
+
+Todas essas origens devem alimentar o **mesmo motor financeiro**.
+
+A origem da informação deve ser armazenada para fins de rastreabilidade.
+
+Exemplos:
+
+- manual;
+- ofx;
+- cartão;
+- gmail;
+- whatsapp;
+- open_finance;
+- api;
+- ia.
+
+Nenhuma integração externa deverá implementar sua própria regra de criação de despesas, receitas, parcelas ou faturas.
+
+---
+
+## 33. Camada de Integrações e Normalização
+
+Integrações externas não devem gravar diretamente nas tabelas centrais do domínio financeiro.
+
+O fluxo conceitual deverá ser:
+
+**Fonte externa → Conector → Evento/Entrada → Normalização → Validação → Serviço do domínio financeiro → Banco**
+
+Exemplos de fontes externas:
+
+- Gmail;
+- WhatsApp;
+- Open Finance;
+- OFX;
+- CSV/XLSX;
+- APIs externas.
+
+Uma entrada poderá inicialmente ficar pendente de confirmação antes de gerar uma transação financeira.
+
+Essa separação permitirá substituir fornecedores ou adicionar novos canais sem alterar as regras centrais do financeiro.
+
+---
+
+## 34. Caixa de Entrada Financeira
+
+O produto deverá evoluir para trabalhar por exceção.
+
+Informações recebidas automaticamente deverão poder entrar em uma **Caixa de Entrada Financeira**.
+
+Exemplos:
+
+- movimento bancário ainda não conciliado;
+- fatura encontrada no Gmail;
+- despesa informada pelo WhatsApp;
+- transação recebida por Open Finance;
+- possível duplicidade;
+- classificação sugerida por IA;
+- lançamento que exige confirmação do usuário.
+
+O objetivo é que o usuário não precise reconstruir o financeiro manualmente.
+
+Ele deverá revisar e resolver somente aquilo que exigir intervenção.
+
+---
+
+## 35. Inteligência Artificial
+
+A inteligência artificial será uma camada de apoio, e não a fonte de verdade financeira.
+
+Possíveis usos:
+
+- interpretar mensagens em linguagem natural;
+- interpretar áudio;
+- extrair informações de comprovantes ou documentos;
+- sugerir categorias;
+- identificar estabelecimento;
+- sugerir conciliações;
+- detectar possíveis duplicidades ou anomalias;
+- transformar texto não estruturado em dados estruturados.
+
+Exemplo:
+
+> "Gastei R$ 185,90 no posto hoje no Nubank."
+
+Pode ser interpretado como uma sugestão de:
+
+- Tipo: despesa
+- Valor: R$ 185,90
+- Categoria: combustível
+- Meio de pagamento: cartão Nubank
+- Data: hoje
+
+Quando houver ambiguidade relevante, a IA deverá solicitar ou exigir confirmação antes da gravação definitiva.
+
+A lógica financeira central nunca deverá depender exclusivamente da resposta de um modelo de IA.
+
+Sempre que possível, o resultado da IA deverá ser convertido para estruturas tipadas e validadas pela aplicação.
+
+O projeto deverá evitar dependência rígida de um único provedor de IA.
+
+---
+
+## 36. Integração com WhatsApp
+
+O WhatsApp poderá funcionar como uma interface rápida para alimentar e consultar o sistema.
+
+Possíveis operações futuras:
+
+- informar uma despesa;
+- informar uma receita;
+- enviar áudio;
+- enviar foto de comprovante;
+- enviar documento;
+- consultar saldo;
+- consultar fatura;
+- consultar compromissos futuros.
+
+Fluxo desejado:
+
+**WhatsApp → Webhook → Evento → Fila → Interpretação → Validação → Serviço financeiro → Confirmação**
+
+O webhook deverá responder rapidamente e o processamento mais pesado deverá ocorrer de forma assíncrona.
+
+Eventos deverão possuir identificadores externos para evitar processamento duplicado.
+
+---
+
+## 37. Integração com Gmail
+
+O usuário poderá futuramente conectar uma conta Google através de OAuth.
+
+Possíveis usos:
+
+- localizar faturas;
+- localizar boletos;
+- localizar contas;
+- localizar comprovantes;
+- identificar documentos financeiros;
+- importar anexos relevantes.
+
+O acesso deverá utilizar o menor conjunto de permissões possível.
+
+Tokens e credenciais deverão ser armazenados de forma criptografada.
+
+E-mails não deverão virar automaticamente transações definitivas apenas por terem sido encontrados.
+
+O fluxo preferencial será:
+
+**Gmail → Entrada financeira → identificação/classificação → confirmação ou regra confiável → domínio financeiro**
+
+---
+
+## 38. Open Finance
+
+Open Finance não faz parte do primeiro MVP, mas a arquitetura deverá estar preparada para recebê-lo sem reestruturação do motor financeiro.
+
+O objetivo futuro é permitir a sincronização automatizada de informações como:
+
+- contas bancárias;
+- saldos;
+- movimentações;
+- cartões;
+- faturas;
+- outras informações disponibilizadas pelo provedor contratado.
+
+A integração deverá ser realizada através de uma camada de provedor/adaptador.
+
+O domínio financeiro não deverá conhecer detalhes específicos de um agregador ou instituição.
+
+Exemplo conceitual:
+
+**Open Finance Provider → Adapter → Evento normalizado → Motor financeiro**
+
+Isso permitirá trocar fornecedores ou suportar mais de um provedor no futuro.
+
+---
+
+## 39. Conexões Externas
+
+A aplicação deverá possuir um conceito próprio de conexões externas por workspace.
+
+Uma conexão poderá representar:
+
+- Google/Gmail;
+- WhatsApp;
+- Open Finance;
+- outro provedor futuro.
+
+Informações conceituais:
+
+- workspace;
+- tipo;
+- provedor;
+- status;
+- identificador externo;
+- credenciais criptografadas;
+- expiração;
+- última sincronização;
+- metadados necessários.
+
+Segredos, access tokens e refresh tokens nunca deverão ser armazenados em texto puro ou expostos em logs.
+
+---
+
+## 40. Eventos de Integração e Idempotência
+
+Toda integração baseada em webhook, sincronização ou importação deverá considerar que o mesmo evento pode chegar mais de uma vez.
+
+O sistema deverá preservar identificadores externos sempre que disponíveis.
+
+Processar duas vezes o mesmo evento não deverá gerar duas despesas, dois movimentos ou duas faturas.
+
+Eventos externos deverão possuir histórico suficiente para:
+
+- identificar origem;
+- verificar processamento;
+- registrar falha;
+- permitir reprocessamento seguro;
+- auditar o que originou uma informação financeira.
+
+---
+
+## 41. Tecnologia e Diretrizes Estruturais
+
+Stack inicialmente recomendada:
+
+- Backend: Laravel atual estável;
+- PHP: versão moderna suportada pela versão do Laravel escolhida;
+- Frontend: React + TypeScript;
+- Integração web: Inertia;
+- UI: Tailwind CSS e biblioteca de componentes compatível;
+- Banco principal: PostgreSQL;
+- Filas/cache: Redis;
+- Processamento assíncrono: Laravel Queue;
+- Monitoramento das filas: Horizon;
+- Armazenamento de arquivos: S3 ou serviço compatível;
+- Arquitetura: monólito modular;
+- Multi-tenant: workspace desde o início;
+- Interface: responsiva e mobile-first.
+
+Evitar dependência desnecessária de tecnologias legadas do Eficere atual.
+
+A simplicidade operacional continua sendo prioridade: utilizar tecnologia robusta, madura e comercialmente sustentável sem criar complexidade arquitetural antecipada.
+
+---
+
+## 42. Segurança e Robustez
+
+Por tratar informações financeiras e credenciais de integrações, segurança deve ser requisito estrutural.
+
+Princípios mínimos:
+
+- isolamento obrigatório por workspace;
+- autenticação segura;
+- autorização em todas as operações;
+- criptografia de tokens e credenciais;
+- HTTPS obrigatório;
+- proteção contra CSRF e ataques comuns da web;
+- rate limiting;
+- validação de assinatura ou autenticidade dos webhooks quando disponível;
+- auditoria de operações financeiras relevantes;
+- backups automatizados;
+- testes periódicos de restauração;
+- logs sem dados sensíveis;
+- controle de acesso aos arquivos;
+- idempotência em integrações e importações.
+
+Segurança não deverá ser tratada como funcionalidade posterior.
