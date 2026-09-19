@@ -1,0 +1,23 @@
+---
+description: Regras essenciais do domínio financeiro familiar. Aplicar ao modelar ou alterar transações, parcelas, cartões, faturas, pagamentos, recebimentos, recorrências, importações, conciliações e relatórios financeiros.
+alwaysApply: false
+---
+
+# Regras essenciais do domínio financeiro
+
+Considere `GESTAO_FINANCEIRA_FAMILIAR.md` a referência principal do produto.
+
+- Trabalhe com uma base financeira contínua. Mês e ano são filtros e visões, não estruturas ou tabelas independentes.
+- Mantenha separados os conceitos de data da compra/fato financeiro, competência, vencimento/fatura e data efetiva de caixa.
+- Uma compra parcelada deve possuir uma transação principal e parcelas vinculadas. Não transforme cada parcela em uma compra independente sem vínculo com a origem.
+- O sistema deve conseguir analisar separadamente: gasto/competência, obrigações futuras e fluxo de caixa.
+- Pagamento de fatura de cartão não é nova despesa. Ele liquida uma obrigação formada por compras já registradas.
+- Transferência entre contas próprias não é receita nem despesa; apenas movimenta saldo entre contas.
+- Importar um movimento bancário não significa automaticamente criar nova despesa ou receita. Antes, tente conciliá-lo com uma obrigação ou transação existente.
+- Evite qualquer modelagem que possa duplicar despesas ao combinar compra, parcela, fatura, pagamento e movimento bancário.
+- Recorrências devem gerar compromissos futuros rastreáveis até sua regra de origem.
+- Conciliações devem manter vínculo entre movimento real e obrigação/transação correspondente, preservando o histórico.
+- Importações precisam ser idempotentes sempre que possível: reimportar o mesmo arquivo não deve duplicar movimentos.
+- Faturas devem ser entidades próprias, ligadas ao cartão e às compras/parcelas do ciclo.
+- Preserve a possibilidade de consultar compromissos futuros independentemente do que já foi pago.
+- Não invente regras financeiras para casos ainda não definidos. Modele de forma compatível com o documento do projeto e sinalize a lacuna ao final da tarefa.
