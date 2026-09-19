@@ -1142,7 +1142,7 @@ Stack inicialmente recomendada:
 - Frontend: React + TypeScript;
 - Integração web: Inertia;
 - UI: Tailwind CSS e biblioteca de componentes compatível;
-- Banco principal: PostgreSQL;
+- Banco principal: **PostgreSQL (decisão definitiva do projeto)**;
 - Filas/cache: Redis;
 - Processamento assíncrono: Laravel Queue;
 - Monitoramento das filas: Horizon;
@@ -1179,3 +1179,31 @@ Princípios mínimos:
 - idempotência em integrações e importações.
 
 Segurança não deverá ser tratada como funcionalidade posterior.
+
+---
+
+## 43. Decisão de Banco de Dados
+
+O banco de dados principal do projeto será **PostgreSQL**.
+
+Esta é uma decisão arquitetural definida para o produto, e não apenas uma sugestão de stack.
+
+Motivos principais:
+
+- forte integridade relacional;
+- excelente suporte a transações;
+- recursos robustos para dados financeiros;
+- suporte a `JSONB` para metadados e integrações;
+- bons recursos de índices e consultas;
+- possibilidade futura de reforço de isolamento por workspace com recursos do próprio PostgreSQL;
+- maturidade e adequação para aplicações SaaS.
+
+Diretrizes:
+
+- não criar abstrações desnecessárias apenas para manter compatibilidade com MySQL;
+- utilizar os recursos nativos do PostgreSQL quando trouxerem benefício real;
+- armazenar valores monetários usando tipos decimais de precisão fixa, nunca `float` ou `double`;
+- migrations devem ser compatíveis com PostgreSQL;
+- consultas, índices e constraints devem priorizar consistência financeira e integridade dos dados.
+
+O Eficere legado continuará independente em MySQL. Esta decisão é específica para o projeto Gestão Financeira Familiar.
