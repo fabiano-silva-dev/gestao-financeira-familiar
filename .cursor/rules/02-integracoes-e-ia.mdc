@@ -1,0 +1,23 @@
+---
+description: Diretrizes para integrações externas, IA, WhatsApp, Gmail, Open Finance, APIs, webhooks e importações automatizadas.
+alwaysApply: false
+---
+
+# Integrações, IA e automações
+
+- Integrações externas nunca devem gravar diretamente nas tabelas centrais do domínio financeiro.
+- Utilize o fluxo: fonte externa → conector/adaptador → evento ou entrada → normalização → validação → serviço do domínio financeiro.
+- Web, WhatsApp, Gmail, OFX, Open Finance e APIs devem reutilizar os mesmos serviços de domínio para criar ou alterar informações financeiras.
+- Preserve a origem externa e, quando existir, o identificador externo de cada evento ou registro.
+- Toda integração deve ser idempotente sempre que possível. Repetir webhook, sincronização ou importação não pode duplicar transações.
+- Processamento pesado de webhooks, documentos, IA ou sincronizações deve ocorrer em filas. O endpoint de webhook deve validar o necessário, registrar a entrada e responder rapidamente.
+- Trate dados recebidos externamente como não confiáveis até serem validados.
+- IA é apoio de interpretação e sugestão, nunca fonte definitiva das regras financeiras.
+- Converta resultados de IA em estruturas tipadas/validadas antes de chamar serviços do domínio.
+- Quando houver ambiguidade relevante em valor, data, conta, cartão, parcela ou natureza da transação, mantenha a entrada pendente de confirmação.
+- Não acople o domínio financeiro a um fornecedor específico de IA, WhatsApp ou Open Finance. Use interfaces/adapters quando houver mais de uma implementação possível ou dependência externa relevante.
+- Tokens, refresh tokens, chaves e credenciais devem permanecer criptografados e nunca aparecer em logs, exceptions, respostas de API ou commits.
+- Solicite somente os menores escopos/permissões necessários em integrações OAuth.
+- Mantenha isolamento por workspace em conexões, eventos, arquivos e dados importados.
+- Arquivos recebidos por integrações devem ser tratados como entrada, não como verdade financeira definitiva.
+- Não implemente Open Finance, Gmail ou IA apenas porque a arquitetura os prevê. Implemente somente quando a tarefa solicitar; mantenha o MVP enxuto.
