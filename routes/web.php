@@ -96,6 +96,9 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::patch('lancamentos/{entry}/status', [FinancialTransactionController::class, 'advanceStatus'])
         ->whereNumber('entry')
         ->name('transactions.advance-status');
+    Route::patch('lancamentos/{entry}/liquidacao', [FinancialTransactionController::class, 'toggleSettlement'])
+        ->whereNumber('entry')
+        ->name('transactions.toggle-settlement');
 
     Route::get('transferencias', [TransferController::class, 'index'])
         ->name('transfers.index');
