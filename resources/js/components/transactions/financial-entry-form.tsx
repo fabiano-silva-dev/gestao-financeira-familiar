@@ -184,17 +184,18 @@ export default function FinancialEntryForm({
                         </div>
 
                         <div className="grid gap-2">
-                            {isInstallmentPurchase && usesCreditCard ? (
+                            {usesCreditCard ? (
                                 <>
                                     <input
                                         type="hidden"
                                         name="due_date"
                                         value=""
                                     />
-                                    <Label>Vencimentos das parcelas</Label>
+                                    <Label>Vencimento via fatura</Label>
                                     <p className="text-muted-foreground text-sm">
-                                        Calculados automaticamente pelo
-                                        fechamento e vencimento do cartão.
+                                        {isInstallmentPurchase
+                                            ? 'Os vencimentos das parcelas serão calculados pelo fechamento e vencimento do cartão.'
+                                            : 'A compra será vinculada à fatura correspondente; ela não possui vencimento bancário próprio.'}
                                     </p>
                                 </>
                             ) : (
