@@ -24,6 +24,7 @@ return new class extends Migration
             $table->string('frequency', 20);
             $table->unsignedSmallInteger('interval')->default(1);
             $table->date('starts_on');
+            $table->date('generation_started_on');
             $table->date('ends_on')->nullable();
             $table->boolean('is_active')->default(true);
             $table->text('notes')->nullable();
