@@ -124,7 +124,7 @@ class FinancialEntryTest extends TestCase
         $this->assertCurrentBalance($user, $workspace, '874.50');
     }
 
-    public function test_planned_expense_only_changes_balance_after_confirmation(): void
+    public function test_planned_expense_only_changes_balance_after_settlement(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();
         $account = FinancialAccount::factory()->for($workspace)->create([
@@ -152,13 +152,23 @@ class FinancialEntryTest extends TestCase
             FinancialTransactionStatus::Confirmed,
             $expense->fresh()->status,
         );
+        $this->assertNull($expense->fresh()->settled_on);
+        $this->assertCurrentBalance($user, $workspace, '1000.00');
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->patch(route('transactions.toggle-settlement', $expense))
+            ->assertRedirect(route('transactions.index'));
+
+        $this->assertNotNull($expense->fresh()->settled_on);
         $this->assertCurrentBalance($user, $workspace, '900.00');
 
         $this->actingAs($user)
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
-            ->patch(route('transactions.advance-status', $expense))
+            ->patch(route('transactions.toggle-settlement', $expense))
             ->assertRedirect(route('transactions.index'));
 
+        $this->assertNull($expense->fresh()->settled_on);
         $this->assertCurrentBalance($user, $workspace, '1000.00');
     }
 
