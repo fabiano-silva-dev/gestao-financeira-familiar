@@ -7,6 +7,17 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property int $id
+ * @property int $workspace_id
+ * @property int $financial_transaction_id
+ * @property int $financial_account_id
+ * @property \Illuminate\Support\Carbon $occurred_on
+ * @property string $description
+ * @property string $amount
+ * @property AccountMovementType $type
+ * @property bool $is_reconciled
+ */
 #[Fillable([
     'workspace_id',
     'financial_transaction_id',
