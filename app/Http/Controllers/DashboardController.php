@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
+use App\Models\AccountMovement;
 use App\Models\Category;
 use App\Models\FinancialTransaction;
 use App\Models\Workspace;
@@ -41,15 +42,12 @@ class DashboardController extends Controller
             $monthStart,
             $monthEnd,
         );
-        $plannedTotals = $this->totalsByType(
-            $workspace,
-            FinancialTransactionStatus::Planned,
-        );
+        $outstandingTotals = $this->outstandingTotals($workspace);
         $income = $this->totalFor($monthlyTotals, FinancialTransactionType::Income);
         $expenses = $this->totalFor($monthlyTotals, FinancialTransactionType::Expense);
         $projectedBalance = $currentBalance
-            + $this->totalFor($plannedTotals, FinancialTransactionType::Income)
-            - $this->totalFor($plannedTotals, FinancialTransactionType::Expense);
+            + $this->totalFor($outstandingTotals, FinancialTransactionType::Income)
+            - $this->totalFor($outstandingTotals, FinancialTransactionType::Expense);
 
         return Inertia::render('dashboard', [
             'currentPeriod' => $monthStart->toDateString(),
@@ -99,13 +97,34 @@ class DashboardController extends Controller
             ]);
 
         if ($start !== null && $end !== null) {
-            $query->whereBetween('transaction_date', [
+            $query->whereBetween('competence_date', [
                 $start->toDateString(),
                 $end->toDateString(),
             ]);
         }
 
         return $query
+            ->selectRaw('type, SUM(amount) AS total')
+            ->groupBy('type')
+            ->pluck('total', 'type');
+    }
+
+    /**
+     * @return Collection<string, string>
+     */
+    private function outstandingTotals(Workspace $workspace): Collection
+    {
+        return $workspace->financialTransactions()
+            ->whereIn('status', [
+                FinancialTransactionStatus::Planned->value,
+                FinancialTransactionStatus::Confirmed->value,
+            ])
+            ->whereNull('settled_on')
+            ->whereNull('credit_card_id')
+            ->whereIn('type', [
+                FinancialTransactionType::Income->value,
+                FinancialTransactionType::Expense->value,
+            ])
             ->selectRaw('type, SUM(amount) AS total')
             ->groupBy('type')
             ->pluck('total', 'type');
@@ -139,29 +158,31 @@ class DashboardController extends Controller
             ]);
         }
 
-        $workspace->financialTransactions()
-            ->where('status', FinancialTransactionStatus::Confirmed->value)
-            ->whereIn('type', [
-                FinancialTransactionType::Income->value,
-                FinancialTransactionType::Expense->value,
-            ])
-            ->whereBetween('transaction_date', [
+        $workspace->accountMovements()
+            ->whereBetween('occurred_on', [
                 $firstMonth->toDateString(),
                 $lastMonth->toDateString(),
             ])
-            ->get(['type', 'transaction_date', 'amount'])
-            ->each(function (FinancialTransaction $entry) use ($months): void {
-                $key = $entry->transaction_date->format('Y-m');
+            ->whereHas('transaction', fn ($query) => $query
+                ->where('status', FinancialTransactionStatus::Confirmed->value)
+                ->whereIn('type', [
+                    FinancialTransactionType::Income->value,
+                    FinancialTransactionType::Expense->value,
+                ]))
+            ->with('transaction:id,type,status')
+            ->get(['id', 'financial_transaction_id', 'occurred_on', 'amount'])
+            ->each(function (AccountMovement $movement) use ($months): void {
+                $key = $movement->occurred_on->format('Y-m');
                 $month = $months->get($key);
 
-                if ($month === null) {
+                if ($month === null || $movement->transaction === null) {
                     return;
                 }
 
-                $field = $entry->type === FinancialTransactionType::Income
+                $field = $movement->transaction->type === FinancialTransactionType::Income
                     ? 'income'
                     : 'expenses';
-                $month[$field] += (float) $entry->amount;
+                $month[$field] += abs((float) $movement->amount);
                 $months->put($key, $month);
             });
 
@@ -187,7 +208,7 @@ class DashboardController extends Controller
         $totals = $workspace->financialTransactions()
             ->where('type', FinancialTransactionType::Expense->value)
             ->where('status', FinancialTransactionStatus::Confirmed->value)
-            ->whereBetween('transaction_date', [
+            ->whereBetween('competence_date', [
                 $monthStart->toDateString(),
                 $monthEnd->toDateString(),
             ])
@@ -219,7 +240,11 @@ class DashboardController extends Controller
         CarbonImmutable $today,
     ): array {
         return $workspace->financialTransactions()
-            ->where('status', FinancialTransactionStatus::Planned->value)
+            ->whereIn('status', [
+                FinancialTransactionStatus::Planned->value,
+                FinancialTransactionStatus::Confirmed->value,
+            ])
+            ->whereNull('settled_on')
             ->whereIn('type', [
                 FinancialTransactionType::Income->value,
                 FinancialTransactionType::Expense->value,
