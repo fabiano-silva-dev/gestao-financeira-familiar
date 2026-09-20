@@ -9,6 +9,21 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property int $id
+ * @property int $workspace_id
+ * @property string $name
+ * @property string|null $institution
+ * @property string $last_four
+ * @property int|null $holder_id
+ * @property string $credit_limit
+ * @property int $closing_day
+ * @property int $due_day
+ * @property int $payment_account_id
+ * @property PaymentMethod $invoice_payment_method
+ * @property string|null $payment_instructions
+ * @property bool $is_active
+ */
 #[Fillable([
     'name',
     'institution',
