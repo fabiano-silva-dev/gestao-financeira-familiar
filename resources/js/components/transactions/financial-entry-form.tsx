@@ -47,6 +47,9 @@ export default function FinancialEntryForm({
         entry?.payment_method ?? paymentMethods[0]?.value ?? 'pix',
     );
     const [status, setStatus] = useState(entry?.status ?? 'confirmed');
+    const [settlementDate, setSettlementDate] = useState(
+        entry?.settled_on ?? (!entry ? defaultDate ?? '' : ''),
+    );
     const [accountSelection, setAccountSelection] = useState(
         entry?.financial_account_id ? String(entry.financial_account_id) : '',
     );
@@ -60,6 +63,7 @@ export default function FinancialEntryForm({
         entry?.family_member_id ? String(entry.family_member_id) : 'none',
     );
     const usesCreditCard = isExpense && paymentMethod === 'credit_card';
+    const canSettle = !usesCreditCard && status === 'confirmed';
     const form = entry
         ? FinancialTransactionController.update.form(entry.id)
         : FinancialTransactionController.store.form();
@@ -111,10 +115,10 @@ export default function FinancialEntryForm({
                         </div>
                     </div>
 
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-4 sm:grid-cols-3">
                         <div className="grid gap-2">
                             <Label htmlFor="transaction_date">
-                                Data do lançamento
+                                Data do fato
                             </Label>
                             <Input
                                 id="transaction_date"
@@ -129,13 +133,38 @@ export default function FinancialEntryForm({
                         </div>
 
                         <div className="grid gap-2">
+                            <Label htmlFor="competence_date">Competência</Label>
+                            <Input
+                                id="competence_date"
+                                name="competence_date"
+                                type="date"
+                                defaultValue={
+                                    entry?.competence_date ??
+                                    entry?.transaction_date ??
+                                    defaultDate
+                                }
+                                required
+                            />
+                            <p className="text-muted-foreground text-xs">
+                                Mês em que entra na análise de receitas e
+                                despesas.
+                            </p>
+                            <InputError message={errors.competence_date} />
+                        </div>
+
+                        <div className="grid gap-2">
                             <Label htmlFor="due_date">Vencimento</Label>
                             <Input
                                 id="due_date"
                                 name="due_date"
                                 type="date"
                                 defaultValue={entry?.due_date ?? ''}
-                                required={status === 'planned'}
+                                required={
+                                    status === 'planned' ||
+                                    (status === 'confirmed' &&
+                                        !usesCreditCard &&
+                                        !settlementDate)
+                                }
                             />
                             <InputError message={errors.due_date} />
                         </div>
@@ -264,6 +293,7 @@ export default function FinancialEntryForm({
                                 name="financial_account_id"
                                 value=""
                             />
+                            <input type="hidden" name="settled_on" value="" />
                             <Label htmlFor="credit_card_id">Cartão</Label>
                             <Select
                                 name="credit_card_id"
@@ -290,8 +320,9 @@ export default function FinancialEntryForm({
                                 </SelectContent>
                             </Select>
                             <p className="text-muted-foreground text-xs">
-                                A compra será despesa agora; a saída da conta
-                                ocorrerá somente no pagamento da fatura.
+                                A compra entra na despesa pela competência. A
+                                saída da conta ocorrerá somente no pagamento da
+                                fatura.
                             </p>
                             <InputError message={errors.credit_card_id} />
                         </div>
@@ -375,38 +406,68 @@ export default function FinancialEntryForm({
                         <InputError message={errors.payment_instructions} />
                     </div>
 
-                    <div className="grid gap-2">
-                        <Label htmlFor="status">Situação</Label>
-                        <Select
-                            name="status"
-                            value={status}
-                            onValueChange={(value) =>
-                                setStatus(value as FinancialEntry['status'])
-                            }
-                            required
-                        >
-                            <SelectTrigger id="status" className="w-full">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="confirmed">
-                                    {isExpense
-                                        ? 'Paga — altera o saldo agora'
-                                        : 'Recebida — altera o saldo agora'}
-                                </SelectItem>
-                                <SelectItem value="planned">
-                                    {isExpense
-                                        ? 'A pagar — compromisso futuro'
-                                        : 'A receber — previsão futura'}
-                                </SelectItem>
-                                {entry?.status === 'cancelled' && (
-                                    <SelectItem value="cancelled">
-                                        Cancelada — sem efeito no saldo
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="grid gap-2">
+                            <Label htmlFor="status">Situação do lançamento</Label>
+                            <Select
+                                name="status"
+                                value={status}
+                                onValueChange={(value) =>
+                                    setStatus(
+                                        value as FinancialEntry['status'],
+                                    )
+                                }
+                                required
+                            >
+                                <SelectTrigger id="status" className="w-full">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="confirmed">
+                                        Confirmado — fato financeiro real
                                     </SelectItem>
-                                )}
-                            </SelectContent>
-                        </Select>
-                        <InputError message={errors.status} />
+                                    <SelectItem value="planned">
+                                        Previsto — ainda é uma projeção
+                                    </SelectItem>
+                                    {entry?.status === 'cancelled' && (
+                                        <SelectItem value="cancelled">
+                                            Cancelado — sem efeito financeiro
+                                        </SelectItem>
+                                    )}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-muted-foreground text-xs">
+                                Confirmar uma despesa não significa que ela já
+                                foi paga.
+                            </p>
+                            <InputError message={errors.status} />
+                        </div>
+
+                        {canSettle ? (
+                            <div className="grid gap-2">
+                                <Label htmlFor="settled_on">
+                                    {isExpense
+                                        ? 'Data efetiva do pagamento'
+                                        : 'Data efetiva do recebimento'}
+                                </Label>
+                                <Input
+                                    id="settled_on"
+                                    name="settled_on"
+                                    type="date"
+                                    value={settlementDate}
+                                    onChange={(event) =>
+                                        setSettlementDate(event.target.value)
+                                    }
+                                />
+                                <p className="text-muted-foreground text-xs">
+                                    Deixe em branco se ainda não houve saída ou
+                                    entrada de dinheiro.
+                                </p>
+                                <InputError message={errors.settled_on} />
+                            </div>
+                        ) : (
+                            <input type="hidden" name="settled_on" value="" />
+                        )}
                     </div>
 
                     <div className="grid gap-2">
