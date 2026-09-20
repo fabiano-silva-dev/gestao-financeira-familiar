@@ -1253,3 +1253,31 @@ A especificação detalhada, os tokens sugeridos e o mockup aprovado estão em:
 
 O mockup é uma referência de direção visual, e não uma especificação pixel a
 pixel ou uma fonte de regras financeiras.
+
+
+---
+
+## 45. Decisões de Implementação — Liquidação e Recorrências
+
+A confirmação do fato financeiro e a liquidação de caixa são estados distintos.
+
+Para receitas e despesas fora do cartão:
+
+- `transaction_date` representa a data do fato financeiro;
+- `competence_date` representa a competência gerencial;
+- `due_date` representa o vencimento;
+- `settled_on` representa a data efetiva de pagamento ou recebimento;
+- movimentos de conta só são criados quando o lançamento estiver confirmado e possuir `settled_on`.
+
+Para recorrências:
+
+- a regra recorrente é uma entidade própria do workspace;
+- cada ocorrência gerada mantém vínculo com sua recorrência de origem;
+- a combinação recorrência + data da ocorrência deve ser única para impedir duplicidades;
+- recorrências fora do cartão podem gerar compromissos planejados antecipadamente;
+- recorrências no cartão só materializam a compra quando a data da ocorrência chega;
+- projeções futuras de recorrências no cartão não criam faturas antecipadamente;
+- pausar uma recorrência remove apenas compromissos futuros ainda planejados, preservando histórico e fatos já confirmados;
+- a rotina automática de geração deve ser segura para reexecução e trabalhar de forma idempotente.
+
+A projeção de recorrências é uma visão de planejamento e não substitui o fluxo de caixa real nem a fatura efetivamente formada.
