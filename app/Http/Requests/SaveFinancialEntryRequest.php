@@ -22,6 +22,28 @@ class SaveFinancialEntryRequest extends FormRequest
         return $this->user() !== null;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $defaults = [];
+
+        if (! $this->has('competence_date') && $this->filled('transaction_date')) {
+            $defaults['competence_date'] = $this->input('transaction_date');
+        }
+
+        if (
+            ! $this->has('settled_on')
+            && $this->input('status') === FinancialTransactionStatus::Confirmed->value
+            && $this->input('payment_method') !== PaymentMethod::CreditCard->value
+            && $this->filled('transaction_date')
+        ) {
+            $defaults['settled_on'] = $this->input('transaction_date');
+        }
+
+        if ($defaults !== []) {
+            $this->merge($defaults);
+        }
+    }
+
     /**
      * @return array<string, ValidationRule|array<mixed>|string>
      */
