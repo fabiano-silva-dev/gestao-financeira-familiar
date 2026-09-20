@@ -16,8 +16,8 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $workspace_id
  * @property FinancialTransactionType $type
- * @property \Illuminate\Support\Carbon $transaction_date
- * @property \Illuminate\Support\Carbon|null $competence_date
+ * @property Carbon $transaction_date
+ * @property Carbon|null $competence_date
  * @property string $description
  * @property string $amount
  * @property int|null $financial_account_id
@@ -29,8 +29,8 @@ use Illuminate\Support\Carbon;
  * @property PaymentMethod|null $payment_method
  * @property string|null $payee_name
  * @property string|null $payment_instructions
- * @property \Illuminate\Support\Carbon|null $due_date
- * @property \Illuminate\Support\Carbon|null $settled_on
+ * @property Carbon|null $due_date
+ * @property Carbon|null $settled_on
  * @property FinancialTransactionStatus $status
  * @property FinancialTransactionOrigin $origin
  * @property string|null $notes
