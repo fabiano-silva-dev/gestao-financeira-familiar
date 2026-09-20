@@ -13,7 +13,7 @@ use Illuminate\Support\Carbon;
  * @property int $workspace_id
  * @property int $financial_transaction_id
  * @property int $financial_account_id
- * @property \Illuminate\Support\Carbon $occurred_on
+ * @property Carbon $occurred_on
  * @property string $description
  * @property string $amount
  * @property AccountMovementType $type
