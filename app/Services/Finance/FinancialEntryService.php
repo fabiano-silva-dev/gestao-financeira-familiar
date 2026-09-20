@@ -21,12 +21,15 @@ class FinancialEntryService
     /**
      * @param  array<string, mixed>  $data
      */
-    public function create(Workspace $workspace, array $data): FinancialTransaction
-    {
-        return DB::transaction(function () use ($workspace, $data): FinancialTransaction {
+    public function create(
+        Workspace $workspace,
+        array $data,
+        FinancialTransactionOrigin $origin = FinancialTransactionOrigin::Manual,
+    ): FinancialTransaction {
+        return DB::transaction(function () use ($workspace, $data, $origin): FinancialTransaction {
             $entry = $workspace->financialTransactions()->create([
                 ...$this->entryData($data),
-                'origin' => FinancialTransactionOrigin::Manual,
+                'origin' => $origin,
             ]);
 
             $this->syncMovement($entry);
@@ -136,6 +139,8 @@ class FinancialEntryService
             'settled_on' => array_key_exists('settled_on', $data)
                 ? $data['settled_on']
                 : ($isConfirmed && ! $usesCreditCard ? $data['transaction_date'] : null),
+            'financial_recurrence_id' => $data['financial_recurrence_id'] ?? null,
+            'recurrence_occurrence_date' => $data['recurrence_occurrence_date'] ?? null,
             'status' => $data['status'],
             'notes' => $data['notes'] ?? null,
         ];
