@@ -6,6 +6,7 @@ use App\Enums\AccountMovementType;
 use App\Enums\FinancialTransactionOrigin;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
+use App\Enums\PaymentMethod;
 use App\Models\AccountMovement;
 use App\Models\FinancialTransaction;
 use App\Models\Workspace;
@@ -92,10 +93,13 @@ class FinancialEntryService
      */
     private function entryData(array $data): array
     {
+        $isConfirmed = ($data['status'] ?? null) === FinancialTransactionStatus::Confirmed->value;
+        $usesCreditCard = ($data['payment_method'] ?? null) === PaymentMethod::CreditCard->value;
+
         return [
             'type' => $data['type'],
             'transaction_date' => $data['transaction_date'],
-            'competence_date' => $data['competence_date'],
+            'competence_date' => $data['competence_date'] ?? $data['transaction_date'],
             'description' => $data['description'],
             'amount' => $data['amount'],
             'financial_account_id' => $data['financial_account_id'] ?? null,
@@ -106,7 +110,9 @@ class FinancialEntryService
             'payee_name' => $data['payee_name'] ?? null,
             'payment_instructions' => $data['payment_instructions'] ?? null,
             'due_date' => $data['due_date'] ?? null,
-            'settled_on' => $data['settled_on'] ?? null,
+            'settled_on' => array_key_exists('settled_on', $data)
+                ? $data['settled_on']
+                : ($isConfirmed && ! $usesCreditCard ? $data['transaction_date'] : null),
             'status' => $data['status'],
             'notes' => $data['notes'] ?? null,
         ];
