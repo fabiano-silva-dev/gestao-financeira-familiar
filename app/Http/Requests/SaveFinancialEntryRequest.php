@@ -64,14 +64,14 @@ class SaveFinancialEntryRequest extends FormRequest
         $isCreditCardExpense = $type === FinancialTransactionType::Expense
             && $paymentMethod === PaymentMethod::CreditCard;
         $isSettled = filled($this->input('settled_on'));
-        $requiresDueDate = (
-            $isInstallmentPurchase
-            && ! $isCreditCardExpense
-        ) || $status === FinancialTransactionStatus::Planned
-            || (
-                $status === FinancialTransactionStatus::Confirmed
-                && ! $isCreditCardExpense
-                && ! $isSettled
+        $requiresDueDate = ! $isCreditCardExpense
+            && (
+                $isInstallmentPurchase
+                || $status === FinancialTransactionStatus::Planned
+                || (
+                    $status === FinancialTransactionStatus::Confirmed
+                    && ! $isSettled
+                )
             );
         $isCreate = $this->routeIs('transactions.store');
 
