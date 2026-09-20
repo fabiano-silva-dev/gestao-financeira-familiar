@@ -5,6 +5,7 @@ export type FinancialEntry = {
     type: FinancialEntryType;
     type_label: string;
     transaction_date: string;
+    competence_date: string;
     description: string;
     amount: string;
     financial_account_id: number | null;
@@ -21,6 +22,8 @@ export type FinancialEntry = {
     payee_name: string | null;
     payment_instructions: string | null;
     due_date: string | null;
+    settled_on: string | null;
+    is_settled: boolean;
     status: 'planned' | 'confirmed' | 'cancelled';
     status_label: string;
     notes: string | null;
