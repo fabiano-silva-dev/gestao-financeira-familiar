@@ -47,6 +47,9 @@ export default function FinancialEntryForm({
         entry?.payment_method ?? paymentMethods[0]?.value ?? 'pix',
     );
     const [status, setStatus] = useState(entry?.status ?? 'confirmed');
+    const [installmentCount, setInstallmentCount] = useState(
+        String(entry?.installment_count ?? 1),
+    );
     const [settlementDate, setSettlementDate] = useState(
         entry?.settled_on ?? (!entry ? (defaultDate ?? '') : ''),
     );
@@ -63,7 +66,10 @@ export default function FinancialEntryForm({
         entry?.family_member_id ? String(entry.family_member_id) : 'none',
     );
     const usesCreditCard = isExpense && paymentMethod === 'credit_card';
-    const canSettle = !usesCreditCard && status === 'confirmed';
+    const isInstallmentPurchase =
+        isExpense && Number(installmentCount || '1') > 1;
+    const canSettle =
+        !usesCreditCard && !isInstallmentPurchase && status === 'confirmed';
     const form = entry
         ? FinancialTransactionController.update.form(entry.id)
         : FinancialTransactionController.store.form();
@@ -115,6 +121,31 @@ export default function FinancialEntryForm({
                         </div>
                     </div>
 
+                    {isExpense && (
+                        <div className="grid gap-2 sm:max-w-52">
+                            <Label htmlFor="installment_count">Parcelas</Label>
+                            <Input
+                                id="installment_count"
+                                name="installment_count"
+                                type="number"
+                                inputMode="numeric"
+                                min="1"
+                                max="120"
+                                value={installmentCount}
+                                onChange={(event) =>
+                                    setInstallmentCount(event.target.value)
+                                }
+                                required
+                            />
+                            <p className="text-muted-foreground text-xs">
+                                Use 1 para pagamento à vista. Acima de 1, o
+                                valor total será preservado e as parcelas serão
+                                geradas automaticamente.
+                            </p>
+                            <InputError message={errors.installment_count} />
+                        </div>
+                    )}
+
                     <div className="grid gap-4 sm:grid-cols-3">
                         <div className="grid gap-2">
                             <Label htmlFor="transaction_date">
@@ -153,20 +184,43 @@ export default function FinancialEntryForm({
                         </div>
 
                         <div className="grid gap-2">
-                            <Label htmlFor="due_date">Vencimento</Label>
-                            <Input
-                                id="due_date"
-                                name="due_date"
-                                type="date"
-                                defaultValue={entry?.due_date ?? ''}
-                                required={
-                                    status === 'planned' ||
-                                    (status === 'confirmed' &&
-                                        !usesCreditCard &&
-                                        !settlementDate)
-                                }
-                            />
-                            <InputError message={errors.due_date} />
+                            {isInstallmentPurchase && usesCreditCard ? (
+                                <>
+                                    <input
+                                        type="hidden"
+                                        name="due_date"
+                                        value=""
+                                    />
+                                    <Label>Vencimentos das parcelas</Label>
+                                    <p className="text-muted-foreground text-sm">
+                                        Calculados automaticamente pelo
+                                        fechamento e vencimento do cartão.
+                                    </p>
+                                </>
+                            ) : (
+                                <>
+                                    <Label htmlFor="due_date">
+                                        {isInstallmentPurchase
+                                            ? '1º vencimento'
+                                            : 'Vencimento'}
+                                    </Label>
+                                    <Input
+                                        id="due_date"
+                                        name="due_date"
+                                        type="date"
+                                        defaultValue={entry?.due_date ?? ''}
+                                        required={
+                                            (isInstallmentPurchase &&
+                                                !usesCreditCard) ||
+                                            status === 'planned' ||
+                                            (status === 'confirmed' &&
+                                                !usesCreditCard &&
+                                                !settlementDate)
+                                        }
+                                    />
+                                    <InputError message={errors.due_date} />
+                                </>
+                            )}
                         </div>
                     </div>
 
@@ -320,9 +374,9 @@ export default function FinancialEntryForm({
                                 </SelectContent>
                             </Select>
                             <p className="text-muted-foreground text-xs">
-                                A compra entra na despesa pela competência. A
-                                saída da conta ocorrerá somente no pagamento da
-                                fatura.
+                                {isInstallmentPurchase
+                                    ? 'As parcelas serão distribuídas pelas próximas faturas. A saída da conta ocorrerá somente no pagamento de cada fatura.'
+                                    : 'A compra entra na despesa pela competência. A saída da conta ocorrerá somente no pagamento da fatura.'}
                             </p>
                             <InputError message={errors.credit_card_id} />
                         </div>
@@ -443,7 +497,22 @@ export default function FinancialEntryForm({
                             <InputError message={errors.status} />
                         </div>
 
-                        {canSettle ? (
+                        {isInstallmentPurchase ? (
+                            <div className="bg-muted/50 rounded-lg p-3 text-sm">
+                                <p className="font-medium">
+                                    Pagamento por parcela
+                                </p>
+                                <p className="text-muted-foreground mt-1 text-xs">
+                                    A compra principal não altera o saldo. Cada
+                                    parcela será liquidada separadamente.
+                                </p>
+                                <input
+                                    type="hidden"
+                                    name="settled_on"
+                                    value=""
+                                />
+                            </div>
+                        ) : canSettle ? (
                             <div className="grid gap-2">
                                 <Label htmlFor="settled_on">
                                     {isExpense
