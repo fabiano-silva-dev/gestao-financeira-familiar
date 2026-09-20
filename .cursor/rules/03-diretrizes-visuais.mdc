@@ -1,0 +1,20 @@
+---
+description: Direção visual do produto para alterações de interface, dashboard, formulários, componentes, CSS, Tailwind e responsividade.
+alwaysApply: false
+---
+
+# Diretrizes visuais
+
+Antes de implementar ou alterar interface, dashboard, formulários, componentes
+visuais, estilos ou responsividade, leia:
+
+- `docs/design/CONFIANCA_SERENA.md`
+
+A direção aprovada é **Confiança Serena**. Preserve a paleta, a hierarquia, a
+acessibilidade e os padrões responsivos descritos nesse documento.
+
+- Use tokens semânticos no tema; evite espalhar códigos de cores pelos componentes.
+- Use o mockup como referência de direção, não como especificação pixel a pixel.
+- Não transforme textos, valores ou decoração fictícia do mockup em regra de negócio.
+- Reutilize os componentes shadcn e a stack visual já presentes no projeto.
+- Não remova o suporte a tema escuro; adapte-o com contraste adequado.

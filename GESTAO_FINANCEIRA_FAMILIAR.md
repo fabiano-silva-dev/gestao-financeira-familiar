@@ -1207,3 +1207,32 @@ Diretrizes:
 - consultas, índices e constraints devem priorizar consistência financeira e integridade dos dados.
 
 O Eficere legado continuará independente em MySQL. Esta decisão é específica para o projeto Gestão Financeira Familiar.
+
+---
+
+## 44. Direção Visual
+
+A direção visual inicial aprovada para a plataforma é **Confiança Serena**.
+
+Ela utiliza azul-marinho, verde-petróleo, azul-aqua claro, âmbar e fundos claros
+para transmitir segurança, organização e tranquilidade, sem assumir a aparência
+fria de um aplicativo bancário.
+
+Princípios principais:
+
+- interface moderna, limpa e com boa densidade de informação;
+- navegação lateral azul-marinho no desktop;
+- verde-petróleo como identidade e destaque de ações;
+- cards claros, bordas suaves e sombras discretas;
+- formulários objetivos e adaptados para celular;
+- dashboard focado em saldo, receitas, despesas, projeções, vencimentos e
+  transações recentes;
+- cores semânticas usadas com moderação e acessibilidade;
+- preservação do suporte a tema escuro.
+
+A especificação detalhada, os tokens sugeridos e o mockup aprovado estão em:
+
+- [`docs/design/CONFIANCA_SERENA.md`](docs/design/CONFIANCA_SERENA.md)
+
+O mockup é uma referência de direção visual, e não uma especificação pixel a
+pixel ou uma fonte de regras financeiras.
