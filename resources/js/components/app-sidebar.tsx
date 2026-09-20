@@ -1,7 +1,7 @@
 import { Link } from '@inertiajs/react';
 import {
     ArrowLeftRight,
-    CalendarRepeat,
+    Repeat2,
     CreditCard,
     Landmark,
     LayoutGrid,
@@ -62,7 +62,7 @@ const mainNavItems: NavItem[] = [
     {
         title: 'Recorrências',
         href: recurrencesIndex(),
-        icon: CalendarRepeat,
+        icon: Repeat2,
     },
     {
         title: 'Transferências',
