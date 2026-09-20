@@ -1,5 +1,12 @@
 export type * from './auth';
+export type * from './category';
+export type * from './credit-card';
+export type * from './dashboard';
+export type * from './family-member';
 export type * from './financial-account';
+export type * from './financial-entry';
 export type * from './navigation';
+export type * from './payment-method';
+export type * from './transfer';
 export type * from './ui';
 export type * from './workspace';

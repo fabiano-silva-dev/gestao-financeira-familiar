@@ -216,6 +216,8 @@ Campos principais:
 - Dia de fechamento
 - Dia de vencimento
 - Conta utilizada para pagamento
+- Forma padrão de pagamento da fatura
+- Instruções de pagamento
 - Ativo/inativo
 
 ---
@@ -273,6 +275,8 @@ Campos conceituais:
 - Subcategoria
 - Pessoa da família
 - Forma de pagamento
+- Favorecido ou beneficiário
+- Instruções de pagamento, como chave PIX ou referência
 - Conta
 - Cartão
 - Quantidade de parcelas
@@ -281,6 +285,11 @@ Campos conceituais:
 - Status
 
 Uma compra parcelada deverá existir como uma única transação principal ligada às suas parcelas.
+
+Toda despesa deverá permitir informar a forma de pagamento. Em despesas a prazo,
+parceladas ou recorrentes, essa informação deverá acompanhar os vencimentos futuros,
+junto com o favorecido e as instruções necessárias para pagar. Esses dados funcionam
+como padrão e podem ser alterados em uma ocorrência específica.
 
 ---
 
@@ -490,9 +499,17 @@ Campos conceituais:
 - Dia de vencimento
 - Categoria
 - Conta ou cartão
+- Forma de pagamento
+- Favorecido ou beneficiário
+- Instruções de pagamento, como chave PIX ou referência
 - Regra de geração
 
 O objetivo é eliminar a necessidade de criar novamente os mesmos lançamentos todos os meses.
+
+Exemplos:
+
+- atividade esportiva recorrente → PIX → favorecido e chave cadastrados;
+- fatura de cartão → boleto como forma padrão de pagamento.
 
 ---
 

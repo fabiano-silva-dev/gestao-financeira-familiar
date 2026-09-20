@@ -32,4 +32,44 @@ class Workspace extends Model
     {
         return $this->hasMany(FinancialAccount::class);
     }
+
+    /**
+     * @return HasMany<FamilyMember, $this>
+     */
+    public function familyMembers(): HasMany
+    {
+        return $this->hasMany(FamilyMember::class);
+    }
+
+    /**
+     * @return HasMany<Category, $this>
+     */
+    public function categories(): HasMany
+    {
+        return $this->hasMany(Category::class);
+    }
+
+    /**
+     * @return HasMany<CreditCard, $this>
+     */
+    public function creditCards(): HasMany
+    {
+        return $this->hasMany(CreditCard::class);
+    }
+
+    /**
+     * @return HasMany<FinancialTransaction, $this>
+     */
+    public function financialTransactions(): HasMany
+    {
+        return $this->hasMany(FinancialTransaction::class);
+    }
+
+    /**
+     * @return HasMany<AccountMovement, $this>
+     */
+    public function accountMovements(): HasMany
+    {
+        return $this->hasMany(AccountMovement::class);
+    }
 }

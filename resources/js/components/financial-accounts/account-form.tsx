@@ -104,10 +104,17 @@ export default function AccountForm({ account, accountTypes }: Props) {
                     </div>
 
                     <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                        <Button variant="outline" asChild>
+                        <Button
+                            variant="outline"
+                            className="w-full sm:w-auto"
+                            asChild
+                        >
                             <Link href={index()}>Cancelar</Link>
                         </Button>
-                        <Button disabled={processing}>
+                        <Button
+                            className="w-full sm:w-auto"
+                            disabled={processing}
+                        >
                             {account ? 'Salvar alterações' : 'Cadastrar conta'}
                         </Button>
                     </div>

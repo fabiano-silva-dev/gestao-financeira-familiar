@@ -119,9 +119,15 @@ export default function AccountsIndex() {
                                     </div>
                                     <div>
                                         <p className="text-muted-foreground text-xs uppercase">
-                                            Saldo inicial
+                                            Saldo atual
                                         </p>
                                         <p className="text-xl font-semibold tabular-nums">
+                                            {currency.format(
+                                                Number(account.current_balance),
+                                            )}
+                                        </p>
+                                        <p className="text-muted-foreground mt-1 text-xs">
+                                            Inicial:{' '}
                                             {currency.format(
                                                 Number(account.opening_balance),
                                             )}

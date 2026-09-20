@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\FinancialAccountType;
+use App\Enums\FinancialTransactionStatus;
 use App\Http\Requests\StoreFinancialAccountRequest;
 use App\Http\Requests\UpdateFinancialAccountRequest;
 use App\Models\FinancialAccount;
@@ -22,6 +23,20 @@ class FinancialAccountController extends Controller
     {
         $accounts = $this->workspace()
             ->financialAccounts()
+            ->select('financial_accounts.*')
+            ->selectRaw(
+                <<<'SQL'
+                    financial_accounts.opening_balance + COALESCE((
+                        SELECT SUM(account_movements.amount)
+                        FROM account_movements
+                        INNER JOIN financial_transactions
+                            ON financial_transactions.id = account_movements.financial_transaction_id
+                        WHERE account_movements.financial_account_id = financial_accounts.id
+                            AND financial_transactions.status = ?
+                    ), 0) AS current_balance
+                SQL,
+                [FinancialTransactionStatus::Confirmed->value],
+            )
             ->orderByDesc('is_active')
             ->orderBy('name')
             ->get()
@@ -114,6 +129,7 @@ class FinancialAccountController extends Controller
      *     type: string,
      *     type_label: string,
      *     opening_balance: string,
+     *     current_balance: string,
      *     is_active: bool
      * }
      */
@@ -126,6 +142,8 @@ class FinancialAccountController extends Controller
             'type' => $account->type->value,
             'type_label' => $account->type->label(),
             'opening_balance' => $account->opening_balance,
+            'current_balance' => (string) ($account->getAttribute('current_balance')
+                ?? $account->opening_balance),
             'is_active' => $account->is_active,
         ];
     }

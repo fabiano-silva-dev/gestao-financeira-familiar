@@ -1,0 +1,122 @@
+<?php
+
+namespace App\Http\Requests;
+
+use App\Enums\FinancialTransactionStatus;
+use App\Enums\FinancialTransactionType;
+use App\Enums\PaymentMethod;
+use App\Models\Category;
+use App\Models\CreditCard;
+use App\Models\FamilyMember;
+use App\Models\FinancialAccount;
+use App\Support\Workspaces\CurrentWorkspace;
+use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+
+class SaveFinancialEntryRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return $this->user() !== null;
+    }
+
+    /**
+     * @return array<string, ValidationRule|array<mixed>|string>
+     */
+    public function rules(CurrentWorkspace $currentWorkspace): array
+    {
+        $workspace = $currentWorkspace->get();
+
+        abort_if($workspace === null, 403);
+
+        $type = FinancialTransactionType::tryFrom((string) $this->input('type'));
+        $status = FinancialTransactionStatus::tryFrom((string) $this->input('status'));
+        $paymentMethod = PaymentMethod::tryFrom((string) $this->input('payment_method'));
+        $isCreditCardExpense = $type === FinancialTransactionType::Expense
+            && $paymentMethod === PaymentMethod::CreditCard;
+        $isCreate = $this->routeIs('transactions.store');
+
+        $existsInWorkspace = fn (string $model): mixed => Rule::exists($model, 'id')
+            ->where(fn (Builder $query): Builder => $query
+                ->where('workspace_id', $workspace->id));
+
+        return [
+            'type' => [
+                'required',
+                Rule::in([
+                    FinancialTransactionType::Income->value,
+                    FinancialTransactionType::Expense->value,
+                ]),
+            ],
+            'transaction_date' => ['required', 'date'],
+            'description' => ['required', 'string', 'max:160'],
+            'amount' => ['required', 'numeric', 'decimal:0,2', 'gt:0', 'max:9999999999999.99'],
+            'financial_account_id' => [
+                'nullable',
+                'integer',
+                Rule::requiredIf(! $isCreditCardExpense),
+                $existsInWorkspace(FinancialAccount::class),
+            ],
+            'credit_card_id' => [
+                'nullable',
+                'integer',
+                Rule::requiredIf($isCreditCardExpense),
+                Rule::prohibitedIf(! $isCreditCardExpense),
+                $existsInWorkspace(CreditCard::class),
+            ],
+            'category_id' => [
+                'nullable',
+                'integer',
+                $existsInWorkspace(Category::class),
+            ],
+            'family_member_id' => [
+                'nullable',
+                'integer',
+                $existsInWorkspace(FamilyMember::class),
+            ],
+            'payment_method' => ['required', Rule::enum(PaymentMethod::class)],
+            'payee_name' => ['nullable', 'string', 'max:160'],
+            'payment_instructions' => ['nullable', 'string', 'max:500'],
+            'due_date' => [
+                'nullable',
+                'date',
+                Rule::requiredIf($status === FinancialTransactionStatus::Planned),
+            ],
+            'status' => [
+                'required',
+                Rule::in(array_map(
+                    fn (FinancialTransactionStatus $allowedStatus): string => $allowedStatus->value,
+                    $isCreate
+                        ? [FinancialTransactionStatus::Planned, FinancialTransactionStatus::Confirmed]
+                        : FinancialTransactionStatus::cases(),
+                )),
+            ],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function attributes(): array
+    {
+        return [
+            'type' => 'tipo',
+            'transaction_date' => 'data do lançamento',
+            'description' => 'descrição',
+            'amount' => 'valor',
+            'financial_account_id' => 'conta',
+            'credit_card_id' => 'cartão',
+            'category_id' => 'categoria',
+            'family_member_id' => 'pessoa',
+            'payment_method' => 'forma de pagamento',
+            'payee_name' => 'favorecido ou pagador',
+            'payment_instructions' => 'instruções de pagamento',
+            'due_date' => 'vencimento',
+            'status' => 'situação',
+            'notes' => 'observações',
+        ];
+    }
+}
