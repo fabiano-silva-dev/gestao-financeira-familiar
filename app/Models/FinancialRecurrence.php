@@ -25,6 +25,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'frequency',
     'interval',
     'starts_on',
+    'generation_started_on',
     'ends_on',
     'is_active',
     'notes',
@@ -70,6 +71,7 @@ class FinancialRecurrence extends Model
             'frequency' => RecurrenceFrequency::class,
             'interval' => 'integer',
             'starts_on' => 'date',
+            'generation_started_on' => 'date',
             'ends_on' => 'date',
             'is_active' => 'boolean',
         ];
