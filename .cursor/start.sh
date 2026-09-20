@@ -31,10 +31,22 @@ sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'"
 
 echo "==> Iniciando Redis"
 if ! redis-cli ping >/dev/null 2>&1; then
-    sudo service redis-server start 2>/dev/null \
-        || sudo redis-server /etc/redis/redis.conf --daemonize yes 2>/dev/null \
-        || true
+    # Garante que o usuário do serviço consiga escrever o log (evita falha do init script).
+    sudo mkdir -p /var/log/redis
+    sudo chown -R redis:redis /var/log/redis 2>/dev/null || true
+
+    # O init script pode retornar 0 mesmo falhando; por isso validamos por ping e,
+    # se ainda estiver fora, subimos o Redis diretamente como fallback.
+    sudo service redis-server start >/dev/null 2>&1 || true
+    if ! redis-cli ping >/dev/null 2>&1; then
+        sudo redis-server /etc/redis/redis.conf --daemonize yes >/dev/null 2>&1 || true
+    fi
 fi
+
+for _ in $(seq 1 15); do
+    if redis-cli ping >/dev/null 2>&1; then break; fi
+    sleep 1
+done
 redis-cli ping >/dev/null 2>&1 && echo "Redis OK" || echo "AVISO: Redis não respondeu ao ping"
 
 if [ ! -f .env ]; then
