@@ -193,7 +193,12 @@ export default function TransactionsIndex() {
                                                     <Badge variant="outline">
                                                         {entry.status_label}
                                                     </Badge>
-                                                    {usesCreditCard ? (
+                                                    {entry.is_installment_purchase ? (
+                                                        <Badge variant="outline">
+                                                            {entry.installment_count}{' '}
+                                                            parcelas
+                                                        </Badge>
+                                                    ) : usesCreditCard ? (
                                                         <Badge variant="outline">
                                                             Via fatura
                                                         </Badge>
@@ -257,7 +262,8 @@ export default function TransactionsIndex() {
                                                 )}
                                             </p>
                                         </div>
-                                        {!usesCreditCard && (
+                                        {!usesCreditCard &&
+                                            !entry.is_installment_purchase && (
                                             <div>
                                                 <p className="text-muted-foreground text-xs uppercase">
                                                     {isExpense
@@ -302,7 +308,110 @@ export default function TransactionsIndex() {
                                                 )}
                                             </div>
                                         )}
-                                        {!usesCreditCard &&
+                                        {entry.is_installment_purchase ? (
+                                            <div className="space-y-2 sm:col-span-2 lg:col-span-4">
+                                                <div className="text-muted-foreground flex items-center gap-2">
+                                                    <CalendarClock className="size-4" />
+                                                    O valor total fica na compra
+                                                    principal; o compromisso
+                                                    mensal e o caixa são
+                                                    controlados pelas parcelas.
+                                                </div>
+                                                <div className="divide-y rounded-lg border">
+                                                    {entry.installments.map(
+                                                        (installment) => {
+                                                            const installmentUsesCard =
+                                                                installment.payment_method ===
+                                                                'credit_card';
+
+                                                            return (
+                                                                <div
+                                                                    key={
+                                                                        installment.id
+                                                                    }
+                                                                    className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between"
+                                                                >
+                                                                    <div>
+                                                                        <p className="font-medium">
+                                                                            Parcela{' '}
+                                                                            {
+                                                                                installment.installment_number
+                                                                            }
+                                                                            /
+                                                                            {
+                                                                                installment.installment_count
+                                                                            }{' '}
+                                                                            ·{' '}
+                                                                            {currency.format(
+                                                                                Number(
+                                                                                    installment.amount,
+                                                                                ),
+                                                                            )}
+                                                                        </p>
+                                                                        <p className="text-muted-foreground text-xs">
+                                                                            Vence em{' '}
+                                                                            {installment.due_date
+                                                                                ? formatDate(
+                                                                                      installment.due_date,
+                                                                                  )
+                                                                                : '—'}
+                                                                            {' · '}
+                                                                            {installmentUsesCard
+                                                                                ? 'vai para a fatura'
+                                                                                : installment.settled_on
+                                                                                  ? `paga em ${formatDate(
+                                                                                        installment.settled_on,
+                                                                                    )}`
+                                                                                  : 'pendente'}
+                                                                        </p>
+                                                                    </div>
+
+                                                                    {!installmentUsesCard &&
+                                                                        installment.status !==
+                                                                            'cancelled' && (
+                                                                            <Form
+                                                                                {...FinancialTransactionController.toggleSettlement.form(
+                                                                                    installment.id,
+                                                                                )}
+                                                                                options={{
+                                                                                    preserveScroll:
+                                                                                        true,
+                                                                                }}
+                                                                            >
+                                                                                {({
+                                                                                    processing,
+                                                                                }) => (
+                                                                                    <Button
+                                                                                        variant={
+                                                                                            installment.is_settled
+                                                                                                ? 'ghost'
+                                                                                                : 'outline'
+                                                                                        }
+                                                                                        size="sm"
+                                                                                        disabled={
+                                                                                            processing
+                                                                                        }
+                                                                                    >
+                                                                                        {installment.is_settled ? (
+                                                                                            <Undo2 />
+                                                                                        ) : (
+                                                                                            <CircleCheckBig />
+                                                                                        )}
+                                                                                        {installment.is_settled
+                                                                                            ? 'Desfazer'
+                                                                                            : 'Pagar hoje'}
+                                                                                    </Button>
+                                                                                )}
+                                                                            </Form>
+                                                                        )}
+                                                                </div>
+                                                            );
+                                                        },
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            !usesCreditCard &&
                                             !entry.is_settled &&
                                             entry.status !== 'cancelled' && (
                                                 <div className="text-muted-foreground flex items-center gap-2 sm:col-span-2 lg:col-span-4">
@@ -311,7 +420,8 @@ export default function TransactionsIndex() {
                                                     conta; o caixa será afetado
                                                     somente na liquidação.
                                                 </div>
-                                            )}
+                                            )
+                                        )}
                                     </CardContent>
                                     <CardFooter className="flex flex-wrap justify-end gap-2">
                                         <Button
@@ -325,7 +435,8 @@ export default function TransactionsIndex() {
                                             </Link>
                                         </Button>
 
-                                        {!usesCreditCard &&
+                                        {!entry.is_installment_purchase &&
+                                            !usesCreditCard &&
                                             entry.status !== 'cancelled' && (
                                                 <Form
                                                     {...FinancialTransactionController.toggleSettlement.form(
