@@ -22,6 +22,28 @@ class SaveFinancialEntryRequest extends FormRequest
         return $this->user() !== null;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $defaults = [];
+
+        if (! $this->has('competence_date') && $this->filled('transaction_date')) {
+            $defaults['competence_date'] = $this->input('transaction_date');
+        }
+
+        if (
+            ! $this->has('settled_on')
+            && $this->input('status') === FinancialTransactionStatus::Confirmed->value
+            && $this->input('payment_method') !== PaymentMethod::CreditCard->value
+            && $this->filled('transaction_date')
+        ) {
+            $defaults['settled_on'] = $this->input('transaction_date');
+        }
+
+        if ($defaults !== []) {
+            $this->merge($defaults);
+        }
+    }
+
     /**
      * @return array<string, ValidationRule|array<mixed>|string>
      */
@@ -35,6 +57,7 @@ class SaveFinancialEntryRequest extends FormRequest
         $paymentMethod = PaymentMethod::tryFrom((string) $this->input('payment_method'));
         $isCreditCardExpense = $type === FinancialTransactionType::Expense
             && $paymentMethod === PaymentMethod::CreditCard;
+        $isSettled = filled($this->input('settled_on'));
         $isCreate = $this->routeIs('transactions.store');
 
         $existsInWorkspace = fn (string $model): mixed => Rule::exists($model, 'id')
@@ -60,6 +83,7 @@ class SaveFinancialEntryRequest extends FormRequest
                 ]),
             ],
             'transaction_date' => ['required', 'date'],
+            'competence_date' => ['required', 'date'],
             'description' => ['required', 'string', 'max:160'],
             'amount' => ['required', 'numeric', 'decimal:0,2', 'gt:0', 'max:9999999999999.99'],
             'financial_account_id' => [
@@ -100,9 +124,20 @@ class SaveFinancialEntryRequest extends FormRequest
                 'date',
                 Rule::requiredIf(
                     ! $isCreditCardExpense
-                    && $status === FinancialTransactionStatus::Planned,
+                    && (
+                        $status === FinancialTransactionStatus::Planned
+                        || ($status === FinancialTransactionStatus::Confirmed && ! $isSettled)
+                    ),
                 ),
                 Rule::prohibitedIf($isCreditCardExpense),
+            ],
+            'settled_on' => [
+                'nullable',
+                'date',
+                Rule::prohibitedIf(
+                    $isCreditCardExpense
+                    || $status !== FinancialTransactionStatus::Confirmed,
+                ),
             ],
             'status' => [
                 'required',
@@ -122,7 +157,8 @@ class SaveFinancialEntryRequest extends FormRequest
     {
         return [
             'type' => 'tipo',
-            'transaction_date' => 'data do lançamento',
+            'transaction_date' => 'data do fato financeiro',
+            'competence_date' => 'competência',
             'description' => 'descrição',
             'amount' => 'valor',
             'financial_account_id' => 'conta',
@@ -134,6 +170,7 @@ class SaveFinancialEntryRequest extends FormRequest
             'payee_name' => 'favorecido ou pagador',
             'payment_instructions' => 'instruções de pagamento',
             'due_date' => 'vencimento',
+            'settled_on' => 'data efetiva de pagamento ou recebimento',
             'status' => 'situação',
             'notes' => 'observações',
         ];
