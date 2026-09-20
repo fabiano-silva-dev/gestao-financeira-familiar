@@ -31,6 +31,9 @@ use Illuminate\Support\Carbon;
  * @property string|null $payment_instructions
  * @property Carbon|null $due_date
  * @property Carbon|null $settled_on
+ * @property int|null $parent_transaction_id
+ * @property int|null $installment_number
+ * @property int|null $installment_count
  * @property FinancialTransactionStatus $status
  * @property FinancialTransactionOrigin $origin
  * @property string|null $notes
@@ -52,79 +55,66 @@ use Illuminate\Support\Carbon;
     'payment_instructions',
     'due_date',
     'settled_on',
+    'parent_transaction_id',
+    'installment_number',
+    'installment_count',
     'status',
     'origin',
     'notes',
 ])]
 class FinancialTransaction extends Model
 {
-    /**
-     * @return BelongsTo<Workspace, $this>
-     */
     public function workspace(): BelongsTo
     {
         return $this->belongsTo(Workspace::class);
     }
 
-    /**
-     * @return BelongsTo<FinancialAccount, $this>
-     */
     public function account(): BelongsTo
     {
         return $this->belongsTo(FinancialAccount::class, 'financial_account_id');
     }
 
-    /**
-     * @return BelongsTo<FinancialAccount, $this>
-     */
     public function sourceAccount(): BelongsTo
     {
         return $this->belongsTo(FinancialAccount::class, 'source_account_id');
     }
 
-    /**
-     * @return BelongsTo<FinancialAccount, $this>
-     */
     public function destinationAccount(): BelongsTo
     {
         return $this->belongsTo(FinancialAccount::class, 'destination_account_id');
     }
 
-    /**
-     * @return BelongsTo<CreditCard, $this>
-     */
     public function creditCard(): BelongsTo
     {
         return $this->belongsTo(CreditCard::class);
     }
 
-    /**
-     * @return BelongsTo<Category, $this>
-     */
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
     }
 
-    /**
-     * @return BelongsTo<FamilyMember, $this>
-     */
     public function familyMember(): BelongsTo
     {
         return $this->belongsTo(FamilyMember::class);
     }
 
-    /**
-     * @return HasMany<AccountMovement, $this>
-     */
+    public function parentTransaction(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_transaction_id');
+    }
+
+    public function installments(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_transaction_id')
+            ->orderBy('installment_number');
+    }
+
     public function accountMovements(): HasMany
     {
         return $this->hasMany(AccountMovement::class);
     }
 
-    /**
-     * @return array<string, string>
-     */
     protected function casts(): array
     {
         return [
@@ -135,6 +125,8 @@ class FinancialTransaction extends Model
             'payment_method' => PaymentMethod::class,
             'due_date' => 'date',
             'settled_on' => 'date',
+            'installment_number' => 'integer',
+            'installment_count' => 'integer',
             'status' => FinancialTransactionStatus::class,
             'origin' => FinancialTransactionOrigin::class,
         ];
