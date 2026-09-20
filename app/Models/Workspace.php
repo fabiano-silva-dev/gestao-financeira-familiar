@@ -66,6 +66,14 @@ class Workspace extends Model
     }
 
     /**
+     * @return HasMany<FinancialRecurrence, $this>
+     */
+    public function financialRecurrences(): HasMany
+    {
+        return $this->hasMany(FinancialRecurrence::class);
+    }
+
+    /**
      * @return HasMany<FinancialTransaction, $this>
      */
     public function financialTransactions(): HasMany
