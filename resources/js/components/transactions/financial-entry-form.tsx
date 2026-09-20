@@ -48,7 +48,7 @@ export default function FinancialEntryForm({
     );
     const [status, setStatus] = useState(entry?.status ?? 'confirmed');
     const [settlementDate, setSettlementDate] = useState(
-        entry?.settled_on ?? (!entry ? defaultDate ?? '' : ''),
+        entry?.settled_on ?? (!entry ? (defaultDate ?? '') : ''),
     );
     const [accountSelection, setAccountSelection] = useState(
         entry?.financial_account_id ? String(entry.financial_account_id) : '',
@@ -408,14 +408,14 @@ export default function FinancialEntryForm({
 
                     <div className="grid gap-4 sm:grid-cols-2">
                         <div className="grid gap-2">
-                            <Label htmlFor="status">Situação do lançamento</Label>
+                            <Label htmlFor="status">
+                                Situação do lançamento
+                            </Label>
                             <Select
                                 name="status"
                                 value={status}
                                 onValueChange={(value) =>
-                                    setStatus(
-                                        value as FinancialEntry['status'],
-                                    )
+                                    setStatus(value as FinancialEntry['status'])
                                 }
                                 required
                             >
