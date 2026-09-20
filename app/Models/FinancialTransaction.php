@@ -97,6 +97,14 @@ class FinancialTransaction extends Model
     }
 
     /**
+     * @return HasMany<TransactionInstallment, $this>
+     */
+    public function installments(): HasMany
+    {
+        return $this->hasMany(TransactionInstallment::class);
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

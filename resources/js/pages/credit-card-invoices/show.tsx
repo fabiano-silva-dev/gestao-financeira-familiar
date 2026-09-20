@@ -1,0 +1,461 @@
+import { Form, Head, Link, usePage } from '@inertiajs/react';
+import { ArrowLeft, CheckCircle2, WalletCards } from 'lucide-react';
+import { useState } from 'react';
+import CreditCardInvoiceController from '@/actions/App/Http/Controllers/CreditCardInvoiceController';
+import InputError from '@/components/input-error';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+    Card,
+    CardContent,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import { index } from '@/routes/credit-card-invoices';
+import type {
+    CreditCardInvoice,
+    FinancialEntryReferenceOption,
+    PaymentMethodOption,
+} from '@/types';
+
+type Props = {
+    invoice: CreditCardInvoice;
+    accountOptions: FinancialEntryReferenceOption[];
+    paymentMethods: PaymentMethodOption[];
+    defaultPaymentAccountId: number | null;
+    defaultPaymentMethod: string;
+    defaultPaymentDate: string;
+};
+
+const currency = new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+});
+
+const date = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'UTC',
+});
+
+function formatDate(value: string) {
+    return date.format(new Date(`${value}T00:00:00Z`));
+}
+
+export default function CreditCardInvoiceShow() {
+    const {
+        invoice,
+        accountOptions,
+        paymentMethods,
+        defaultPaymentAccountId,
+        defaultPaymentMethod,
+        defaultPaymentDate,
+    } = usePage<Props>().props;
+    const [accountId, setAccountId] = useState(
+        defaultPaymentAccountId ? String(defaultPaymentAccountId) : '',
+    );
+    const [paymentMethod, setPaymentMethod] = useState(defaultPaymentMethod);
+    const installments = invoice.installments ?? [];
+    const payments = invoice.payments ?? [];
+
+    return (
+        <>
+            <Head title={`Fatura ${invoice.credit_card_name}`} />
+
+            <div className="flex h-full flex-1 flex-col gap-6 p-4 md:p-6">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                        <Button variant="ghost" size="sm" className="mb-2" asChild>
+                            <Link href={index()}>
+                                <ArrowLeft />
+                                Voltar para faturas
+                            </Link>
+                        </Button>
+                        <h1 className="text-2xl font-semibold tracking-tight">
+                            {invoice.credit_card_name} · final{' '}
+                            {invoice.credit_card_last_four}
+                        </h1>
+                        <p className="text-muted-foreground text-sm">
+                            Fecha em {formatDate(invoice.closing_date)} · vence em{' '}
+                            {formatDate(invoice.due_date)}
+                        </p>
+                    </div>
+                    <Badge
+                        variant={
+                            invoice.status === 'overdue'
+                                ? 'destructive'
+                                : 'outline'
+                        }
+                    >
+                        {invoice.status_label}
+                    </Badge>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-3">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-sm">Fatura</CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-2xl font-semibold tabular-nums">
+                            {currency.format(
+                                Number(
+                                    invoice.statement_amount ??
+                                        invoice.calculated_amount,
+                                ),
+                            )}
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-sm">Pago</CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-2xl font-semibold tabular-nums">
+                            {currency.format(Number(invoice.paid_amount))}
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-sm">Em aberto</CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-2xl font-semibold tabular-nums">
+                            {currency.format(Number(invoice.outstanding_amount))}
+                        </CardContent>
+                    </Card>
+                </div>
+
+                {invoice.can_close && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Fechar fatura</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <Form
+                                {...CreditCardInvoiceController.close.form(
+                                    invoice.id,
+                                )}
+                                options={{ preserveScroll: true }}
+                                className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end"
+                            >
+                                {({ processing, errors }) => (
+                                    <>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="statement_amount">
+                                                Valor informado pela operadora
+                                            </Label>
+                                            <Input
+                                                id="statement_amount"
+                                                name="statement_amount"
+                                                type="number"
+                                                step="0.01"
+                                                min="0.01"
+                                                defaultValue={
+                                                    invoice.calculated_amount
+                                                }
+                                            />
+                                            <InputError
+                                                message={errors.statement_amount}
+                                            />
+                                        </div>
+                                        <Button disabled={processing}>
+                                            <CheckCircle2 />
+                                            Fechar fatura
+                                        </Button>
+                                    </>
+                                )}
+                            </Form>
+                        </CardContent>
+                    </Card>
+                )}
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Compras e parcelas</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                        {installments.length === 0 ? (
+                            <p className="text-muted-foreground text-sm">
+                                Nenhuma parcela nesta fatura.
+                            </p>
+                        ) : (
+                            installments.map((installment) => (
+                                <div
+                                    key={installment.id}
+                                    className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+                                >
+                                    <div className="min-w-0">
+                                        <p className="font-medium">
+                                            {installment.description}
+                                        </p>
+                                        <p className="text-muted-foreground text-xs">
+                                            Parcela {installment.installment_number}/
+                                            {installment.total_installments} · compra em{' '}
+                                            {formatDate(
+                                                installment.transaction_date,
+                                            )}
+                                            {installment.category_name
+                                                ? ` · ${installment.category_name}`
+                                                : ''}
+                                            {installment.family_member_name
+                                                ? ` · ${installment.family_member_name}`
+                                                : ''}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <Badge variant="outline">
+                                            {installment.status_label}
+                                        </Badge>
+                                        <p className="font-semibold tabular-nums">
+                                            {currency.format(
+                                                Number(installment.amount),
+                                            )}
+                                        </p>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </CardContent>
+                </Card>
+
+                {invoice.can_pay && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Registrar pagamento</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <Form
+                                {...CreditCardInvoiceController.pay.form(
+                                    invoice.id,
+                                )}
+                                options={{ preserveScroll: true }}
+                                className="grid gap-4"
+                            >
+                                {({ processing, errors }) => (
+                                    <>
+                                        <div className="grid gap-4 md:grid-cols-2">
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="financial_account_id">
+                                                    Conta de pagamento
+                                                </Label>
+                                                <input
+                                                    type="hidden"
+                                                    name="financial_account_id"
+                                                    value={accountId}
+                                                />
+                                                <Select
+                                                    value={accountId}
+                                                    onValueChange={setAccountId}
+                                                    required
+                                                >
+                                                    <SelectTrigger
+                                                        id="financial_account_id"
+                                                        className="w-full"
+                                                    >
+                                                        <SelectValue placeholder="Selecione a conta" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {accountOptions.map(
+                                                            (account) => (
+                                                                <SelectItem
+                                                                    key={
+                                                                        account.id
+                                                                    }
+                                                                    value={String(
+                                                                        account.id,
+                                                                    )}
+                                                                >
+                                                                    {account.name}
+                                                                    {account.is_active
+                                                                        ? ''
+                                                                        : ' (inativa)'}
+                                                                </SelectItem>
+                                                            ),
+                                                        )}
+                                                    </SelectContent>
+                                                </Select>
+                                                <InputError
+                                                    message={
+                                                        errors.financial_account_id
+                                                    }
+                                                />
+                                            </div>
+
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="payment_method">
+                                                    Forma de pagamento
+                                                </Label>
+                                                <input
+                                                    type="hidden"
+                                                    name="payment_method"
+                                                    value={paymentMethod}
+                                                />
+                                                <Select
+                                                    value={paymentMethod}
+                                                    onValueChange={setPaymentMethod}
+                                                >
+                                                    <SelectTrigger
+                                                        id="payment_method"
+                                                        className="w-full"
+                                                    >
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {paymentMethods.map(
+                                                            (method) => (
+                                                                <SelectItem
+                                                                    key={
+                                                                        method.value
+                                                                    }
+                                                                    value={
+                                                                        method.value
+                                                                    }
+                                                                >
+                                                                    {method.label}
+                                                                </SelectItem>
+                                                            ),
+                                                        )}
+                                                    </SelectContent>
+                                                </Select>
+                                                <InputError
+                                                    message={errors.payment_method}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="grid gap-4 md:grid-cols-2">
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="paid_on">
+                                                    Data do pagamento
+                                                </Label>
+                                                <Input
+                                                    id="paid_on"
+                                                    name="paid_on"
+                                                    type="date"
+                                                    defaultValue={
+                                                        defaultPaymentDate
+                                                    }
+                                                    required
+                                                />
+                                                <InputError
+                                                    message={errors.paid_on}
+                                                />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="amount">
+                                                    Valor pago
+                                                </Label>
+                                                <Input
+                                                    id="amount"
+                                                    name="amount"
+                                                    type="number"
+                                                    step="0.01"
+                                                    min="0.01"
+                                                    max={
+                                                        invoice.outstanding_amount
+                                                    }
+                                                    defaultValue={
+                                                        invoice.outstanding_amount
+                                                    }
+                                                    required
+                                                />
+                                                <InputError
+                                                    message={errors.amount}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {invoice.payment_instructions && (
+                                            <div className="bg-muted/50 rounded-lg p-3 text-sm">
+                                                <p className="font-medium">
+                                                    Instruções cadastradas
+                                                </p>
+                                                <p className="text-muted-foreground mt-1 text-xs">
+                                                    {
+                                                        invoice.payment_instructions
+                                                    }
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="notes">
+                                                Observações
+                                            </Label>
+                                            <Input
+                                                id="notes"
+                                                name="notes"
+                                                placeholder="Opcional"
+                                                maxLength={2000}
+                                            />
+                                            <InputError
+                                                message={errors.notes}
+                                            />
+                                        </div>
+
+                                        <div className="flex justify-end">
+                                            <Button disabled={processing}>
+                                                <WalletCards />
+                                                Registrar pagamento
+                                            </Button>
+                                        </div>
+                                    </>
+                                )}
+                            </Form>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {payments.length > 0 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Pagamentos registrados</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            {payments.map((payment) => (
+                                <div
+                                    key={payment.id}
+                                    className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+                                >
+                                    <div>
+                                        <p className="font-medium">
+                                            {payment.account_name}
+                                        </p>
+                                        <p className="text-muted-foreground text-xs">
+                                            {formatDate(payment.paid_on)} ·{' '}
+                                            {payment.payment_method_label}
+                                        </p>
+                                        {payment.notes && (
+                                            <p className="text-muted-foreground mt-1 text-xs">
+                                                {payment.notes}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <p className="font-semibold tabular-nums">
+                                        {currency.format(
+                                            Number(payment.amount),
+                                        )}
+                                    </p>
+                                </div>
+                            ))}
+                        </CardContent>
+                    </Card>
+                )}
+            </div>
+        </>
+    );
+}
+
+CreditCardInvoiceShow.layout = {
+    breadcrumbs: [
+        {
+            title: 'Faturas',
+            href: index(),
+        },
+    ],
+};

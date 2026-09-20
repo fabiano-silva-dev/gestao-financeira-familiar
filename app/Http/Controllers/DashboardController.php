@@ -28,10 +28,17 @@ class DashboardController extends Controller
 
         $openingBalance = (float) $workspace->financialAccounts()->sum('opening_balance');
         $confirmedMovements = (float) $workspace->accountMovements()
-            ->whereHas('transaction', fn ($query) => $query->where(
-                'status',
-                FinancialTransactionStatus::Confirmed->value,
-            ))
+            ->where(function ($query): void {
+                $query
+                    ->whereHas(
+                        'transaction',
+                        fn ($transactionQuery) => $transactionQuery->where(
+                            'status',
+                            FinancialTransactionStatus::Confirmed->value,
+                        ),
+                    )
+                    ->orWhereNotNull('credit_card_invoice_payment_id');
+            })
             ->sum('amount');
         $currentBalance = $openingBalance + $confirmedMovements;
 

@@ -40,6 +40,7 @@ class FinancialTransactionController extends Controller
                 'category.parent:id,name',
                 'familyMember:id,name',
             ])
+            ->withCount('installments')
             ->orderByDesc('transaction_date')
             ->orderByDesc('id')
             ->get()
@@ -154,6 +155,7 @@ class FinancialTransactionController extends Controller
                 'category.parent:id,name',
                 'familyMember:id,name',
             ])
+            ->withCount('installments')
             ->findOrFail($entry);
     }
 
@@ -238,6 +240,9 @@ class FinancialTransactionController extends Controller
             'credit_card_name' => $entry->creditCard === null
                 ? null
                 : "{$entry->creditCard->name} · final {$entry->creditCard->last_four}",
+            'installment_count' => $entry->credit_card_id === null
+                ? 1
+                : max(1, (int) ($entry->getAttribute('installments_count') ?? 0)),
             'category_id' => $entry->category_id,
             'category_name' => $categoryName,
             'family_member_id' => $entry->family_member_id,

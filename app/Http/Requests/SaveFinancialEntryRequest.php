@@ -28,7 +28,6 @@ class SaveFinancialEntryRequest extends FormRequest
     public function rules(CurrentWorkspace $currentWorkspace): array
     {
         $workspace = $currentWorkspace->get();
-
         abort_if($workspace === null, 403);
 
         $type = FinancialTransactionType::tryFrom((string) $this->input('type'));
@@ -41,6 +40,16 @@ class SaveFinancialEntryRequest extends FormRequest
         $existsInWorkspace = fn (string $model): mixed => Rule::exists($model, 'id')
             ->where(fn (Builder $query): Builder => $query
                 ->where('workspace_id', $workspace->id));
+
+        $allowedStatuses = $isCreate
+            ? [FinancialTransactionStatus::Planned, FinancialTransactionStatus::Confirmed]
+            : FinancialTransactionStatus::cases();
+
+        if ($isCreditCardExpense) {
+            $allowedStatuses = $isCreate
+                ? [FinancialTransactionStatus::Confirmed]
+                : [FinancialTransactionStatus::Confirmed, FinancialTransactionStatus::Cancelled];
+        }
 
         return [
             'type' => [
@@ -66,6 +75,13 @@ class SaveFinancialEntryRequest extends FormRequest
                 Rule::prohibitedIf(! $isCreditCardExpense),
                 $existsInWorkspace(CreditCard::class),
             ],
+            'installment_count' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:60',
+                Rule::prohibitedIf(! $isCreditCardExpense),
+            ],
             'category_id' => [
                 'nullable',
                 'integer',
@@ -82,15 +98,17 @@ class SaveFinancialEntryRequest extends FormRequest
             'due_date' => [
                 'nullable',
                 'date',
-                Rule::requiredIf($status === FinancialTransactionStatus::Planned),
+                Rule::requiredIf(
+                    ! $isCreditCardExpense
+                    && $status === FinancialTransactionStatus::Planned,
+                ),
+                Rule::prohibitedIf($isCreditCardExpense),
             ],
             'status' => [
                 'required',
                 Rule::in(array_map(
                     fn (FinancialTransactionStatus $allowedStatus): string => $allowedStatus->value,
-                    $isCreate
-                        ? [FinancialTransactionStatus::Planned, FinancialTransactionStatus::Confirmed]
-                        : FinancialTransactionStatus::cases(),
+                    $allowedStatuses,
                 )),
             ],
             'notes' => ['nullable', 'string', 'max:2000'],
@@ -109,6 +127,7 @@ class SaveFinancialEntryRequest extends FormRequest
             'amount' => 'valor',
             'financial_account_id' => 'conta',
             'credit_card_id' => 'cartão',
+            'installment_count' => 'quantidade de parcelas',
             'category_id' => 'categoria',
             'family_member_id' => 'pessoa',
             'payment_method' => 'forma de pagamento',

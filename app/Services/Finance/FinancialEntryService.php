@@ -13,6 +13,10 @@ use Illuminate\Support\Facades\DB;
 
 class FinancialEntryService
 {
+    public function __construct(
+        private readonly CardPurchaseService $cardPurchaseService,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $data
      */
@@ -25,8 +29,9 @@ class FinancialEntryService
             ]);
 
             $this->syncMovement($entry);
+            $this->syncInstallments($entry, $data);
 
-            return $entry;
+            return $entry->refresh();
         });
     }
 
@@ -37,31 +42,37 @@ class FinancialEntryService
     {
         return DB::transaction(function () use ($entry, $data): FinancialTransaction {
             $entry->update($this->entryData($data));
-            $this->syncMovement($entry->refresh());
+            $entry->refresh();
+            $this->syncMovement($entry);
+            $this->syncInstallments($entry, $data);
 
-            return $entry;
+            return $entry->refresh();
         });
     }
 
     public function advanceStatus(FinancialTransaction $entry): FinancialTransaction
     {
-        $status = match ($entry->status) {
-            FinancialTransactionStatus::Planned => FinancialTransactionStatus::Confirmed,
-            FinancialTransactionStatus::Confirmed => FinancialTransactionStatus::Cancelled,
-            FinancialTransactionStatus::Cancelled => FinancialTransactionStatus::Confirmed,
-        };
+        return DB::transaction(function () use ($entry): FinancialTransaction {
+            $status = match ($entry->status) {
+                FinancialTransactionStatus::Planned => FinancialTransactionStatus::Confirmed,
+                FinancialTransactionStatus::Confirmed => FinancialTransactionStatus::Cancelled,
+                FinancialTransactionStatus::Cancelled => FinancialTransactionStatus::Confirmed,
+            };
 
-        if (
-            $status === FinancialTransactionStatus::Confirmed
-            && $entry->credit_card_id === null
-            && $entry->financial_account_id === null
-        ) {
-            abort(422, 'Informe uma conta antes de confirmar o lançamento.');
-        }
+            if (
+                $status === FinancialTransactionStatus::Confirmed
+                && $entry->credit_card_id === null
+                && $entry->financial_account_id === null
+            ) {
+                abort(422, 'Informe uma conta antes de confirmar o lançamento.');
+            }
 
-        $entry->update(['status' => $status]);
+            $entry->update(['status' => $status]);
+            $entry->refresh();
+            $this->cardPurchaseService->syncStatus($entry);
 
-        return $entry;
+            return $entry;
+        });
     }
 
     /**
@@ -86,6 +97,26 @@ class FinancialEntryService
             'status' => $data['status'],
             'notes' => $data['notes'] ?? null,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function syncInstallments(FinancialTransaction $entry, array $data): void
+    {
+        if (
+            $entry->type === FinancialTransactionType::Expense
+            && $entry->credit_card_id !== null
+        ) {
+            $this->cardPurchaseService->sync(
+                $entry,
+                (int) ($data['installment_count'] ?? 1),
+            );
+
+            return;
+        }
+
+        $this->cardPurchaseService->clear($entry);
     }
 
     private function syncMovement(FinancialTransaction $entry): void

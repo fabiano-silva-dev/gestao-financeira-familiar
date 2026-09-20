@@ -58,11 +58,35 @@ class Workspace extends Model
     }
 
     /**
+     * @return HasMany<CreditCardInvoice, $this>
+     */
+    public function creditCardInvoices(): HasMany
+    {
+        return $this->hasMany(CreditCardInvoice::class);
+    }
+
+    /**
      * @return HasMany<FinancialTransaction, $this>
      */
     public function financialTransactions(): HasMany
     {
         return $this->hasMany(FinancialTransaction::class);
+    }
+
+    /**
+     * @return HasMany<TransactionInstallment, $this>
+     */
+    public function transactionInstallments(): HasMany
+    {
+        return $this->hasMany(TransactionInstallment::class);
+    }
+
+    /**
+     * @return HasMany<CreditCardInvoicePayment, $this>
+     */
+    public function creditCardInvoicePayments(): HasMany
+    {
+        return $this->hasMany(CreditCardInvoicePayment::class);
     }
 
     /**

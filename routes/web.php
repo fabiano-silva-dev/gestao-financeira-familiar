@@ -3,6 +3,7 @@
 use App\Http\Controllers\ActiveWorkspaceController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CreditCardController;
+use App\Http\Controllers\CreditCardInvoiceController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FamilyMemberController;
 use App\Http\Controllers\FinancialAccountController;
@@ -78,6 +79,18 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::patch('cartoes/{card}/status', [CreditCardController::class, 'toggleStatus'])
         ->whereNumber('card')
         ->name('credit-cards.toggle-status');
+
+    Route::get('faturas', [CreditCardInvoiceController::class, 'index'])
+        ->name('credit-card-invoices.index');
+    Route::get('faturas/{invoice}', [CreditCardInvoiceController::class, 'show'])
+        ->whereNumber('invoice')
+        ->name('credit-card-invoices.show');
+    Route::patch('faturas/{invoice}/fechar', [CreditCardInvoiceController::class, 'close'])
+        ->whereNumber('invoice')
+        ->name('credit-card-invoices.close');
+    Route::post('faturas/{invoice}/pagamentos', [CreditCardInvoiceController::class, 'pay'])
+        ->whereNumber('invoice')
+        ->name('credit-card-invoices.pay');
 
     Route::get('lancamentos', [FinancialTransactionController::class, 'index'])
         ->name('transactions.index');

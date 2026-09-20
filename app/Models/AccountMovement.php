@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable([
     'workspace_id',
     'financial_transaction_id',
+    'credit_card_invoice_payment_id',
     'financial_account_id',
     'occurred_on',
     'description',
@@ -33,6 +34,14 @@ class AccountMovement extends Model
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(FinancialTransaction::class, 'financial_transaction_id');
+    }
+
+    /**
+     * @return BelongsTo<CreditCardInvoicePayment, $this>
+     */
+    public function invoicePayment(): BelongsTo
+    {
+        return $this->belongsTo(CreditCardInvoicePayment::class, 'credit_card_invoice_payment_id');
     }
 
     /**

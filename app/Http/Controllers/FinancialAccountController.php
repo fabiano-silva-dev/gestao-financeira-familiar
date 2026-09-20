@@ -29,10 +29,14 @@ class FinancialAccountController extends Controller
                     financial_accounts.opening_balance + COALESCE((
                         SELECT SUM(account_movements.amount)
                         FROM account_movements
-                        INNER JOIN financial_transactions
+                        LEFT JOIN financial_transactions
                             ON financial_transactions.id = account_movements.financial_transaction_id
                         WHERE account_movements.financial_account_id = financial_accounts.id
-                            AND financial_transactions.status = ?
+                            AND account_movements.workspace_id = financial_accounts.workspace_id
+                            AND (
+                                financial_transactions.status = ?
+                                OR account_movements.credit_card_invoice_payment_id IS NOT NULL
+                            )
                     ), 0) AS current_balance
                 SQL,
                 [FinancialTransactionStatus::Confirmed->value],

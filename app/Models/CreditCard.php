@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'name',
@@ -49,6 +50,22 @@ class CreditCard extends Model
     public function paymentAccount(): BelongsTo
     {
         return $this->belongsTo(FinancialAccount::class, 'payment_account_id');
+    }
+
+    /**
+     * @return HasMany<CreditCardInvoice, $this>
+     */
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(CreditCardInvoice::class);
+    }
+
+    /**
+     * @return HasMany<FinancialTransaction, $this>
+     */
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(FinancialTransaction::class);
     }
 
     /**

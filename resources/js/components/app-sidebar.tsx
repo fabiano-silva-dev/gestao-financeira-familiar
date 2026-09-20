@@ -7,6 +7,7 @@ import {
     ReceiptText,
     Tags,
     Users,
+    WalletCards,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
@@ -23,6 +24,7 @@ import {
 import { dashboard } from '@/routes';
 import { index as accountsIndex } from '@/routes/accounts';
 import { index as categoriesIndex } from '@/routes/categories';
+import { index as creditCardInvoicesIndex } from '@/routes/credit-card-invoices';
 import { index as creditCardsIndex } from '@/routes/credit-cards';
 import { index as familyMembersIndex } from '@/routes/family-members';
 import { index as transactionsIndex } from '@/routes/transactions';
@@ -49,6 +51,11 @@ const mainNavItems: NavItem[] = [
         title: 'Cartões',
         href: creditCardsIndex(),
         icon: CreditCard,
+    },
+    {
+        title: 'Faturas',
+        href: creditCardInvoicesIndex(),
+        icon: WalletCards,
     },
     {
         title: 'Transferências',

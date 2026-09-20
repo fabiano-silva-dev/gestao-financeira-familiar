@@ -64,6 +64,14 @@ export default function FinancialEntryForm({
         ? FinancialTransactionController.update.form(entry.id)
         : FinancialTransactionController.store.form();
 
+    function changePaymentMethod(value: string) {
+        setPaymentMethod(value);
+
+        if (isExpense && value === 'credit_card') {
+            setStatus(entry?.status === 'cancelled' ? 'cancelled' : 'confirmed');
+        }
+    }
+
     return (
         <Form
             {...form}
@@ -95,7 +103,7 @@ export default function FinancialEntryForm({
                         </div>
 
                         <div className="grid gap-2">
-                            <Label htmlFor="amount">Valor</Label>
+                            <Label htmlFor="amount">Valor total</Label>
                             <Input
                                 id="amount"
                                 name="amount"
@@ -128,17 +136,31 @@ export default function FinancialEntryForm({
                             <InputError message={errors.transaction_date} />
                         </div>
 
-                        <div className="grid gap-2">
-                            <Label htmlFor="due_date">Vencimento</Label>
-                            <Input
-                                id="due_date"
-                                name="due_date"
-                                type="date"
-                                defaultValue={entry?.due_date ?? ''}
-                                required={status === 'planned'}
-                            />
-                            <InputError message={errors.due_date} />
-                        </div>
+                        {usesCreditCard ? (
+                            <div className="bg-muted/50 rounded-lg p-3 text-sm">
+                                <input type="hidden" name="due_date" value="" />
+                                <p className="font-medium">
+                                    Vencimento definido pela fatura
+                                </p>
+                                <p className="text-muted-foreground mt-1 text-xs">
+                                    A compra entra no ciclo do cartão conforme a
+                                    data do fato financeiro e o fechamento.
+                                </p>
+                                <InputError message={errors.due_date} />
+                            </div>
+                        ) : (
+                            <div className="grid gap-2">
+                                <Label htmlFor="due_date">Vencimento</Label>
+                                <Input
+                                    id="due_date"
+                                    name="due_date"
+                                    type="date"
+                                    defaultValue={entry?.due_date ?? ''}
+                                    required={status === 'planned'}
+                                />
+                                <InputError message={errors.due_date} />
+                            </div>
+                        )}
                     </div>
 
                     <div className="grid gap-4 sm:grid-cols-2">
@@ -234,7 +256,7 @@ export default function FinancialEntryForm({
                         <Select
                             name="payment_method"
                             value={paymentMethod}
-                            onValueChange={setPaymentMethod}
+                            onValueChange={changePaymentMethod}
                             required
                         >
                             <SelectTrigger
@@ -244,14 +266,20 @@ export default function FinancialEntryForm({
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                                {paymentMethods.map((method) => (
-                                    <SelectItem
-                                        key={method.value}
-                                        value={method.value}
-                                    >
-                                        {method.label}
-                                    </SelectItem>
-                                ))}
+                                {paymentMethods
+                                    .filter(
+                                        (method) =>
+                                            isExpense ||
+                                            method.value !== 'credit_card',
+                                    )
+                                    .map((method) => (
+                                        <SelectItem
+                                            key={method.value}
+                                            value={method.value}
+                                        >
+                                            {method.label}
+                                        </SelectItem>
+                                    ))}
                             </SelectContent>
                         </Select>
                         <InputError message={errors.payment_method} />
@@ -290,10 +318,33 @@ export default function FinancialEntryForm({
                                 </SelectContent>
                             </Select>
                             <p className="text-muted-foreground text-xs">
-                                A compra será despesa agora; a saída da conta
-                                ocorrerá somente no pagamento da fatura.
+                                O gasto é reconhecido na compra. O saldo bancário
+                                só muda quando a fatura for paga.
                             </p>
                             <InputError message={errors.credit_card_id} />
+
+                            <div className="mt-2 grid gap-2">
+                                <Label htmlFor="installment_count">
+                                    Quantidade de parcelas
+                                </Label>
+                                <Input
+                                    id="installment_count"
+                                    name="installment_count"
+                                    type="number"
+                                    min="1"
+                                    max="60"
+                                    step="1"
+                                    defaultValue={entry?.installment_count ?? 1}
+                                    required
+                                />
+                                <p className="text-muted-foreground text-xs">
+                                    O valor total da compra será preservado e
+                                    distribuído entre as parcelas vinculadas.
+                                </p>
+                                <InputError
+                                    message={errors.installment_count}
+                                />
+                            </div>
                         </div>
                     ) : (
                         <div className="grid gap-2">
@@ -375,39 +426,61 @@ export default function FinancialEntryForm({
                         <InputError message={errors.payment_instructions} />
                     </div>
 
-                    <div className="grid gap-2">
-                        <Label htmlFor="status">Situação</Label>
-                        <Select
-                            name="status"
-                            value={status}
-                            onValueChange={(value) =>
-                                setStatus(value as FinancialEntry['status'])
-                            }
-                            required
-                        >
-                            <SelectTrigger id="status" className="w-full">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="confirmed">
-                                    {isExpense
-                                        ? 'Paga — altera o saldo agora'
-                                        : 'Recebida — altera o saldo agora'}
-                                </SelectItem>
-                                <SelectItem value="planned">
-                                    {isExpense
-                                        ? 'A pagar — compromisso futuro'
-                                        : 'A receber — previsão futura'}
-                                </SelectItem>
-                                {entry?.status === 'cancelled' && (
-                                    <SelectItem value="cancelled">
-                                        Cancelada — sem efeito no saldo
+                    {usesCreditCard ? (
+                        <div className="bg-muted/50 rounded-lg p-3 text-sm">
+                            <input
+                                type="hidden"
+                                name="status"
+                                value={
+                                    entry?.status === 'cancelled'
+                                        ? 'cancelled'
+                                        : 'confirmed'
+                                }
+                            />
+                            <p className="font-medium">Compra confirmada</p>
+                            <p className="text-muted-foreground mt-1 text-xs">
+                                Compras no cartão geram parcelas e faturas, sem
+                                saída imediata da conta bancária.
+                            </p>
+                            <InputError message={errors.status} />
+                        </div>
+                    ) : (
+                        <div className="grid gap-2">
+                            <Label htmlFor="status">Situação</Label>
+                            <Select
+                                name="status"
+                                value={status}
+                                onValueChange={(value) =>
+                                    setStatus(
+                                        value as FinancialEntry['status'],
+                                    )
+                                }
+                                required
+                            >
+                                <SelectTrigger id="status" className="w-full">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="confirmed">
+                                        {isExpense
+                                            ? 'Paga — altera o saldo agora'
+                                            : 'Recebida — altera o saldo agora'}
                                     </SelectItem>
-                                )}
-                            </SelectContent>
-                        </Select>
-                        <InputError message={errors.status} />
-                    </div>
+                                    <SelectItem value="planned">
+                                        {isExpense
+                                            ? 'A pagar — compromisso futuro'
+                                            : 'A receber — previsão futura'}
+                                    </SelectItem>
+                                    {entry?.status === 'cancelled' && (
+                                        <SelectItem value="cancelled">
+                                            Cancelada — sem efeito no saldo
+                                        </SelectItem>
+                                    )}
+                                </SelectContent>
+                            </Select>
+                            <InputError message={errors.status} />
+                        </div>
+                    )}
 
                     <div className="grid gap-2">
                         <Label htmlFor="notes">Observações</Label>

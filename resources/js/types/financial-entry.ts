@@ -11,6 +11,7 @@ export type FinancialEntry = {
     financial_account_name: string | null;
     credit_card_id: number | null;
     credit_card_name: string | null;
+    installment_count: number;
     category_id: number | null;
     category_name: string | null;
     family_member_id: number | null;
