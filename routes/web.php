@@ -7,6 +7,7 @@ use App\Http\Controllers\CreditCardInvoiceController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FamilyMemberController;
 use App\Http\Controllers\FinancialAccountController;
+use App\Http\Controllers\FinancialRecurrenceController;
 use App\Http\Controllers\FinancialTransactionController;
 use App\Http\Controllers\TransferController;
 use Illuminate\Support\Facades\Route;
@@ -112,6 +113,22 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::patch('lancamentos/{entry}/liquidacao', [FinancialTransactionController::class, 'toggleSettlement'])
         ->whereNumber('entry')
         ->name('transactions.toggle-settlement');
+
+    Route::get('recorrencias', [FinancialRecurrenceController::class, 'index'])
+        ->name('recurrences.index');
+    Route::get('recorrencias/nova', [FinancialRecurrenceController::class, 'create'])
+        ->name('recurrences.create');
+    Route::post('recorrencias', [FinancialRecurrenceController::class, 'store'])
+        ->name('recurrences.store');
+    Route::get('recorrencias/{recurrence}/editar', [FinancialRecurrenceController::class, 'edit'])
+        ->whereNumber('recurrence')
+        ->name('recurrences.edit');
+    Route::put('recorrencias/{recurrence}', [FinancialRecurrenceController::class, 'update'])
+        ->whereNumber('recurrence')
+        ->name('recurrences.update');
+    Route::patch('recorrencias/{recurrence}/status', [FinancialRecurrenceController::class, 'toggleStatus'])
+        ->whereNumber('recurrence')
+        ->name('recurrences.toggle-status');
 
     Route::get('transferencias', [TransferController::class, 'index'])
         ->name('transfers.index');
