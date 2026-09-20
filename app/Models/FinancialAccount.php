@@ -10,6 +10,15 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * @property int $id
+ * @property int $workspace_id
+ * @property string $name
+ * @property string|null $institution
+ * @property FinancialAccountType $type
+ * @property string $opening_balance
+ * @property bool $is_active
+ */
 #[Fillable([
     'name',
     'institution',
