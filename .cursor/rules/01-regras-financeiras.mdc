@@ -16,6 +16,10 @@ Considere `GESTAO_FINANCEIRA_FAMILIAR.md` a referência principal do produto.
 - Importar um movimento bancário não significa automaticamente criar nova despesa ou receita. Antes, tente conciliá-lo com uma obrigação ou transação existente.
 - Evite qualquer modelagem que possa duplicar despesas ao combinar compra, parcela, fatura, pagamento e movimento bancário.
 - Recorrências devem gerar compromissos futuros rastreáveis até sua regra de origem.
+- Confirmar uma despesa ou receita não significa liquidá-la. O saldo da conta só muda quando existir data efetiva de pagamento/recebimento ou um pagamento de fatura.
+- A geração de recorrências deve ser idempotente por regra de origem + data da ocorrência.
+- Recorrências sem cartão podem gerar compromissos planejados antecipadamente. Recorrências pagas por cartão só devem materializar a compra quando a ocorrência chegar; projeções futuras não devem criar faturas antecipadamente.
+- Pausar uma recorrência interrompe a geração futura, preservando ocorrências já confirmadas, liquidadas ou históricas.
 - Conciliações devem manter vínculo entre movimento real e obrigação/transação correspondente, preservando o histórico.
 - Importações precisam ser idempotentes sempre que possível: reimportar o mesmo arquivo não deve duplicar movimentos.
 - Faturas devem ser entidades próprias, ligadas ao cartão e às compras/parcelas do ciclo.
