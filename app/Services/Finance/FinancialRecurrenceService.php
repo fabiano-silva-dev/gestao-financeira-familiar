@@ -205,12 +205,12 @@ class FinancialRecurrenceService
         CarbonImmutable $through,
     ): array {
         $start = CarbonImmutable::parse($recurrence->starts_on->toDateString());
-        $end = $recurrence->ends_on === null
-            ? $through
-            : min(
-                $through,
-                CarbonImmutable::parse($recurrence->ends_on->toDateString()),
-            );
+        $recurrenceEnd = $recurrence->ends_on === null
+            ? null
+            : CarbonImmutable::parse($recurrence->ends_on->toDateString());
+        $end = $recurrenceEnd !== null && $recurrenceEnd->lessThan($through)
+            ? $recurrenceEnd
+            : $through;
 
         if ($end->lessThan($start) || $end->lessThan($from)) {
             return [];
@@ -292,15 +292,18 @@ class FinancialRecurrenceService
                 }
             });
 
-        return array_values(array_map(
-            fn (array $month): array => [
+        $result = [];
+
+        foreach ($projection as $month) {
+            $result[] = [
                 'month' => $month['month'],
                 'income' => $this->money($month['income']),
                 'expenses' => $this->money($month['expenses']),
                 'net' => $this->money($month['income'] - $month['expenses']),
-            ],
-            $projection,
-        ));
+            ];
+        }
+
+        return $result;
     }
 
     private function clearFuturePlannedOccurrences(
@@ -362,6 +365,14 @@ class FinancialRecurrenceService
 
     private function money(int $cents): string
     {
-        return sprintf('%d.%02d', intdiv($cents, 100), $cents % 100);
+        $negative = $cents < 0;
+        $absolute = abs($cents);
+        $formatted = sprintf(
+            '%d.%02d',
+            intdiv($absolute, 100),
+            $absolute % 100,
+        );
+
+        return $negative ? '-'.$formatted : $formatted;
     }
 }
