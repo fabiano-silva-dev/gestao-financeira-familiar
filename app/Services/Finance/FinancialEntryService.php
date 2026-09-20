@@ -45,23 +45,45 @@ class FinancialEntryService
 
     public function advanceStatus(FinancialTransaction $entry): FinancialTransaction
     {
-        $status = match ($entry->status) {
-            FinancialTransactionStatus::Planned => FinancialTransactionStatus::Confirmed,
-            FinancialTransactionStatus::Confirmed => FinancialTransactionStatus::Cancelled,
-            FinancialTransactionStatus::Cancelled => FinancialTransactionStatus::Confirmed,
-        };
+        return DB::transaction(function () use ($entry): FinancialTransaction {
+            $status = match ($entry->status) {
+                FinancialTransactionStatus::Planned => FinancialTransactionStatus::Confirmed,
+                FinancialTransactionStatus::Confirmed => FinancialTransactionStatus::Cancelled,
+                FinancialTransactionStatus::Cancelled => FinancialTransactionStatus::Confirmed,
+            };
 
-        if (
-            $status === FinancialTransactionStatus::Confirmed
-            && $entry->credit_card_id === null
-            && $entry->financial_account_id === null
-        ) {
-            abort(422, 'Informe uma conta antes de confirmar o lançamento.');
-        }
+            $entry->update(['status' => $status]);
+            $this->syncMovement($entry->refresh());
 
-        $entry->update(['status' => $status]);
+            return $entry;
+        });
+    }
 
-        return $entry;
+    public function toggleSettlement(FinancialTransaction $entry): FinancialTransaction
+    {
+        abort_if(
+            $entry->credit_card_id !== null,
+            422,
+            'Compras no cartão são liquidadas pelo pagamento da fatura.',
+        );
+        abort_if(
+            $entry->status === FinancialTransactionStatus::Cancelled,
+            422,
+            'Reative o lançamento antes de registrar o pagamento ou recebimento.',
+        );
+
+        return DB::transaction(function () use ($entry): FinancialTransaction {
+            $entry->update([
+                'status' => FinancialTransactionStatus::Confirmed,
+                'settled_on' => $entry->settled_on === null
+                    ? now()->toDateString()
+                    : null,
+            ]);
+
+            $this->syncMovement($entry->refresh());
+
+            return $entry;
+        });
     }
 
     /**
@@ -73,6 +95,7 @@ class FinancialEntryService
         return [
             'type' => $data['type'],
             'transaction_date' => $data['transaction_date'],
+            'competence_date' => $data['competence_date'],
             'description' => $data['description'],
             'amount' => $data['amount'],
             'financial_account_id' => $data['financial_account_id'] ?? null,
@@ -83,6 +106,7 @@ class FinancialEntryService
             'payee_name' => $data['payee_name'] ?? null,
             'payment_instructions' => $data['payment_instructions'] ?? null,
             'due_date' => $data['due_date'] ?? null,
+            'settled_on' => $data['settled_on'] ?? null,
             'status' => $data['status'],
             'notes' => $data['notes'] ?? null,
         ];
@@ -97,7 +121,12 @@ class FinancialEntryService
             ])
             ->first();
 
-        if ($entry->financial_account_id === null || $entry->credit_card_id !== null) {
+        if (
+            $entry->financial_account_id === null
+            || $entry->credit_card_id !== null
+            || $entry->status !== FinancialTransactionStatus::Confirmed
+            || $entry->settled_on === null
+        ) {
             $movement?->delete();
 
             return;
@@ -107,7 +136,7 @@ class FinancialEntryService
         $data = [
             'workspace_id' => $entry->workspace_id,
             'financial_account_id' => $entry->financial_account_id,
-            'occurred_on' => $entry->transaction_date,
+            'occurred_on' => $entry->settled_on,
             'description' => $entry->description,
             'amount' => $isExpense ? '-'.$entry->amount : $entry->amount,
             'type' => $isExpense
