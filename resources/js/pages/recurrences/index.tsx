@@ -1,7 +1,7 @@
 import { Form, Head, Link } from '@inertiajs/react';
 import {
     CalendarClock,
-    CalendarRepeat,
+    Repeat2,
     CircleArrowDown,
     CircleArrowUp,
     Pause,
@@ -151,7 +151,7 @@ export default function RecurrencesIndex({
                     <Card className="border-dashed">
                         <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
                             <div className="bg-muted rounded-full p-3">
-                                <CalendarRepeat className="text-muted-foreground size-6" />
+                                <Repeat2 className="text-muted-foreground size-6" />
                             </div>
                             <div className="space-y-1">
                                 <h2 className="font-medium">
