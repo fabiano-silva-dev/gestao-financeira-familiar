@@ -57,11 +57,5 @@ jobs:
       - name: Setup Application
         run: composer setup
 
-      - name: Show frontend formatting diff
-        run: |
-          npm run check:fix
-          git diff -- resources/js/components/transactions/financial-entry-form.tsx
-          exit 1
-
       - name: Run CI Checks
         run: composer ci:check
