@@ -1,6 +1,8 @@
-import { Head, usePage } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { dashboard } from '@/routes';
+import { index as accountsIndex } from '@/routes/accounts';
 
 export default function Dashboard() {
     const { workspace } = usePage().props;
@@ -15,9 +17,10 @@ export default function Dashboard() {
                             Gestão Financeira Familiar
                         </CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-2">
+                    <CardContent className="space-y-4">
                         <p className="text-muted-foreground">
-                            A fundação do seu espaço financeiro está pronta.
+                            Comece cadastrando as contas onde o dinheiro da
+                            família está guardado.
                         </p>
                         <p className="text-sm">
                             Workspace atual:{' '}
@@ -25,6 +28,11 @@ export default function Dashboard() {
                                 {workspace.current?.name}
                             </span>
                         </p>
+                        <Button asChild>
+                            <Link href={accountsIndex()}>
+                                Gerenciar contas financeiras
+                            </Link>
+                        </Button>
                     </CardContent>
                 </Card>
             </div>
