@@ -25,6 +25,7 @@ class SaveFinancialEntryRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $defaults = [];
+        $installmentCount = (int) $this->input('installment_count', 1);
 
         if (! $this->has('competence_date') && $this->filled('transaction_date')) {
             $defaults['competence_date'] = $this->input('transaction_date');
@@ -32,6 +33,7 @@ class SaveFinancialEntryRequest extends FormRequest
 
         if (
             ! $this->has('settled_on')
+            && $installmentCount <= 1
             && $this->input('status') === FinancialTransactionStatus::Confirmed->value
             && $this->input('payment_method') !== PaymentMethod::CreditCard->value
             && $this->filled('transaction_date')
@@ -56,10 +58,16 @@ class SaveFinancialEntryRequest extends FormRequest
         $type = FinancialTransactionType::tryFrom((string) $this->input('type'));
         $status = FinancialTransactionStatus::tryFrom((string) $this->input('status'));
         $paymentMethod = PaymentMethod::tryFrom((string) $this->input('payment_method'));
+        $installmentCount = (int) $this->input('installment_count', 1);
+        $isInstallmentPurchase = $type === FinancialTransactionType::Expense
+            && $installmentCount > 1;
         $isCreditCardExpense = $type === FinancialTransactionType::Expense
             && $paymentMethod === PaymentMethod::CreditCard;
         $isSettled = filled($this->input('settled_on'));
-        $requiresDueDate = $status === FinancialTransactionStatus::Planned
+        $requiresDueDate = (
+            $isInstallmentPurchase
+            && ! $isCreditCardExpense
+        ) || $status === FinancialTransactionStatus::Planned
             || (
                 $status === FinancialTransactionStatus::Confirmed
                 && ! $isCreditCardExpense
@@ -83,6 +91,13 @@ class SaveFinancialEntryRequest extends FormRequest
             'competence_date' => ['required', 'date'],
             'description' => ['required', 'string', 'max:160'],
             'amount' => ['required', 'numeric', 'decimal:0,2', 'gt:0', 'max:9999999999999.99'],
+            'installment_count' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:120',
+                Rule::prohibitedIf($type !== FinancialTransactionType::Expense),
+            ],
             'financial_account_id' => [
                 'nullable',
                 'integer',
@@ -118,7 +133,8 @@ class SaveFinancialEntryRequest extends FormRequest
                 'nullable',
                 'date',
                 Rule::prohibitedIf(
-                    $isCreditCardExpense
+                    $isInstallmentPurchase
+                    || $isCreditCardExpense
                     || $status !== FinancialTransactionStatus::Confirmed,
                 ),
             ],
@@ -145,7 +161,8 @@ class SaveFinancialEntryRequest extends FormRequest
             'transaction_date' => 'data do fato financeiro',
             'competence_date' => 'competência',
             'description' => 'descrição',
-            'amount' => 'valor',
+            'amount' => 'valor total',
+            'installment_count' => 'número de parcelas',
             'financial_account_id' => 'conta',
             'credit_card_id' => 'cartão',
             'category_id' => 'categoria',
@@ -153,7 +170,7 @@ class SaveFinancialEntryRequest extends FormRequest
             'payment_method' => 'forma de pagamento',
             'payee_name' => 'favorecido ou pagador',
             'payment_instructions' => 'instruções de pagamento',
-            'due_date' => 'vencimento',
+            'due_date' => 'primeiro vencimento',
             'settled_on' => 'data efetiva de pagamento ou recebimento',
             'status' => 'situação',
             'notes' => 'observações',
