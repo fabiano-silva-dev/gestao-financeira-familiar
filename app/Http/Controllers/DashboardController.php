@@ -94,7 +94,12 @@ class DashboardController extends Controller
             ->whereIn('type', [
                 FinancialTransactionType::Income->value,
                 FinancialTransactionType::Expense->value,
-            ]);
+            ])
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('installment_count')
+                    ->orWhereNotNull('parent_transaction_id');
+            });
 
         if ($start !== null && $end !== null) {
             $query->whereBetween('competence_date', [
@@ -125,6 +130,11 @@ class DashboardController extends Controller
                 FinancialTransactionType::Income->value,
                 FinancialTransactionType::Expense->value,
             ])
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('installment_count')
+                    ->orWhereNotNull('parent_transaction_id');
+            })
             ->selectRaw('type, SUM(amount) AS total')
             ->groupBy('type')
             ->pluck('total', 'type');
@@ -212,6 +222,11 @@ class DashboardController extends Controller
                 $monthStart->toDateString(),
                 $monthEnd->toDateString(),
             ])
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('installment_count')
+                    ->orWhereNotNull('parent_transaction_id');
+            })
             ->with(['category:id,name,parent_id', 'category.parent:id,name'])
             ->get(['id', 'category_id', 'amount'])
             ->groupBy(fn (FinancialTransaction $entry): string => $this->categoryName($entry->category))
@@ -249,6 +264,11 @@ class DashboardController extends Controller
                 FinancialTransactionType::Income->value,
                 FinancialTransactionType::Expense->value,
             ])
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('installment_count')
+                    ->orWhereNotNull('parent_transaction_id');
+            })
             ->whereBetween('due_date', [
                 $today->toDateString(),
                 $today->addDays(30)->toDateString(),
@@ -281,6 +301,7 @@ class DashboardController extends Controller
     private function recentEntries(Workspace $workspace): array
     {
         return $workspace->financialTransactions()
+            ->whereNull('parent_transaction_id')
             ->where('status', '!=', FinancialTransactionStatus::Cancelled->value)
             ->with([
                 'account:id,name',
