@@ -278,9 +278,16 @@ class FinancialRecurrenceService
             ): void {
                 $amount = $this->moneyToCents((string) $recurrence->amount);
 
+                $generationStart = CarbonImmutable::parse(
+                    $recurrence->generation_started_on->toDateString(),
+                );
+                $projectionStart = $generationStart->greaterThan($firstMonth)
+                    ? $generationStart
+                    : $firstMonth;
+
                 foreach ($this->occurrencesBetween(
                     $recurrence,
-                    $firstMonth,
+                    $projectionStart,
                     $lastMonth,
                 ) as $occurrence) {
                     $key = $occurrence->format('Y-m');
