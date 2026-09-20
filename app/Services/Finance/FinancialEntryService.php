@@ -6,6 +6,7 @@ use App\Enums\AccountMovementType;
 use App\Enums\FinancialTransactionOrigin;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
+use App\Enums\PaymentMethod;
 use App\Models\AccountMovement;
 use App\Models\FinancialTransaction;
 use App\Models\Workspace;
@@ -69,9 +70,43 @@ class FinancialEntryService
 
             $entry->update(['status' => $status]);
             $entry->refresh();
+
+            $this->syncMovement($entry);
             $this->cardPurchaseService->syncStatus($entry);
 
-            return $entry;
+            return $entry->refresh();
+        });
+    }
+
+    public function toggleSettlement(FinancialTransaction $entry): FinancialTransaction
+    {
+        abort_if(
+            $entry->credit_card_id !== null,
+            422,
+            'Compras no cartão são liquidadas pelo pagamento da fatura.',
+        );
+        abort_if(
+            $entry->status === FinancialTransactionStatus::Cancelled,
+            422,
+            'Reative o lançamento antes de registrar o pagamento ou recebimento.',
+        );
+        abort_if(
+            $entry->financial_account_id === null,
+            422,
+            'Informe uma conta antes de registrar o pagamento ou recebimento.',
+        );
+
+        return DB::transaction(function () use ($entry): FinancialTransaction {
+            $entry->update([
+                'status' => FinancialTransactionStatus::Confirmed,
+                'settled_on' => $entry->settled_on === null
+                    ? now()->toDateString()
+                    : null,
+            ]);
+
+            $this->syncMovement($entry->refresh());
+
+            return $entry->refresh();
         });
     }
 
@@ -81,9 +116,13 @@ class FinancialEntryService
      */
     private function entryData(array $data): array
     {
+        $isConfirmed = ($data['status'] ?? null) === FinancialTransactionStatus::Confirmed->value;
+        $usesCreditCard = ($data['payment_method'] ?? null) === PaymentMethod::CreditCard->value;
+
         return [
             'type' => $data['type'],
             'transaction_date' => $data['transaction_date'],
+            'competence_date' => $data['competence_date'] ?? $data['transaction_date'],
             'description' => $data['description'],
             'amount' => $data['amount'],
             'financial_account_id' => $data['financial_account_id'] ?? null,
@@ -94,6 +133,9 @@ class FinancialEntryService
             'payee_name' => $data['payee_name'] ?? null,
             'payment_instructions' => $data['payment_instructions'] ?? null,
             'due_date' => $data['due_date'] ?? null,
+            'settled_on' => array_key_exists('settled_on', $data)
+                ? $data['settled_on']
+                : ($isConfirmed && ! $usesCreditCard ? $data['transaction_date'] : null),
             'status' => $data['status'],
             'notes' => $data['notes'] ?? null,
         ];
@@ -128,7 +170,12 @@ class FinancialEntryService
             ])
             ->first();
 
-        if ($entry->financial_account_id === null || $entry->credit_card_id !== null) {
+        if (
+            $entry->financial_account_id === null
+            || $entry->credit_card_id !== null
+            || $entry->status !== FinancialTransactionStatus::Confirmed
+            || $entry->settled_on === null
+        ) {
             $movement?->delete();
 
             return;
@@ -138,7 +185,7 @@ class FinancialEntryService
         $data = [
             'workspace_id' => $entry->workspace_id,
             'financial_account_id' => $entry->financial_account_id,
-            'occurred_on' => $entry->transaction_date,
+            'occurred_on' => $entry->settled_on,
             'description' => $entry->description,
             'amount' => $isExpense ? '-'.$entry->amount : $entry->amount,
             'type' => $isExpense
