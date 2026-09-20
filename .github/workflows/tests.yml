@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - fase-2-competencia-liquidacao
   pull_request:
 
 permissions:
