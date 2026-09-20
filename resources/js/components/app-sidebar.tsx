@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react';
 import {
     ArrowLeftRight,
+    CalendarRepeat,
     CreditCard,
     Landmark,
     LayoutGrid,
@@ -27,6 +28,7 @@ import { index as categoriesIndex } from '@/routes/categories';
 import { index as creditCardInvoicesIndex } from '@/routes/credit-card-invoices';
 import { index as creditCardsIndex } from '@/routes/credit-cards';
 import { index as familyMembersIndex } from '@/routes/family-members';
+import { index as recurrencesIndex } from '@/routes/recurrences';
 import { index as transactionsIndex } from '@/routes/transactions';
 import { index as transfersIndex } from '@/routes/transfers';
 import type { NavItem } from '@/types';
@@ -56,6 +58,11 @@ const mainNavItems: NavItem[] = [
         title: 'Faturas',
         href: creditCardInvoicesIndex(),
         icon: WalletCards,
+    },
+    {
+        title: 'Recorrências',
+        href: recurrencesIndex(),
+        icon: CalendarRepeat,
     },
     {
         title: 'Transferências',
