@@ -45,7 +45,7 @@ class FinancialEntryService
     public function update(FinancialTransaction $entry, array $data): FinancialTransaction
     {
         return DB::transaction(function () use ($entry, $data): FinancialTransaction {
-            $entry->update($this->entryData($data));
+            $entry->update($this->entryData($data, $entry));
             $entry->refresh();
             $this->syncMovement($entry);
             $this->syncInstallments($entry, $data);
@@ -117,8 +117,10 @@ class FinancialEntryService
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
-    private function entryData(array $data): array
-    {
+    private function entryData(
+        array $data,
+        ?FinancialTransaction $existing = null,
+    ): array {
         $isConfirmed = ($data['status'] ?? null) === FinancialTransactionStatus::Confirmed->value;
         $usesCreditCard = ($data['payment_method'] ?? null) === PaymentMethod::CreditCard->value;
 
@@ -139,8 +141,10 @@ class FinancialEntryService
             'settled_on' => array_key_exists('settled_on', $data)
                 ? $data['settled_on']
                 : ($isConfirmed && ! $usesCreditCard ? $data['transaction_date'] : null),
-            'financial_recurrence_id' => $data['financial_recurrence_id'] ?? null,
-            'recurrence_occurrence_date' => $data['recurrence_occurrence_date'] ?? null,
+            'financial_recurrence_id' => $data['financial_recurrence_id']
+                ?? $existing?->financial_recurrence_id,
+            'recurrence_occurrence_date' => $data['recurrence_occurrence_date']
+                ?? $existing?->recurrence_occurrence_date,
             'status' => $data['status'],
             'notes' => $data['notes'] ?? null,
         ];
