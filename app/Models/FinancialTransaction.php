@@ -11,6 +11,29 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * @property int $id
+ * @property int $workspace_id
+ * @property FinancialTransactionType $type
+ * @property \Illuminate\Support\Carbon $transaction_date
+ * @property \Illuminate\Support\Carbon|null $competence_date
+ * @property string $description
+ * @property string $amount
+ * @property int|null $financial_account_id
+ * @property int|null $source_account_id
+ * @property int|null $destination_account_id
+ * @property int|null $credit_card_id
+ * @property int|null $category_id
+ * @property int|null $family_member_id
+ * @property PaymentMethod|null $payment_method
+ * @property string|null $payee_name
+ * @property string|null $payment_instructions
+ * @property \Illuminate\Support\Carbon|null $due_date
+ * @property \Illuminate\Support\Carbon|null $settled_on
+ * @property FinancialTransactionStatus $status
+ * @property FinancialTransactionOrigin $origin
+ * @property string|null $notes
+ */
 #[Fillable([
     'type',
     'transaction_date',
