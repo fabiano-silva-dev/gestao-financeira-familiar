@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'type',
     'transaction_date',
+    'competence_date',
     'description',
     'amount',
     'financial_account_id',
@@ -26,6 +27,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'payee_name',
     'payment_instructions',
     'due_date',
+    'settled_on',
     'status',
     'origin',
     'notes',
@@ -104,9 +106,11 @@ class FinancialTransaction extends Model
         return [
             'type' => FinancialTransactionType::class,
             'transaction_date' => 'date',
+            'competence_date' => 'date',
             'amount' => 'decimal:2',
             'payment_method' => PaymentMethod::class,
             'due_date' => 'date',
+            'settled_on' => 'date',
             'status' => FinancialTransactionStatus::class,
             'origin' => FinancialTransactionOrigin::class,
         ];
