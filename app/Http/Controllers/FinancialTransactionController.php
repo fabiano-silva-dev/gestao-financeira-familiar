@@ -29,6 +29,7 @@ class FinancialTransactionController extends Controller
     {
         $entries = $this->workspace()
             ->financialTransactions()
+            ->whereNull('parent_transaction_id')
             ->whereIn('type', [
                 FinancialTransactionType::Income,
                 FinancialTransactionType::Expense,
@@ -39,6 +40,8 @@ class FinancialTransactionController extends Controller
                 'category:id,name,parent_id',
                 'category.parent:id,name',
                 'familyMember:id,name',
+                'installments.account:id,name',
+                'installments.creditCard:id,name,last_four',
             ])
             ->orderByDesc('transaction_date')
             ->orderByDesc('id')
@@ -67,11 +70,16 @@ class FinancialTransactionController extends Controller
             $request->validated(),
         );
 
+        $isInstallmentPurchase = $entry->installment_count !== null
+            && $entry->installment_count > 1;
+
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => $entry->type === FinancialTransactionType::Expense
-                ? 'Despesa cadastrada com sucesso.'
-                : 'Receita cadastrada com sucesso.',
+            'message' => $isInstallmentPurchase
+                ? "Compra parcelada em {$entry->installment_count}x cadastrada com sucesso."
+                : ($entry->type === FinancialTransactionType::Expense
+                    ? 'Despesa cadastrada com sucesso.'
+                    : 'Receita cadastrada com sucesso.'),
         ]);
 
         return to_route('transactions.index');
@@ -175,6 +183,8 @@ class FinancialTransactionController extends Controller
                 'category:id,name,parent_id',
                 'category.parent:id,name',
                 'familyMember:id,name',
+                'installments.account:id,name',
+                'installments.creditCard:id,name,last_four',
             ])
             ->findOrFail($entry);
     }
@@ -248,6 +258,32 @@ class FinancialTransactionController extends Controller
         }
 
         return [
+            ...$this->financialData($entry),
+            'category_id' => $entry->category_id,
+            'category_name' => $categoryName,
+            'family_member_id' => $entry->family_member_id,
+            'family_member_name' => $entry->familyMember?->name,
+            'payee_name' => $entry->payee_name,
+            'payment_instructions' => $entry->payment_instructions,
+            'is_installment_purchase' => $entry->parent_transaction_id === null
+                && $entry->installment_count !== null
+                && $entry->installment_count > 1,
+            'installment_count' => $entry->installment_count,
+            'installments' => $entry->relationLoaded('installments')
+                ? $entry->installments
+                    ->map(fn (FinancialTransaction $installment): array => $this->financialData($installment))
+                    ->all()
+                : [],
+            'notes' => $entry->notes,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function financialData(FinancialTransaction $entry): array
+    {
+        return [
             'id' => $entry->id,
             'type' => $entry->type->value,
             'type_label' => $entry->type->label(),
@@ -262,20 +298,16 @@ class FinancialTransactionController extends Controller
             'credit_card_name' => $entry->creditCard === null
                 ? null
                 : "{$entry->creditCard->name} · final {$entry->creditCard->last_four}",
-            'category_id' => $entry->category_id,
-            'category_name' => $categoryName,
-            'family_member_id' => $entry->family_member_id,
-            'family_member_name' => $entry->familyMember?->name,
             'payment_method' => $entry->payment_method?->value,
             'payment_method_label' => $entry->payment_method?->label(),
-            'payee_name' => $entry->payee_name,
-            'payment_instructions' => $entry->payment_instructions,
             'due_date' => $entry->due_date?->toDateString(),
             'settled_on' => $entry->settled_on?->toDateString(),
             'is_settled' => $entry->settled_on !== null,
+            'parent_transaction_id' => $entry->parent_transaction_id,
+            'installment_number' => $entry->installment_number,
+            'installment_count' => $entry->installment_count,
             'status' => $entry->status->value,
             'status_label' => $entry->status->label(),
-            'notes' => $entry->notes,
         ];
     }
 }
