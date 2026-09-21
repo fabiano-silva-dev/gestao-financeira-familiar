@@ -10,6 +10,7 @@ export type * from './financial-import';
 export type * from './financial-recurrence';
 export type * from './navigation';
 export type * from './payment-method';
+export type * from './reconciliation';
 export type * from './transfer';
 export type * from './ui';
 export type * from './workspace';

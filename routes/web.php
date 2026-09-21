@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ActiveWorkspaceController;
+use App\Http\Controllers\BankReconciliationController;
 use App\Http\Controllers\CardStatementImportController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CreditCardController;
@@ -157,6 +158,15 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->name('imports.card-statements.index');
     Route::post('importacoes/faturas', [CardStatementImportController::class, 'store'])
         ->name('imports.card-statements.store');
+
+    Route::get('conciliacao', [BankReconciliationController::class, 'index'])
+        ->name('reconciliation.index');
+    Route::post('conciliacao/{entry}', [BankReconciliationController::class, 'store'])
+        ->whereNumber('entry')
+        ->name('reconciliation.store');
+    Route::delete('conciliacao/{entry}', [BankReconciliationController::class, 'destroy'])
+        ->whereNumber('entry')
+        ->name('reconciliation.destroy');
 
     Route::post('workspaces/{workspace}/activate', ActiveWorkspaceController::class)
         ->name('workspaces.activate');

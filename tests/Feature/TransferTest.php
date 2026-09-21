@@ -90,8 +90,10 @@ class TransferTest extends TestCase
 
         $this->assertSame($source->id, $outgoing->financial_account_id);
         $this->assertSame('-2000.00', $outgoing->amount);
+        $this->assertFalse($outgoing->is_reconciled);
         $this->assertSame($destination->id, $incoming->financial_account_id);
         $this->assertSame('2000.00', $incoming->amount);
+        $this->assertFalse($incoming->is_reconciled);
         $this->assertEqualsWithDelta(
             0,
             (float) $transfer->accountMovements->sum('amount'),

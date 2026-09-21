@@ -87,7 +87,6 @@ class TransferService
             'workspace_id' => $transfer->workspace_id,
             'occurred_on' => $transfer->transaction_date,
             'description' => $transfer->description,
-            'is_reconciled' => true,
         ];
 
         $outgoingData = [
@@ -105,10 +104,16 @@ class TransferService
 
         $outgoing instanceof AccountMovement
             ? $outgoing->update($outgoingData)
-            : $transfer->accountMovements()->create($outgoingData);
+            : $transfer->accountMovements()->create([
+                ...$outgoingData,
+                'is_reconciled' => false,
+            ]);
 
         $incoming instanceof AccountMovement
             ? $incoming->update($incomingData)
-            : $transfer->accountMovements()->create($incomingData);
+            : $transfer->accountMovements()->create([
+                ...$incomingData,
+                'is_reconciled' => false,
+            ]);
     }
 }

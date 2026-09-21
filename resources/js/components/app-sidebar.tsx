@@ -6,6 +6,7 @@ import {
     FileSpreadsheet,
     Landmark,
     LayoutGrid,
+    ListChecks,
     ReceiptText,
     Tags,
     Upload,
@@ -33,6 +34,7 @@ import { index as familyMembersIndex } from '@/routes/family-members';
 import { index as ofxImportsIndex } from '@/routes/imports/ofx';
 import { index as cardStatementImportsIndex } from '@/routes/imports/card-statements';
 import { index as recurrencesIndex } from '@/routes/recurrences';
+import { index as reconciliationIndex } from '@/routes/reconciliation';
 import { index as transactionsIndex } from '@/routes/transactions';
 import { index as transfersIndex } from '@/routes/transfers';
 import type { NavItem } from '@/types';
@@ -82,6 +84,11 @@ const mainNavItems: NavItem[] = [
         title: 'Importar faturas',
         href: cardStatementImportsIndex(),
         icon: FileSpreadsheet,
+    },
+    {
+        title: 'Conciliação',
+        href: reconciliationIndex(),
+        icon: ListChecks,
     },
     {
         title: 'Categorias',

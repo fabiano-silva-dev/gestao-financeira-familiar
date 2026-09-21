@@ -11,8 +11,10 @@ use Illuminate\Support\Carbon;
  * @property Carbon $occurred_on
  * @property string $amount
  * @property bool $is_reconciled
+ * @property Carbon|null $reconciled_at
  * @property-read FinancialAccount $financialAccount
  * @property-read FinancialImport $financialImport
+ * @property-read AccountMovement|null $accountMovement
  */
 #[Fillable([
     'workspace_id',
@@ -25,6 +27,9 @@ use Illuminate\Support\Carbon;
     'transaction_type',
     'description',
     'memo',
+    'account_movement_id',
+    'reconciled_by',
+    'reconciled_at',
     'is_reconciled',
 ])]
 class BankStatementEntry extends Model
@@ -47,12 +52,25 @@ class BankStatementEntry extends Model
         return $this->belongsTo(FinancialAccount::class);
     }
 
+    /** @return BelongsTo<AccountMovement, $this> */
+    public function accountMovement(): BelongsTo
+    {
+        return $this->belongsTo(AccountMovement::class);
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function reconciler(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reconciled_by');
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
         return [
             'occurred_on' => 'date',
             'amount' => 'decimal:2',
+            'reconciled_at' => 'datetime',
             'is_reconciled' => 'boolean',
         ];
     }

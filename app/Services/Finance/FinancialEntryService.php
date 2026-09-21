@@ -205,11 +205,13 @@ class FinancialEntryService
             'type' => $isExpense
                 ? AccountMovementType::ExpensePayment
                 : AccountMovementType::IncomeReceipt,
-            'is_reconciled' => false,
         ];
 
         $movement instanceof AccountMovement
             ? $movement->update($data)
-            : $entry->accountMovements()->create($data);
+            : $entry->accountMovements()->create([
+                ...$data,
+                'is_reconciled' => false,
+            ]);
     }
 }

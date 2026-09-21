@@ -1763,3 +1763,21 @@ A plataforma deverá preservar a seguinte separação:
 **Valorização não realizada = alteração patrimonial, não entrada de caixa.**
 
 Essa modelagem deverá impedir que aplicação, resgate, cashback, valorização e conversão gerem duplicidade de receitas, despesas ou patrimônio.
+
+---
+
+## 48. Decisões de Implementação — Conciliação Bancária
+
+A conciliação bancária vincula uma linha importada do OFX a um movimento de conta já existente. Ela não cria uma segunda receita, despesa, transferência ou baixa de fatura e, portanto, não altera o saldo novamente.
+
+Para a primeira versão:
+
+- conta e valor com sinal devem ser idênticos entre o movimento do banco e o movimento financeiro;
+- data e descrição são usadas para ordenar sugestões, mas a confirmação continua sendo feita pelo usuário;
+- correspondências com diferença de até sete dias podem ser apresentadas como sugestões automáticas;
+- candidatos compatíveis mais antigos continuam disponíveis para seleção manual, sem pré-seleção automática;
+- cada movimento financeiro só pode ser vinculado a uma linha bancária;
+- saída e entrada de uma transferência são conciliadas separadamente, cada uma na sua conta;
+- pagamentos de despesas, recebimentos de receitas, pagamentos de fatura e as duas pontas de transferências usam o mesmo fluxo de conciliação;
+- a conciliação registra usuário e horário e pode ser desfeita;
+- conta, data, valor e tipo de um movimento conciliado não podem ser alterados até que o vínculo seja desfeito.

@@ -10,4 +10,16 @@ enum AccountMovementType: string
     case IncomeReceipt = 'income_receipt';
     case CardPayment = 'card_payment';
     case Adjustment = 'adjustment';
+
+    public function label(): string
+    {
+        return match ($this) {
+            self::TransferOut => 'Saída de transferência',
+            self::TransferIn => 'Entrada de transferência',
+            self::ExpensePayment => 'Pagamento de despesa',
+            self::IncomeReceipt => 'Recebimento de receita',
+            self::CardPayment => 'Pagamento de fatura',
+            self::Adjustment => 'Ajuste de conta',
+        };
+    }
 }
