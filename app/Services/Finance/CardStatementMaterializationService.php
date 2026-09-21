@@ -323,8 +323,7 @@ final class CardStatementMaterializationService
         $negative = str_starts_with($amount, '-');
         $amount = ltrim($amount, '-');
         [$whole, $decimal] = array_pad(explode('.', $amount, 2), 2, '0');
-        $cents = ((int) $whole * 100)
-            + (int) str_pad(substr($decimal, 0, 2), 2, '0');
+        $cents = ((int) $whole * 100) + (int) str_pad(substr($decimal, 0, 2), 2, '0');
 
         return $negative ? -$cents : $cents;
     }
