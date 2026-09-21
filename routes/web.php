@@ -75,6 +75,9 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->name('credit-cards.create');
     Route::post('cartoes', [CreditCardController::class, 'store'])
         ->name('credit-cards.store');
+    Route::get('cartoes/{card}', [CreditCardController::class, 'show'])
+        ->whereNumber('card')
+        ->name('credit-cards.show');
     Route::get('cartoes/{card}/editar', [CreditCardController::class, 'edit'])
         ->whereNumber('card')
         ->name('credit-cards.edit');
