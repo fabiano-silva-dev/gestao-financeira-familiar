@@ -11,6 +11,7 @@ use App\Models\CreditCardInvoice;
 use App\Models\FinancialImport;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Finance\CardStatementAiEnrichmentService;
 use App\Services\Finance\CardStatementMaterializationService;
 use App\Services\Imports\Data\CardStatementImportResult;
 use App\Services\Imports\Data\CardStatementRow;
@@ -27,6 +28,7 @@ final class CardStatementImportService
     public function __construct(
         private readonly CardStatementParser $parser,
         private readonly CardStatementMaterializationService $materializationService,
+        private readonly CardStatementAiEnrichmentService $aiEnrichmentService,
     ) {}
 
     public function import(
@@ -66,6 +68,7 @@ final class CardStatementImportService
                 $user,
                 $referenceMonth,
             );
+            $this->enrichWithAiSafely($workspace, $existing);
 
             return new CardStatementImportResult($existing->refresh(), true);
         }
@@ -233,7 +236,20 @@ final class CardStatementImportService
             ]);
         }
 
+        $this->enrichWithAiSafely($workspace, $financialImport);
+
         return new CardStatementImportResult($financialImport->refresh(), false);
+    }
+
+    private function enrichWithAiSafely(
+        Workspace $workspace,
+        FinancialImport $financialImport,
+    ): void {
+        try {
+            $this->aiEnrichmentService->enrich($workspace, $financialImport);
+        } catch (Throwable $exception) {
+            report($exception);
+        }
     }
 
     private function materializeExistingImport(

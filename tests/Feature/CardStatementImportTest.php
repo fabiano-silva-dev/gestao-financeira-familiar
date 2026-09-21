@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Enums\CategoryType;
 use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\FinancialImportStatus;
 use App\Enums\FinancialImportType;
 use App\Enums\FinancialTransactionOrigin;
+use App\Models\Category;
 use App\Models\CreditCard;
 use App\Models\CreditCardInvoice;
 use App\Models\FinancialImport;
@@ -14,6 +16,7 @@ use App\Models\Workspace;
 use App\Support\Workspaces\CurrentWorkspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -274,6 +277,74 @@ class CardStatementImportTest extends TestCase
         $metadata = FinancialImport::query()->sole()->metadata;
         $this->assertFalse($metadata['statement_amount_applied']);
         $this->assertSame('79.90', $metadata['statement_amount']);
+    }
+
+    public function test_ai_enrichment_identifies_merchant_and_existing_expense_category(): void
+    {
+        Storage::fake('local');
+        Http::preventStrayRequests();
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+        $category = Category::factory()->for($workspace)->create([
+            'name' => 'Mercado',
+            'type' => CategoryType::Expense,
+            'is_active' => true,
+        ]);
+
+        config()->set('financial_ai.enabled', true);
+        config()->set('financial_ai.gemini.api_key', 'fake-gemini-key');
+        config()->set('financial_ai.gemini.models', ['gemini-test']);
+        config()->set('financial_ai.groq.api_key', '');
+
+        Http::fake([
+            'generativelanguage.googleapis.com/*' => Http::response([
+                'candidates' => [[
+                    'content' => [
+                        'parts' => [[
+                            'text' => json_encode([
+                                'items' => [[
+                                    'entry_id' => 1,
+                                    'merchant_name' => 'Supermercado XYZ',
+                                    'merchant_confidence' => 0.96,
+                                    'category_id' => $category->id,
+                                    'category_confidence' => 0.93,
+                                ]],
+                            ]),
+                        ]],
+                    ],
+                ]],
+            ]),
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.card-statements.store'), [
+                'credit_card_id' => $card->id,
+                'reference_month' => '2026-10',
+                'amount_sign' => 'positive',
+                'file' => UploadedFile::fake()->createWithContent(
+                    'fatura-ia.csv',
+                    "Data;Estabelecimento;Valor;Identificador\n10/09/2026;SUPERMERCADO XYZ 001;50,00;ai-001\n",
+                ),
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('financial_transactions', [
+            'workspace_id' => $workspace->id,
+            'description' => 'SUPERMERCADO XYZ 001',
+            'payee_name' => 'Supermercado XYZ',
+            'category_id' => $category->id,
+            'origin' => FinancialTransactionOrigin::CardImport->value,
+        ]);
+
+        $metadata = FinancialImport::query()->sole()->metadata;
+        $this->assertSame(['gemini'], $metadata['ai_classification']['providers']);
+        $this->assertSame(['gemini-test'], $metadata['ai_classification']['models']);
+        $this->assertSame(1, $metadata['ai_classification']['classified_records']);
+        $this->assertSame(1, $metadata['ai_classification']['merchant_updates']);
+        $this->assertSame(1, $metadata['ai_classification']['category_updates']);
+
+        Http::assertSentCount(1);
     }
 
     public function test_invalid_statement_is_recorded_as_failed(): void
