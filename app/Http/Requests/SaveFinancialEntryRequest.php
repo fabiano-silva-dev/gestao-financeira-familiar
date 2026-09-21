@@ -64,6 +64,20 @@ class SaveFinancialEntryRequest extends FormRequest
             ->where(fn (Builder $query): Builder => $query
                 ->where('workspace_id', $workspace->id));
 
+        $categoryExistsInWorkspace = Rule::exists(Category::class, 'id')
+            ->where(function (Builder $query) use ($workspace, $type): Builder {
+                $query->where('workspace_id', $workspace->id);
+
+                if (
+                    $type === FinancialTransactionType::Income
+                    || $type === FinancialTransactionType::Expense
+                ) {
+                    $query->where('type', $type->value);
+                }
+
+                return $query;
+            });
+
         $allowedStatuses = $isCreate
             ? [FinancialTransactionStatus::Planned, FinancialTransactionStatus::Confirmed]
             : FinancialTransactionStatus::cases();
@@ -109,7 +123,7 @@ class SaveFinancialEntryRequest extends FormRequest
             'category_id' => [
                 'nullable',
                 'integer',
-                $existsInWorkspace(Category::class),
+                $categoryExistsInWorkspace,
             ],
             'family_member_id' => [
                 'nullable',

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\CategoryType;
 use Database\Factories\CategoryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /** @property-read Category|null $parent */
-#[Fillable(['name', 'parent_id', 'is_active'])]
+#[Fillable(['name', 'type', 'parent_id', 'is_active'])]
 class Category extends Model
 {
     /** @use HasFactory<CategoryFactory> */
@@ -46,6 +47,7 @@ class Category extends Model
     protected function casts(): array
     {
         return [
+            'type' => CategoryType::class,
             'is_active' => 'boolean',
         ];
     }

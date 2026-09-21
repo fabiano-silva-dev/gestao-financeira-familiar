@@ -2,12 +2,14 @@ import { Head } from '@inertiajs/react';
 import CategoryForm from '@/components/categories/category-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { create, index } from '@/routes/categories';
-import type { CategoryParentOption } from '@/types';
+import type { CategoryParentOption, CategoryTypeOption } from '@/types';
 
 export default function CategoriesCreate({
     parentOptions,
+    typeOptions,
 }: {
     parentOptions: CategoryParentOption[];
+    typeOptions: CategoryTypeOption[];
 }) {
     return (
         <>
@@ -28,7 +30,10 @@ export default function CategoriesCreate({
                         <CardTitle>Dados da categoria</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <CategoryForm parentOptions={parentOptions} />
+                        <CategoryForm
+                            parentOptions={parentOptions}
+                            typeOptions={typeOptions}
+                        />
                     </CardContent>
                 </Card>
             </div>

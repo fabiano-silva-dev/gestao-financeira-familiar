@@ -122,6 +122,9 @@ export default function CategoriesIndex() {
                                                         : 'subcategorias'}
                                                 </CardDescription>
                                             </div>
+                                            <Badge variant="outline">
+                                                {category.type_label}
+                                            </Badge>
                                             <Badge
                                                 variant={
                                                     category.is_active

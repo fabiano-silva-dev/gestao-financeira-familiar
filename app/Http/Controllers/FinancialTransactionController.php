@@ -80,9 +80,11 @@ class FinancialTransactionController extends Controller
 
     public function edit(int $entry): Response
     {
+        $financialEntry = $this->findEntry($entry);
+
         return Inertia::render('transactions/edit', [
-            'entry' => $this->entryData($this->findEntry($entry)),
-            ...$this->referenceOptions(),
+            'entry' => $this->entryData($financialEntry),
+            ...$this->referenceOptions($financialEntry->type),
         ]);
     }
 
@@ -148,7 +150,7 @@ class FinancialTransactionController extends Controller
             'entryType' => $type->value,
             'entryTypeLabel' => $type->label(),
             'defaultDate' => now()->toDateString(),
-            ...$this->referenceOptions(),
+            ...$this->referenceOptions($type),
         ]);
     }
 
@@ -183,7 +185,7 @@ class FinancialTransactionController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function referenceOptions(): array
+    private function referenceOptions(FinancialTransactionType $categoryType): array
     {
         $workspace = $this->workspace();
 
@@ -204,11 +206,13 @@ class FinancialTransactionController extends Controller
                 ])
                 ->all(),
             'categoryOptions' => $workspace->categories()
+                ->where('type', $categoryType->value)
                 ->with('parent:id,name')
                 ->orderBy('name')
                 ->get()
                 ->map(fn (Category $category): array => [
                     ...$this->referenceData($category),
+                    'type' => $category->type->value,
                     'label' => $category->parent === null
                         ? $category->name
                         : "{$category->parent->name} / {$category->name}",

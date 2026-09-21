@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\CategoryType;
 use App\Models\Category;
 use App\Support\Workspaces\CurrentWorkspace;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -22,29 +23,37 @@ class StoreCategoryRequest extends FormRequest
     public function rules(CurrentWorkspace $currentWorkspace): array
     {
         $workspace = $currentWorkspace->get();
-
         abort_if($workspace === null, 403);
+
+        $type = CategoryType::tryFrom((string) $this->input('type'));
 
         return [
             'name' => ['required', 'string', 'max:120'],
+            'type' => ['required', Rule::enum(CategoryType::class)],
             'parent_id' => [
                 'nullable',
                 'integer',
                 Rule::exists(Category::class, 'id')
-                    ->where(fn (Builder $query): Builder => $query
-                        ->where('workspace_id', $workspace->id)
-                        ->whereNull('parent_id')),
+                    ->where(function (Builder $query) use ($workspace, $type): Builder {
+                        $query
+                            ->where('workspace_id', $workspace->id)
+                            ->whereNull('parent_id');
+
+                        if ($type !== null) {
+                            $query->where('type', $type->value);
+                        }
+
+                        return $query;
+                    }),
             ],
         ];
     }
 
-    /**
-     * @return array<string, string>
-     */
     public function attributes(): array
     {
         return [
             'name' => 'nome',
+            'type' => 'tipo',
             'parent_id' => 'categoria principal',
         ];
     }

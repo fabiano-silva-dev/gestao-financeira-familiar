@@ -36,5 +36,6 @@ export type FinancialEntryReferenceOption = {
     id: number;
     name: string;
     label?: string;
+    type?: FinancialEntryType;
     is_active: boolean;
 };

@@ -13,20 +13,53 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { index } from '@/routes/categories';
-import type { Category, CategoryParentOption } from '@/types';
+import type {
+    Category,
+    CategoryParentOption,
+    CategoryType,
+    CategoryTypeOption,
+} from '@/types';
 
 type Props = {
     category?: Category;
     parentOptions: CategoryParentOption[];
+    typeOptions: CategoryTypeOption[];
 };
 
-export default function CategoryForm({ category, parentOptions }: Props) {
+export default function CategoryForm({
+    category,
+    parentOptions,
+    typeOptions,
+}: Props) {
+    const [categoryType, setCategoryType] = useState<CategoryType>(
+        category?.type ?? 'expense',
+    );
     const [parentSelection, setParentSelection] = useState(
         category?.parent_id ? String(category.parent_id) : 'root',
     );
     const form = category
         ? CategoryController.update.form(category.id)
         : CategoryController.store.form();
+
+    const availableParents = parentOptions.filter(
+        (parent) => parent.type === categoryType,
+    );
+
+    function changeType(value: string) {
+        const nextType = value as CategoryType;
+        setCategoryType(nextType);
+
+        if (
+            parentSelection !== 'root' &&
+            !parentOptions.some(
+                (parent) =>
+                    String(parent.id) === parentSelection &&
+                    parent.type === nextType,
+            )
+        ) {
+            setParentSelection('root');
+        }
+    }
 
     return (
         <Form
@@ -37,18 +70,45 @@ export default function CategoryForm({ category, parentOptions }: Props) {
         >
             {({ processing, errors }) => (
                 <>
-                    <div className="grid gap-2">
-                        <Label htmlFor="name">Nome</Label>
-                        <Input
-                            id="name"
-                            name="name"
-                            defaultValue={category?.name}
-                            placeholder="Ex.: Moradia"
-                            maxLength={120}
-                            required
-                            autoFocus
-                        />
-                        <InputError message={errors.name} />
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="grid gap-2">
+                            <Label htmlFor="name">Nome</Label>
+                            <Input
+                                id="name"
+                                name="name"
+                                defaultValue={category?.name}
+                                placeholder="Ex.: Esportes"
+                                maxLength={120}
+                                required
+                                autoFocus
+                            />
+                            <InputError message={errors.name} />
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="type">Tipo</Label>
+                            <input type="hidden" name="type" value={categoryType} />
+                            <Select
+                                value={categoryType}
+                                onValueChange={changeType}
+                                disabled={category?.has_children}
+                            >
+                                <SelectTrigger id="type" className="w-full">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {typeOptions.map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>
+                                            {option.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-muted-foreground text-xs">
+                                Despesa e receita são tipos, não níveis da árvore de categorias.
+                            </p>
+                            <InputError message={errors.type} />
+                        </div>
                     </div>
 
                     <div className="grid gap-2">
@@ -56,11 +116,7 @@ export default function CategoryForm({ category, parentOptions }: Props) {
                         <input
                             type="hidden"
                             name="parent_id"
-                            value={
-                                parentSelection === 'root'
-                                    ? ''
-                                    : parentSelection
-                            }
+                            value={parentSelection === 'root' ? '' : parentSelection}
                         />
                         <Select
                             value={parentSelection}
@@ -71,14 +127,9 @@ export default function CategoryForm({ category, parentOptions }: Props) {
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="root">
-                                    Categoria principal
-                                </SelectItem>
-                                {parentOptions.map((parent) => (
-                                    <SelectItem
-                                        key={parent.id}
-                                        value={String(parent.id)}
-                                    >
+                                <SelectItem value="root">Categoria principal</SelectItem>
+                                {availableParents.map((parent) => (
+                                    <SelectItem key={parent.id} value={String(parent.id)}>
                                         {parent.name}
                                         {parent.is_active ? '' : ' (inativa)'}
                                     </SelectItem>
@@ -88,26 +139,17 @@ export default function CategoryForm({ category, parentOptions }: Props) {
                         <p className="text-muted-foreground text-xs">
                             {category?.has_children
                                 ? 'Esta categoria possui subcategorias e deve permanecer como principal.'
-                                : 'Escolha uma categoria principal somente para criar uma subcategoria.'}
+                                : 'Para criar Karatê dentro de Esportes, selecione Esportes como categoria principal.'}
                         </p>
                         <InputError message={errors.parent_id} />
                     </div>
 
                     <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                        <Button
-                            variant="outline"
-                            className="w-full sm:w-auto"
-                            asChild
-                        >
+                        <Button variant="outline" className="w-full sm:w-auto" asChild>
                             <Link href={index()}>Cancelar</Link>
                         </Button>
-                        <Button
-                            className="w-full sm:w-auto"
-                            disabled={processing}
-                        >
-                            {category
-                                ? 'Salvar alterações'
-                                : 'Cadastrar categoria'}
+                        <Button className="w-full sm:w-auto" disabled={processing}>
+                            {category ? 'Salvar alterações' : 'Cadastrar categoria'}
                         </Button>
                     </div>
                 </>

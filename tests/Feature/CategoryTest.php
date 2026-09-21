@@ -64,6 +64,7 @@ class CategoryTest extends TestCase
 
         $request->post(route('categories.store'), [
             'name' => 'Moradia',
+            'type' => 'expense',
             'parent_id' => null,
         ])
             ->assertRedirect(route('categories.index'))
@@ -83,6 +84,7 @@ class CategoryTest extends TestCase
             ->sole();
 
         $this->assertSame($workspace->id, $parent->workspace_id);
+        $this->assertSame('expense', $parent->type->value);
         $this->assertNull($parent->parent_id);
         $this->assertSame($workspace->id, $child->workspace_id);
         $this->assertSame($parent->id, $child->parent_id);
@@ -103,6 +105,7 @@ class CategoryTest extends TestCase
             ])
             ->post(route('categories.store'), [
                 'name' => 'Tentativa indevida',
+                'type' => 'expense',
                 'parent_id' => $otherParent->id,
             ])
             ->assertSessionHasErrors('parent_id');
@@ -125,6 +128,7 @@ class CategoryTest extends TestCase
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
             ->post(route('categories.store'), [
                 'name' => 'Terceiro nível',
+                'type' => 'expense',
                 'parent_id' => $child->id,
             ])
             ->assertSessionHasErrors('parent_id');
@@ -132,6 +136,31 @@ class CategoryTest extends TestCase
         $this->assertDatabaseMissing('categories', [
             'workspace_id' => $workspace->id,
             'name' => 'Terceiro nível',
+        ]);
+    }
+
+    public function test_subcategory_must_have_same_type_as_parent(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $parent = Category::factory()
+            ->for($workspace)
+            ->create([
+                'name' => 'Rendimentos',
+                'type' => 'income',
+            ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('categories.store'), [
+                'name' => 'Karatê',
+                'type' => 'expense',
+                'parent_id' => $parent->id,
+            ])
+            ->assertSessionHasErrors('parent_id');
+
+        $this->assertDatabaseMissing('categories', [
+            'workspace_id' => $workspace->id,
+            'name' => 'Karatê',
         ]);
     }
 
@@ -150,6 +179,7 @@ class CategoryTest extends TestCase
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
             ->put(route('categories.update', $category), [
                 'name' => 'Moradia atualizada',
+                'type' => 'expense',
                 'parent_id' => $newParent->id,
             ])
             ->assertSessionHasErrors('parent_id');
@@ -175,6 +205,7 @@ class CategoryTest extends TestCase
             ])
             ->put(route('categories.update', $otherCategory), [
                 'name' => 'Tentativa indevida',
+                'type' => 'expense',
                 'parent_id' => null,
             ])
             ->assertNotFound();

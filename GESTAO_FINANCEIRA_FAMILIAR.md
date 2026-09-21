@@ -248,10 +248,30 @@ Exemplos:
 
 O sistema deverá permitir categoria e subcategoria.
 
+**Receita e despesa são tipos da categoria, não níveis da árvore.**
+
+Não deverão ser criadas categorias-pai chamadas "Despesas" ou "Receitas" apenas para separar os lançamentos. O tipo do lançamento e da categoria fará essa separação.
+
+A hierarquia operacional será:
+
+**Tipo → Categoria → Subcategoria**
+
+Exemplos:
+
+- Despesa → Esportes → Karatê
+- Despesa → Esportes → Vôlei
+- Despesa → Esportes → Handebol
+- Despesa → Veículos → Combustível
+- Receita → Rendimentos
+- Receita → Distribuição de lucros
+
+A pessoa da família permanece uma dimensão independente da categoria.
+
 Exemplo:
 
-Categoria: Veículos  
-Subcategoria: Combustível
+Categoria: Esportes  
+Subcategoria: Karatê  
+Pessoa: Felipe
 
 ---
 

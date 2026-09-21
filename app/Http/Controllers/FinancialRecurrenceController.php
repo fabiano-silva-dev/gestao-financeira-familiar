@@ -167,10 +167,12 @@ class FinancialRecurrenceController extends Controller
                 ->all(),
             'categoryOptions' => $workspace->categories()
                 ->with('parent:id,name')
+                ->orderBy('type')
                 ->orderBy('name')
                 ->get()
                 ->map(fn (Category $category): array => [
                     ...$this->referenceData($category),
+                    'type' => $category->type->value,
                     'label' => $category->parent === null
                         ? $category->name
                         : "{$category->parent->name} / {$category->name}",

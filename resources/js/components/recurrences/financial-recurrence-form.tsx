@@ -69,6 +69,9 @@ export default function FinancialRecurrenceForm({
 
     const isExpense = type === 'expense';
     const usesCreditCard = isExpense && paymentMethod === 'credit_card';
+    const filteredCategoryOptions = categoryOptions.filter(
+        (category) => category.type === type,
+    );
     const form = recurrence
         ? FinancialRecurrenceController.update.form(recurrence.id)
         : FinancialRecurrenceController.store.form();
@@ -76,6 +79,17 @@ export default function FinancialRecurrenceForm({
     function changeType(value: string) {
         const nextType = value as FinancialRecurrenceType;
         setType(nextType);
+
+        if (
+            categorySelection !== 'none' &&
+            !categoryOptions.some(
+                (category) =>
+                    String(category.id) === categorySelection &&
+                    category.type === nextType,
+            )
+        ) {
+            setCategorySelection('none');
+        }
 
         if (nextType === 'income' && paymentMethod === 'credit_card') {
             setPaymentMethod('pix');
@@ -380,7 +394,7 @@ export default function FinancialRecurrenceForm({
                                     <SelectItem value="none">
                                         Sem categoria
                                     </SelectItem>
-                                    {categoryOptions.map((category) => (
+                                    {filteredCategoryOptions.map((category) => (
                                         <SelectItem
                                             key={category.id}
                                             value={String(category.id)}

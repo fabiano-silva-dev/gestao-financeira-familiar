@@ -39,6 +39,20 @@ class SaveFinancialRecurrenceRequest extends FormRequest
             ->where(fn (Builder $query): Builder => $query
                 ->where('workspace_id', $workspace->id));
 
+        $categoryExistsInWorkspace = Rule::exists(Category::class, 'id')
+            ->where(function (Builder $query) use ($workspace, $type): Builder {
+                $query->where('workspace_id', $workspace->id);
+
+                if (
+                    $type === FinancialTransactionType::Income
+                    || $type === FinancialTransactionType::Expense
+                ) {
+                    $query->where('type', $type->value);
+                }
+
+                return $query;
+            });
+
         $allowedPaymentMethods = array_map(
             fn (PaymentMethod $method): string => $method->value,
             array_values(array_filter(
@@ -77,7 +91,7 @@ class SaveFinancialRecurrenceRequest extends FormRequest
             'category_id' => [
                 'nullable',
                 'integer',
-                $existsInWorkspace(Category::class),
+                $categoryExistsInWorkspace,
             ],
             'family_member_id' => [
                 'nullable',

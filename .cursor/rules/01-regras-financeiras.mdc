@@ -24,6 +24,7 @@ Considere `GESTAO_FINANCEIRA_FAMILIAR.md` a referência principal do produto.
 - Importações precisam ser idempotentes sempre que possível: reimportar o mesmo arquivo não deve duplicar movimentos.
 - Faturas devem ser entidades próprias, ligadas ao cartão e às compras/parcelas do ciclo.
 - Preserve a possibilidade de consultar compromissos futuros independentemente do que já foi pago.
+- Receita e despesa são tipos do lançamento e da categoria, não categorias-pai. Use a hierarquia Tipo → Categoria → Subcategoria e mantenha pessoa da família como dimensão independente.
 - Cartão de crédito representa linha de crédito com ciclos e faturas; não deve ser tratado como conta bancária ou caixa.
 - Preserve a possibilidade de uma conta de cartão possuir múltiplos instrumentos, como cartão físico, virtual ou adicional, compartilhando limite e fatura quando aplicável.
 - Crediários, financiamentos, empréstimos e parcelamentos negociados são créditos parcelados/contratos: possuem obrigação e parcelas diretamente vinculadas à origem e normalmente não possuem fatura intermediária.

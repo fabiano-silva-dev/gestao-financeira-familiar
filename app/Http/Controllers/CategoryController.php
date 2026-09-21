@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\CategoryType;
 use App\Http\Requests\StoreCategoryRequest;
 use App\Http\Requests\UpdateCategoryRequest;
 use App\Models\Category;
@@ -25,6 +26,7 @@ class CategoryController extends Controller
             ->with(['children' => fn ($query) => $query
                 ->orderByDesc('is_active')
                 ->orderBy('name')])
+            ->orderBy('type')
             ->orderByDesc('is_active')
             ->orderBy('name')
             ->get()
@@ -39,6 +41,7 @@ class CategoryController extends Controller
     {
         return Inertia::render('categories/create', [
             'parentOptions' => $this->parentOptions(),
+            'typeOptions' => CategoryType::options(),
         ]);
     }
 
@@ -61,6 +64,7 @@ class CategoryController extends Controller
         return Inertia::render('categories/edit', [
             'category' => $this->categoryData($financialCategory),
             'parentOptions' => $this->parentOptions($financialCategory->id),
+            'typeOptions' => CategoryType::options(),
         ]);
     }
 
@@ -98,7 +102,6 @@ class CategoryController extends Controller
     private function workspace(): Workspace
     {
         $workspace = $this->currentWorkspace->get();
-
         abort_if($workspace === null, 403);
 
         return $workspace;
@@ -113,7 +116,7 @@ class CategoryController extends Controller
     }
 
     /**
-     * @return array<int, array{id: int, name: string, is_active: bool}>
+     * @return array<int, array{id: int, name: string, type: string, type_label: string, is_active: bool}>
      */
     private function parentOptions(?int $except = null): array
     {
@@ -121,27 +124,20 @@ class CategoryController extends Controller
             ->categories()
             ->whereNull('parent_id')
             ->when($except !== null, fn ($query) => $query->whereKeyNot($except))
+            ->orderBy('type')
             ->orderByDesc('is_active')
             ->orderBy('name')
             ->get()
             ->map(fn (Category $category): array => [
                 'id' => $category->id,
                 'name' => $category->name,
+                'type' => $category->type->value,
+                'type_label' => $category->type->label(),
                 'is_active' => $category->is_active,
             ])
             ->all();
     }
 
-    /**
-     * @return array{
-     *     id: int,
-     *     name: string,
-     *     parent_id: int|null,
-     *     is_active: bool,
-     *     has_children: bool,
-     *     children: array<int, array<string, mixed>>
-     * }
-     */
     private function categoryData(Category $category): array
     {
         $children = $category->relationLoaded('children')
@@ -153,6 +149,8 @@ class CategoryController extends Controller
         return [
             'id' => $category->id,
             'name' => $category->name,
+            'type' => $category->type->value,
+            'type_label' => $category->type->label(),
             'parent_id' => $category->parent_id,
             'is_active' => $category->is_active,
             'has_children' => $category->getAttribute('children_count') !== null

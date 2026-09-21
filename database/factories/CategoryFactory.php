@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\CategoryType;
 use App\Models\Category;
 use App\Models\Workspace;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -19,6 +20,7 @@ class CategoryFactory extends Factory
         return [
             'workspace_id' => Workspace::factory(),
             'parent_id' => null,
+            'type' => CategoryType::Expense->value,
             'name' => fake()->unique()->word(),
             'is_active' => true,
         ];
