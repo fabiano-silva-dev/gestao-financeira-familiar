@@ -1,5 +1,7 @@
 name: tests
 
+# Valida o domínio financeiro e a qualidade do código antes do merge.
+
 on:
   push:
     branches:
