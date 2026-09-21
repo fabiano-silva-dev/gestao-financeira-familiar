@@ -146,9 +146,7 @@ export default function AccountsIndex() {
                                                     </p>
                                                     <p className="font-semibold tabular-nums">
                                                         {currency.format(
-                                                            Number(
-                                                                account.current_balance,
-                                                            ),
+                                                            Number(account.current_balance),
                                                         )}
                                                     </p>
                                                 </div>
@@ -158,9 +156,7 @@ export default function AccountsIndex() {
                                                     </p>
                                                     <p className="font-medium tabular-nums">
                                                         {currency.format(
-                                                            Number(
-                                                                account.opening_balance,
-                                                            ),
+                                                            Number(account.opening_balance),
                                                         )}
                                                     </p>
                                                 </div>
