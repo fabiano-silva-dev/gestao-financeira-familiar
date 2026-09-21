@@ -138,6 +138,18 @@ class CategoryController extends Controller
             ->all();
     }
 
+    /**
+     * @return array{
+     *     id: int,
+     *     name: string,
+     *     type: string,
+     *     type_label: string,
+     *     parent_id: int|null,
+     *     is_active: bool,
+     *     has_children: bool,
+     *     children: array<int, array<string, mixed>>
+     * }
+     */
     private function categoryData(Category $category): array
     {
         $children = $category->relationLoaded('children')
