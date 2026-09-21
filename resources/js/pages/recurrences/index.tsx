@@ -12,17 +12,9 @@ import {
 import FinancialRecurrenceController from '@/actions/App/Http/Controllers/FinancialRecurrenceController';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { create, edit, index } from '@/routes/recurrences';
-import type {
-    FinancialRecurrence,
-    RecurrenceProjectionPoint,
-} from '@/types';
+import type { FinancialRecurrence, RecurrenceProjectionPoint } from '@/types';
 
 type Props = {
     recurrences: FinancialRecurrence[];
@@ -51,10 +43,7 @@ function formatDate(value: string) {
     return date.format(new Date(value + 'T00:00:00Z'));
 }
 
-export default function RecurrencesIndex({
-    recurrences,
-    projection,
-}: Props) {
+export default function RecurrencesIndex({ recurrences, projection }: Props) {
     return (
         <>
             <Head title="Recorrências" />
@@ -84,7 +73,9 @@ export default function RecurrencesIndex({
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Projeção recorrente — próximos 6 meses</CardTitle>
+                        <CardTitle>
+                            Projeção recorrente — próximos 6 meses
+                        </CardTitle>
                     </CardHeader>
                     <CardContent>
                         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -99,8 +90,7 @@ export default function RecurrencesIndex({
                                         <p className="text-muted-foreground text-xs font-medium uppercase">
                                             {monthYear.format(
                                                 new Date(
-                                                    month.month +
-                                                        'T00:00:00Z',
+                                                    month.month + 'T00:00:00Z',
                                                 ),
                                             )}
                                         </p>
@@ -172,8 +162,7 @@ export default function RecurrencesIndex({
                 ) : (
                     <div className="space-y-3">
                         {recurrences.map((recurrence) => {
-                            const isExpense =
-                                recurrence.type === 'expense';
+                            const isExpense = recurrence.type === 'expense';
                             const TypeIcon = isExpense
                                 ? CircleArrowDown
                                 : CircleArrowUp;
@@ -201,9 +190,7 @@ export default function RecurrencesIndex({
                                                 </div>
                                                 <div className="min-w-0">
                                                     <CardTitle className="truncate">
-                                                        {
-                                                            recurrence.description
-                                                        }
+                                                        {recurrence.description}
                                                     </CardTitle>
                                                     <p className="text-muted-foreground mt-1 text-xs">
                                                         {

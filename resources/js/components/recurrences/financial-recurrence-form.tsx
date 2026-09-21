@@ -202,7 +202,9 @@ export default function FinancialRecurrenceForm({
                         </div>
 
                         <div className="grid gap-2">
-                            <Label htmlFor="starts_on">Primeira ocorrência</Label>
+                            <Label htmlFor="starts_on">
+                                Primeira ocorrência
+                            </Label>
                             <Input
                                 id="starts_on"
                                 name="starts_on"
@@ -464,9 +466,7 @@ export default function FinancialRecurrenceForm({
                                 A instrução será copiada para cada compromisso
                                 gerado.
                             </p>
-                            <InputError
-                                message={errors.payment_instructions}
-                            />
+                            <InputError message={errors.payment_instructions} />
                         </div>
                     </div>
 

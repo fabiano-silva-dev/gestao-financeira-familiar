@@ -20,10 +20,7 @@ type Props = {
     typeOptions: RecurrenceOption[];
 };
 
-export default function RecurrenceEdit({
-    recurrence,
-    ...formProps
-}: Props) {
+export default function RecurrenceEdit({ recurrence, ...formProps }: Props) {
     return (
         <>
             <Head title="Editar recorrência" />

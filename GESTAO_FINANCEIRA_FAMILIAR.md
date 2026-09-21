@@ -1254,7 +1254,6 @@ A especificação detalhada, os tokens sugeridos e o mockup aprovado estão em:
 O mockup é uma referência de direção visual, e não uma especificação pixel a
 pixel ou uma fonte de regras financeiras.
 
-
 ---
 
 ## 45. Decisões de Implementação — Liquidação e Recorrências

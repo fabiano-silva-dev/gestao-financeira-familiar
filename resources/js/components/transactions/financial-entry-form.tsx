@@ -72,7 +72,9 @@ export default function FinancialEntryForm({
         setPaymentMethod(value);
 
         if (isExpense && value === 'credit_card') {
-            setStatus(entry?.status === 'cancelled' ? 'cancelled' : 'confirmed');
+            setStatus(
+                entry?.status === 'cancelled' ? 'cancelled' : 'confirmed',
+            );
             setSettlementDate('');
         }
     }
@@ -351,8 +353,8 @@ export default function FinancialEntryForm({
                                 </SelectContent>
                             </Select>
                             <p className="text-muted-foreground text-xs">
-                                O gasto é reconhecido na compra. O saldo bancário
-                                só muda quando a fatura for paga.
+                                O gasto é reconhecido na compra. O saldo
+                                bancário só muda quando a fatura for paga.
                             </p>
                             <InputError message={errors.credit_card_id} />
 
@@ -542,9 +544,7 @@ export default function FinancialEntryForm({
                                         Deixe em branco se ainda não houve
                                         movimentação no caixa.
                                     </p>
-                                    <InputError
-                                        message={errors.settled_on}
-                                    />
+                                    <InputError message={errors.settled_on} />
                                 </div>
                             ) : (
                                 <input

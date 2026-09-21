@@ -5,12 +5,7 @@ import CreditCardInvoiceController from '@/actions/App/Http/Controllers/CreditCa
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -72,7 +67,12 @@ export default function CreditCardInvoiceShow() {
             <div className="flex h-full flex-1 flex-col gap-6 p-4 md:p-6">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                        <Button variant="ghost" size="sm" className="mb-2" asChild>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="mb-2"
+                            asChild
+                        >
                             <Link href={index()}>
                                 <ArrowLeft />
                                 Voltar para faturas
@@ -83,8 +83,8 @@ export default function CreditCardInvoiceShow() {
                             {invoice.credit_card_last_four}
                         </h1>
                         <p className="text-muted-foreground text-sm">
-                            Fecha em {formatDate(invoice.closing_date)} · vence em{' '}
-                            {formatDate(invoice.due_date)}
+                            Fecha em {formatDate(invoice.closing_date)} · vence
+                            em {formatDate(invoice.due_date)}
                         </p>
                     </div>
                     <Badge
@@ -125,7 +125,9 @@ export default function CreditCardInvoiceShow() {
                             <CardTitle className="text-sm">Em aberto</CardTitle>
                         </CardHeader>
                         <CardContent className="text-2xl font-semibold tabular-nums">
-                            {currency.format(Number(invoice.outstanding_amount))}
+                            {currency.format(
+                                Number(invoice.outstanding_amount),
+                            )}
                         </CardContent>
                     </Card>
                 </div>
@@ -160,7 +162,9 @@ export default function CreditCardInvoiceShow() {
                                                 }
                                             />
                                             <InputError
-                                                message={errors.statement_amount}
+                                                message={
+                                                    errors.statement_amount
+                                                }
                                             />
                                         </div>
                                         <Button disabled={processing}>
@@ -194,8 +198,10 @@ export default function CreditCardInvoiceShow() {
                                             {installment.description}
                                         </p>
                                         <p className="text-muted-foreground text-xs">
-                                            Parcela {installment.installment_number}/
-                                            {installment.total_installments} · compra em{' '}
+                                            Parcela{' '}
+                                            {installment.installment_number}/
+                                            {installment.total_installments} ·
+                                            compra em{' '}
                                             {formatDate(
                                                 installment.transaction_date,
                                             )}
@@ -270,7 +276,9 @@ export default function CreditCardInvoiceShow() {
                                                                         account.id,
                                                                     )}
                                                                 >
-                                                                    {account.name}
+                                                                    {
+                                                                        account.name
+                                                                    }
                                                                     {account.is_active
                                                                         ? ''
                                                                         : ' (inativa)'}
@@ -297,7 +305,9 @@ export default function CreditCardInvoiceShow() {
                                                 />
                                                 <Select
                                                     value={paymentMethod}
-                                                    onValueChange={setPaymentMethod}
+                                                    onValueChange={
+                                                        setPaymentMethod
+                                                    }
                                                 >
                                                     <SelectTrigger
                                                         id="payment_method"
@@ -316,14 +326,18 @@ export default function CreditCardInvoiceShow() {
                                                                         method.value
                                                                     }
                                                                 >
-                                                                    {method.label}
+                                                                    {
+                                                                        method.label
+                                                                    }
                                                                 </SelectItem>
                                                             ),
                                                         )}
                                                     </SelectContent>
                                                 </Select>
                                                 <InputError
-                                                    message={errors.payment_method}
+                                                    message={
+                                                        errors.payment_method
+                                                    }
                                                 />
                                             </div>
                                         </div>
