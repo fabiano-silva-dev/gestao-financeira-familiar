@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\FinancialImportStatus;
 use App\Enums\FinancialImportType;
+use App\Enums\FinancialTransactionOrigin;
 use App\Models\CreditCard;
 use App\Models\CreditCardInvoice;
 use App\Models\FinancialImport;
@@ -27,7 +28,7 @@ class CardStatementImportTest extends TestCase
             ->assertRedirect(route('login'));
     }
 
-    public function test_user_can_import_statement_without_creating_independent_expenses(): void
+    public function test_user_can_import_statement_and_create_card_purchase_projection(): void
     {
         Storage::fake('local');
         [$user, $workspace] = $this->userAndWorkspace();
@@ -53,7 +54,9 @@ class CardStatementImportTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $financialImport = FinancialImport::query()->sole();
-        $invoice = CreditCardInvoice::query()->sole();
+        $invoice = CreditCardInvoice::query()
+            ->where('reference_month', '2026-10-01')
+            ->sole();
 
         $this->assertSame(FinancialImportType::CardStatement, $financialImport->type);
         $this->assertSame(FinancialImportStatus::Completed, $financialImport->status);
@@ -69,6 +72,7 @@ class CardStatementImportTest extends TestCase
         $this->assertSame('2026-10-05', $invoice->closing_date->toDateString());
         $this->assertSame('2026-10-12', $invoice->due_date->toDateString());
         $this->assertSame('79.90', $invoice->statement_amount);
+        $this->assertSame('89.90', $invoice->calculated_amount);
         $this->assertDatabaseCount('card_statement_entries', 2);
         $this->assertDatabaseHas('card_statement_entries', [
             'credit_card_id' => $card->id,
@@ -79,14 +83,33 @@ class CardStatementImportTest extends TestCase
             'installment_number' => 2,
             'total_installments' => 10,
             'external_id' => 'linha-001',
-            'is_reconciled' => false,
+            'is_reconciled' => true,
         ]);
         $this->assertDatabaseHas('card_statement_entries', [
             'description' => 'Estorno mensalidade',
             'amount' => '-10.00',
         ]);
-        $this->assertDatabaseCount('financial_transactions', 0);
-        $this->assertDatabaseCount('transaction_installments', 0);
+        $this->assertDatabaseCount('financial_transactions', 1);
+        $this->assertDatabaseHas('financial_transactions', [
+            'workspace_id' => $workspace->id,
+            'credit_card_id' => $card->id,
+            'description' => 'Vôlei Lidiane',
+            'amount' => '899.00',
+            'origin' => FinancialTransactionOrigin::CardImport->value,
+        ]);
+        $this->assertDatabaseCount('transaction_installments', 9);
+        $this->assertDatabaseHas('transaction_installments', [
+            'installment_number' => 2,
+            'total_installments' => 10,
+            'amount' => '89.90',
+            'credit_card_invoice_id' => $invoice->id,
+        ]);
+        $this->assertDatabaseHas('transaction_installments', [
+            'installment_number' => 10,
+            'total_installments' => 10,
+            'amount' => '89.90',
+        ]);
+        $this->assertDatabaseCount('credit_card_invoices', 9);
         $this->assertDatabaseCount('account_movements', 0);
 
         $this->actingAs($user)
@@ -98,7 +121,7 @@ class CardStatementImportTest extends TestCase
                 ->has('imports', 1)
                 ->where('imports.0.statement_amount', '79.90')
                 ->has('entries', 2)
-                ->where('pendingEntriesCount', 2)
+                ->where('pendingEntriesCount', 1)
             );
 
         $this->actingAs($user)
@@ -108,6 +131,7 @@ class CardStatementImportTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->has('invoice.statement_entries', 2)
                 ->where('invoice.statement_entries.0.is_reconciled', false)
+                ->where('invoice.statement_entries.1.is_reconciled', true)
             );
     }
 
@@ -133,6 +157,8 @@ class CardStatementImportTest extends TestCase
 
         $this->assertDatabaseCount('financial_imports', 1);
         $this->assertDatabaseCount('card_statement_entries', 2);
+        $this->assertDatabaseCount('financial_transactions', 1);
+        $this->assertDatabaseCount('transaction_installments', 9);
     }
 
     public function test_overlapping_files_ignore_existing_external_ids(): void

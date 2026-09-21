@@ -11,6 +11,7 @@ use App\Models\CreditCardInvoice;
 use App\Models\FinancialImport;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Finance\CardStatementMaterializationService;
 use App\Services\Imports\Data\CardStatementImportResult;
 use App\Services\Imports\Data\CardStatementRow;
 use Carbon\CarbonImmutable;
@@ -25,6 +26,7 @@ final class CardStatementImportService
 {
     public function __construct(
         private readonly CardStatementParser $parser,
+        private readonly CardStatementMaterializationService $materializationService,
     ) {}
 
     public function import(
@@ -57,7 +59,15 @@ final class CardStatementImportService
             ->first();
 
         if ($existing?->status === FinancialImportStatus::Completed) {
-            return new CardStatementImportResult($existing, true);
+            $this->materializeExistingImport(
+                $workspace,
+                $card,
+                $existing,
+                $user,
+                $referenceMonth,
+            );
+
+            return new CardStatementImportResult($existing->refresh(), true);
         }
 
         $extension = strtolower($file->getClientOriginalExtension());
@@ -111,6 +121,7 @@ final class CardStatementImportService
                 $referenceMonth,
                 $amountSign,
                 $statement,
+                $user,
             ): void {
                 $lockedImport = FinancialImport::query()
                     ->whereKey($financialImport->id)
@@ -162,7 +173,18 @@ final class CardStatementImportService
                         ],
                     );
 
-                    $entry->wasRecentlyCreated ? $imported++ : $duplicates++;
+                    if ($entry->wasRecentlyCreated) {
+                        $imported++;
+                        $this->materializationService->materialize(
+                            $workspace,
+                            $card,
+                            $invoice,
+                            $entry,
+                            $user,
+                        );
+                    } else {
+                        $duplicates++;
+                    }
                 }
 
                 $statementAmount = $this->centsToMoney($statementCents);
@@ -212,6 +234,43 @@ final class CardStatementImportService
         }
 
         return new CardStatementImportResult($financialImport->refresh(), false);
+    }
+
+    private function materializeExistingImport(
+        Workspace $workspace,
+        CreditCard $card,
+        FinancialImport $financialImport,
+        User $user,
+        string $referenceMonth,
+    ): void {
+        $invoice = $this->resolveInvoice($card, $referenceMonth);
+
+        DB::transaction(function () use (
+            $workspace,
+            $card,
+            $financialImport,
+            $user,
+            $invoice,
+        ): void {
+            $financialImport->cardStatementEntries()
+                ->where('is_reconciled', false)
+                ->orderBy('id')
+                ->get()
+                ->each(function (CardStatementEntry $entry) use (
+                    $workspace,
+                    $card,
+                    $invoice,
+                    $user,
+                ): void {
+                    $this->materializationService->materialize(
+                        $workspace,
+                        $card,
+                        $invoice,
+                        $entry,
+                        $user,
+                    );
+                });
+        });
     }
 
     private function resolveInvoice(

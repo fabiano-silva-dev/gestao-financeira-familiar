@@ -82,7 +82,7 @@ class CardStatementImportController extends Controller
         );
 
         $message = $result->alreadyImported
-            ? 'Esta fatura já havia sido importada. Nenhuma linha foi duplicada.'
+            ? 'Esta fatura já havia sido importada. Os lançamentos pendentes foram processados sem duplicidade.'
             : sprintf(
                 'Fatura processada: %d nova(s) e %d duplicada(s) ignorada(s).',
                 $result->import->imported_records,
