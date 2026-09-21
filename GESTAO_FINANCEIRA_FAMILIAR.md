@@ -1519,3 +1519,234 @@ A modelagem deverá preservar a seguinte distinção:
 **Movimento bancário = efeito real no caixa.**
 
 Nenhuma implementação deverá duplicar valores entre compra, parcela, fatura, pagamento, contrato de crédito e movimento bancário.
+
+---
+
+## 47. Reservas, Investimentos e Benefícios Financeiros
+
+O sistema deverá distinguir dinheiro disponível para uso, reservas financeiras, investimentos e benefícios recebidos.
+
+O objetivo é acompanhar o patrimônio sem transformar movimentações entre ativos próprios em receitas ou despesas e sem duplicar ganhos na entrada, valorização ou resgate.
+
+### 47.1 Caixa e saldo disponível
+
+Contas correntes, contas digitais, dinheiro e carteiras representam recursos disponíveis para uso imediato e participam diretamente do fluxo de caixa.
+
+Exemplo:
+
+**Mercado Pago — Conta**
+
+O saldo em reais disponível para pagamentos e transferências pertence ao caixa.
+
+---
+
+### 47.2 Conta de reserva ou aplicação em reais
+
+Produtos utilizados para separar ou aplicar valores em reais, como cofrinhos, caixinhas e reservas remuneradas, devem ser tratados como contas de reserva ou investimento, e não como despesas.
+
+Exemplo:
+
+**Mercado Pago — Cofrinho**
+
+Ao transferir R$ 500,00 do saldo disponível do Mercado Pago para o Cofrinho:
+
+**Mercado Pago — Conta → Mercado Pago — Cofrinho**
+
+Essa operação representa movimentação entre ativos próprios.
+
+Não gera:
+
+- despesa;
+- receita;
+- aumento ou redução do patrimônio líquido apenas pelo deslocamento do principal.
+
+Rendimentos creditados pela aplicação são fatos financeiros separados e podem ser classificados como receita/rendimento financeiro.
+
+Exemplo:
+
+- principal aplicado: R$ 5.000,00;
+- rendimento creditado: R$ 42,30;
+- patrimônio decorrente do principal continua sendo R$ 5.000,00;
+- R$ 42,30 representam rendimento financeiro.
+
+---
+
+### 47.3 Conta de investimento
+
+Uma conta de investimento representa o local ou instituição onde ativos financeiros são mantidos.
+
+Exemplos:
+
+- carteira de criptomoedas;
+- corretora;
+- conta de investimentos;
+- aplicação de renda fixa;
+- outros produtos de investimento futuros.
+
+A conta de investimento pode conter uma ou mais posições.
+
+Ela não deve ser modelada apenas como um saldo monetário quando o ativo possuir quantidade própria.
+
+---
+
+### 47.4 Ativos e posições
+
+Investimentos que possuem unidades próprias devem manter posição por ativo.
+
+Exemplos:
+
+- Meli Dólar;
+- Bitcoin;
+- Ethereum;
+- outros criptoativos;
+- cotas ou ativos financeiros futuros.
+
+Cada posição deverá poder preservar, quando aplicável:
+
+- ativo;
+- símbolo;
+- quantidade;
+- unidade;
+- valor de origem ou custo;
+- moeda de referência;
+- cotação utilizada na entrada;
+- valor atual estimado;
+- data da posição ou cotação;
+- origem da aquisição.
+
+Quantidades de ativos podem exigir precisão superior à utilizada para valores monetários.
+
+Nunca utilizar `float` ou `double` para valores monetários, quantidades de criptoativos ou cálculos patrimoniais que exijam precisão. Utilizar tipos decimais de precisão fixa adequados ao dado.
+
+---
+
+### 47.5 Cashback e outros benefícios
+
+Cashback deve ser registrado conforme a forma efetiva em que o benefício é concedido.
+
+#### Cashback em dinheiro
+
+Quando o benefício for creditado como dinheiro disponível em uma conta:
+
+- registrar o benefício como entrada financeira;
+- identificar sua origem como cashback;
+- vincular a conta de destino;
+- não alterar retroativamente a compra original.
+
+Exemplo:
+
+**Compra de R$ 100,00 → cashback posterior de R$ 5,00 em conta**
+
+A compra permanece em R$ 100,00 e o cashback é registrado separadamente como benefício financeiro de R$ 5,00.
+
+#### Cashback creditado em ativo ou criptoativo
+
+Quando o benefício for creditado diretamente como um ativo, o sistema deverá registrar:
+
+- origem: cashback;
+- conta de investimento de destino;
+- ativo recebido;
+- quantidade recebida;
+- valor equivalente em reais na data da entrada;
+- cotação utilizada, quando disponível.
+
+Exemplo conceitual:
+
+**Compra → cashback → carteira de criptoativos → posição em Meli Dólar**
+
+O cashback aumenta o patrimônio, mas não deve ser registrado como entrada de caixa em reais se o valor não passou pela conta disponível em reais.
+
+#### Cashback utilizado como desconto imediato
+
+Quando o benefício funcionar como desconto na própria operação, o sistema poderá registrar o valor bruto da compra e o abatimento vinculado, preservando o valor líquido efetivamente suportado.
+
+Não criar artificialmente uma receita separada quando economicamente houve apenas redução do custo da compra.
+
+---
+
+### 47.6 Conversões entre ativos próprios
+
+Conversões, aplicações e resgates entre ativos próprios não devem ser tratados pelo valor total como nova receita ou nova despesa.
+
+Exemplos:
+
+- reais → investimento;
+- investimento → reais;
+- criptoativo → reais;
+- reais → criptoativo;
+- troca entre dois ativos.
+
+Fluxo conceitual:
+
+**Ativo de origem → Conversão/transferência → Ativo de destino**
+
+O principal movimentado continua pertencendo ao mesmo workspace.
+
+Quando houver ganho ou perda realizado na conversão ou resgate, o resultado deverá ser tratado separadamente do principal movimentado.
+
+---
+
+### 47.7 Valorização e desvalorização
+
+Variação de preço de um investimento sem venda ou resgate representa alteração patrimonial não realizada.
+
+Exemplo:
+
+- valor de origem da posição: R$ 100,00;
+- valor atual estimado: R$ 105,00;
+- valorização não realizada: R$ 5,00.
+
+Essa valorização não deve aparecer como entrada de caixa.
+
+O sistema poderá apresentá-la em uma visão patrimonial ou de investimentos.
+
+Ao ocorrer venda, conversão ou resgate, o ganho ou perda realizado poderá ser apurado separadamente do valor principal movimentado.
+
+---
+
+### 47.8 Visões distintas
+
+A plataforma deverá distinguir pelo menos:
+
+**Caixa**
+- dinheiro efetivamente disponível;
+- entradas e saídas realizadas.
+
+**Patrimônio**
+- caixa;
+- reservas;
+- investimentos;
+- outros ativos considerados no futuro.
+
+**Resultado financeiro**
+- rendimentos;
+- cashback e benefícios;
+- ganhos ou perdas realizados;
+- outras receitas ou despesas financeiras.
+
+**Valorização patrimonial não realizada**
+- variações de preço de ativos ainda mantidos.
+
+Essas visões não devem ser somadas de forma que o mesmo valor seja contado mais de uma vez.
+
+---
+
+### 47.9 Estrutura conceitual consolidada
+
+A plataforma deverá preservar a seguinte separação:
+
+**Conta financeira disponível = caixa.**
+
+**Conta de reserva/aplicação = patrimônio aplicado em reais.**
+
+**Conta de investimento = local onde ativos são mantidos.**
+
+**Posição de investimento = quantidade de determinado ativo.**
+
+**Cashback = benefício cuja contabilização depende da forma efetiva de crédito.**
+
+**Conversão/resgate = movimentação entre ativos próprios, com resultado apurado separadamente quando houver ganho ou perda.**
+
+**Valorização não realizada = alteração patrimonial, não entrada de caixa.**
+
+Essa modelagem deverá impedir que aplicação, resgate, cashback, valorização e conversão gerem duplicidade de receitas, despesas ou patrimônio.
