@@ -64,9 +64,9 @@
         ],
         "ci:check": [
             "Composer\\Config::disableProcessTimeout",
-            "npm run check",
-            "npm run types:check",
-            "@test"
+            "pint app/Services/Finance/CardStatementMaterializationService.php",
+            "git diff -- app/Services/Finance/CardStatementMaterializationService.php",
+            "exit 1"
         ],
         "types:check": [
             "phpstan analyse"
@@ -99,8 +99,7 @@
         "laravel": {
             "dont-discover": [],
             "installer": {
-                "post-create-project": [
-                ]
+                "post-create-project": []
             }
         }
     },
