@@ -87,7 +87,11 @@ export default function CategoryForm({
 
                         <div className="grid gap-2">
                             <Label htmlFor="type">Tipo</Label>
-                            <input type="hidden" name="type" value={categoryType} />
+                            <input
+                                type="hidden"
+                                name="type"
+                                value={categoryType}
+                            />
                             <Select
                                 value={categoryType}
                                 onValueChange={changeType}
@@ -98,14 +102,18 @@ export default function CategoryForm({
                                 </SelectTrigger>
                                 <SelectContent>
                                     {typeOptions.map((option) => (
-                                        <SelectItem key={option.value} value={option.value}>
+                                        <SelectItem
+                                            key={option.value}
+                                            value={option.value}
+                                        >
                                             {option.label}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
                             <p className="text-muted-foreground text-xs">
-                                Despesa e receita são tipos, não níveis da árvore de categorias.
+                                Despesa e receita são tipos, não níveis da árvore
+                                de categorias.
                             </p>
                             <InputError message={errors.type} />
                         </div>
@@ -116,7 +124,11 @@ export default function CategoryForm({
                         <input
                             type="hidden"
                             name="parent_id"
-                            value={parentSelection === 'root' ? '' : parentSelection}
+                            value={
+                                parentSelection === 'root'
+                                    ? ''
+                                    : parentSelection
+                            }
                         />
                         <Select
                             value={parentSelection}
@@ -127,9 +139,14 @@ export default function CategoryForm({
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="root">Categoria principal</SelectItem>
+                                <SelectItem value="root">
+                                    Categoria principal
+                                </SelectItem>
                                 {availableParents.map((parent) => (
-                                    <SelectItem key={parent.id} value={String(parent.id)}>
+                                    <SelectItem
+                                        key={parent.id}
+                                        value={String(parent.id)}
+                                    >
                                         {parent.name}
                                         {parent.is_active ? '' : ' (inativa)'}
                                     </SelectItem>
@@ -145,11 +162,20 @@ export default function CategoryForm({
                     </div>
 
                     <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                        <Button variant="outline" className="w-full sm:w-auto" asChild>
+                        <Button
+                            variant="outline"
+                            className="w-full sm:w-auto"
+                            asChild
+                        >
                             <Link href={index()}>Cancelar</Link>
                         </Button>
-                        <Button className="w-full sm:w-auto" disabled={processing}>
-                            {category ? 'Salvar alterações' : 'Cadastrar categoria'}
+                        <Button
+                            className="w-full sm:w-auto"
+                            disabled={processing}
+                        >
+                            {category
+                                ? 'Salvar alterações'
+                                : 'Cadastrar categoria'}
                         </Button>
                     </div>
                 </>

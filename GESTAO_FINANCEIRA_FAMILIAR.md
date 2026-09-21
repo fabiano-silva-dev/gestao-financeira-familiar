@@ -224,46 +224,35 @@ Campos principais:
 
 ### 7.4 Categorias e subcategorias
 
-Exemplos:
-
-- Mercado
-- Moradia
-- Água
-- Energia
-- Internet
-- Educação
-- Saúde
-- Transporte
-- Veículos
-- Vestuário
-- Lazer
-- Restaurantes
-- Assinaturas
-- Impostos
-- Viagens
-- Receitas
-- Salários
-- Distribuição de lucros
-- Outros
-
 O sistema deverá permitir categoria e subcategoria.
 
 **Receita e despesa são tipos da categoria, não níveis da árvore.**
 
-Não deverão ser criadas categorias-pai chamadas "Despesas" ou "Receitas" apenas para separar os lançamentos. O tipo do lançamento e da categoria fará essa separação.
+Não deverão ser criadas categorias-pai chamadas "Despesas" ou "Receitas"
+apenas para separar os lançamentos. O tipo do lançamento e da categoria fará
+essa separação.
 
 A hierarquia operacional será:
 
 **Tipo → Categoria → Subcategoria**
 
-Exemplos:
+Exemplos de despesas:
 
-- Despesa → Esportes → Karatê
-- Despesa → Esportes → Vôlei
-- Despesa → Esportes → Handebol
-- Despesa → Veículos → Combustível
-- Receita → Rendimentos
-- Receita → Distribuição de lucros
+- Esportes → Karatê
+- Esportes → Vôlei
+- Esportes → Handebol
+- Veículos → Combustível
+- Moradia → Energia
+- Educação
+- Saúde
+- Mercado
+
+Exemplos de receitas:
+
+- Salários
+- Rendimentos
+- Distribuição de lucros
+- Outros recebimentos
 
 A pessoa da família permanece uma dimensão independente da categoria.
 
