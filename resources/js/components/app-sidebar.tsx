@@ -7,6 +7,7 @@ import {
     LayoutGrid,
     ReceiptText,
     Tags,
+    Upload,
     Users,
     WalletCards,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ import { index as categoriesIndex } from '@/routes/categories';
 import { index as creditCardInvoicesIndex } from '@/routes/credit-card-invoices';
 import { index as creditCardsIndex } from '@/routes/credit-cards';
 import { index as familyMembersIndex } from '@/routes/family-members';
+import { index as ofxImportsIndex } from '@/routes/imports/ofx';
 import { index as recurrencesIndex } from '@/routes/recurrences';
 import { index as transactionsIndex } from '@/routes/transactions';
 import { index as transfersIndex } from '@/routes/transfers';
@@ -68,6 +70,11 @@ const mainNavItems: NavItem[] = [
         title: 'Transferências',
         href: transfersIndex(),
         icon: ArrowLeftRight,
+    },
+    {
+        title: 'Importar OFX',
+        href: ofxImportsIndex(),
+        icon: Upload,
     },
     {
         title: 'Categorias',

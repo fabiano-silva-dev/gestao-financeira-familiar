@@ -9,6 +9,7 @@ use App\Http\Controllers\FamilyMemberController;
 use App\Http\Controllers\FinancialAccountController;
 use App\Http\Controllers\FinancialRecurrenceController;
 use App\Http\Controllers\FinancialTransactionController;
+use App\Http\Controllers\OfxImportController;
 use App\Http\Controllers\TransferController;
 use Illuminate\Support\Facades\Route;
 
@@ -145,6 +146,11 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::patch('transferencias/{transfer}/status', [TransferController::class, 'advanceStatus'])
         ->whereNumber('transfer')
         ->name('transfers.advance-status');
+
+    Route::get('importacoes/ofx', [OfxImportController::class, 'index'])
+        ->name('imports.ofx.index');
+    Route::post('importacoes/ofx', [OfxImportController::class, 'store'])
+        ->name('imports.ofx.store');
 
     Route::post('workspaces/{workspace}/activate', ActiveWorkspaceController::class)
         ->name('workspaces.activate');

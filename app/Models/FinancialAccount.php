@@ -44,6 +44,22 @@ class FinancialAccount extends Model
     }
 
     /**
+     * @return HasMany<FinancialImport, $this>
+     */
+    public function financialImports(): HasMany
+    {
+        return $this->hasMany(FinancialImport::class);
+    }
+
+    /**
+     * @return HasMany<BankStatementEntry, $this>
+     */
+    public function bankStatementEntries(): HasMany
+    {
+        return $this->hasMany(BankStatementEntry::class);
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

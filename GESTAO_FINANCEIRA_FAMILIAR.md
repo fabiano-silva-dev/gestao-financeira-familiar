@@ -445,6 +445,15 @@ Fluxo desejado:
 7. Sugere conciliações.
 8. Usuário trata apenas exceções.
 
+Decisões adotadas para a primeira versão:
+
+- o arquivo original é preservado em armazenamento privado para auditoria;
+- cada envio gera histórico com status, período e contadores de processamento;
+- os itens importados ficam em uma área bancária intermediária e não criam automaticamente receitas, despesas ou movimentos no livro financeiro;
+- a duplicidade do arquivo é verificada pelo conteúdo, independentemente do nome recebido;
+- a duplicidade dos itens usa o identificador bancário `FITID` quando disponível e uma impressão determinística dos dados como alternativa;
+- somente a conciliação transforma ou vincula o registro bancário a uma obrigação, fatura, transferência ou lançamento do sistema.
+
 ---
 
 ## 15. Importação de Faturas

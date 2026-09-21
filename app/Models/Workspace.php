@@ -104,4 +104,20 @@ class Workspace extends Model
     {
         return $this->hasMany(AccountMovement::class);
     }
+
+    /**
+     * @return HasMany<FinancialImport, $this>
+     */
+    public function financialImports(): HasMany
+    {
+        return $this->hasMany(FinancialImport::class);
+    }
+
+    /**
+     * @return HasMany<BankStatementEntry, $this>
+     */
+    public function bankStatementEntries(): HasMany
+    {
+        return $this->hasMany(BankStatementEntry::class);
+    }
 }

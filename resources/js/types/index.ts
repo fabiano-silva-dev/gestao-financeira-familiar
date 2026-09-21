@@ -6,6 +6,7 @@ export type * from './dashboard';
 export type * from './family-member';
 export type * from './financial-account';
 export type * from './financial-entry';
+export type * from './financial-import';
 export type * from './financial-recurrence';
 export type * from './navigation';
 export type * from './payment-method';
