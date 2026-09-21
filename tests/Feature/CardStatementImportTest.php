@@ -7,6 +7,7 @@ use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\FinancialImportStatus;
 use App\Enums\FinancialImportType;
 use App\Enums\FinancialTransactionOrigin;
+use App\Models\CardStatementEntry;
 use App\Models\Category;
 use App\Models\CreditCard;
 use App\Models\CreditCardInvoice;
@@ -15,7 +16,6 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Workspaces\CurrentWorkspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -297,10 +297,8 @@ class CardStatementImportTest extends TestCase
         config()->set('financial_ai.gemini.models', ['gemini-test']);
         config()->set('financial_ai.groq.api_key', '');
 
-        Http::fake(function (Request $request) use ($category) {
-            $prompt = $request->data()['contents'][0]['parts'][0]['text'] ?? '';
-            preg_match('/"entry_id":(\\d+)/', (string) $prompt, $matches);
-            $entryId = (int) ($matches[1] ?? 0);
+        Http::fake(function () use ($category) {
+            $entryId = CardStatementEntry::query()->sole()->id;
 
             return Http::response([
                 'candidates' => [[
