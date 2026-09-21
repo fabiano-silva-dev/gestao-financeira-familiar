@@ -9,7 +9,6 @@ use App\Http\Requests\StoreFinancialAccountRequest;
 use App\Http\Requests\UpdateFinancialAccountRequest;
 use App\Models\AccountMovement;
 use App\Models\FinancialAccount;
-use App\Models\FinancialTransaction;
 use App\Models\Workspace;
 use App\Support\Workspaces\CurrentWorkspace;
 use Illuminate\Http\RedirectResponse;
