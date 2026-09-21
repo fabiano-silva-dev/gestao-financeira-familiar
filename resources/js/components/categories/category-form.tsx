@@ -112,8 +112,8 @@ export default function CategoryForm({
                                 </SelectContent>
                             </Select>
                             <p className="text-muted-foreground text-xs">
-                                Despesa e receita são tipos, não níveis da árvore
-                                de categorias.
+                                Despesa e receita são tipos, não níveis da
+                                árvore de categorias.
                             </p>
                             <InputError message={errors.type} />
                         </div>

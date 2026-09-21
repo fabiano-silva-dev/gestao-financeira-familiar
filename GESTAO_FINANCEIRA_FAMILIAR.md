@@ -1450,27 +1450,27 @@ Fluxo conceitual:
 Para fins conceituais, o sistema trabalhará inicialmente com três famílias principais:
 
 1. **Cartão de crédito**
-   - possui linha de crédito;
-   - possui ciclos;
-   - possui faturas;
-   - compras e parcelas são agrupadas em faturas.
+    - possui linha de crédito;
+    - possui ciclos;
+    - possui faturas;
+    - compras e parcelas são agrupadas em faturas.
 
 2. **Crédito parcelado ou contrato**
-   - crediário;
-   - financiamento;
-   - empréstimo;
-   - parcelamentos negociados;
-   - possui parcelas diretamente vinculadas à origem;
-   - normalmente não possui fatura.
+    - crediário;
+    - financiamento;
+    - empréstimo;
+    - parcelamentos negociados;
+    - possui parcelas diretamente vinculadas à origem;
+    - normalmente não possui fatura.
 
 3. **Obrigação recorrente**
-   - escola;
-   - academia;
-   - internet;
-   - seguros;
-   - assinaturas;
-   - outras despesas periódicas;
-   - origina ocorrências a partir de uma regra recorrente.
+    - escola;
+    - academia;
+    - internet;
+    - seguros;
+    - assinaturas;
+    - outras despesas periódicas;
+    - origina ocorrências a partir de uma regra recorrente.
 
 Essas famílias podem compartilhar conceitos como:
 
