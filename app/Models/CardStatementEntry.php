@@ -14,8 +14,11 @@ use Illuminate\Support\Carbon;
  * @property int|null $total_installments
  * @property array<string, string|null>|null $raw_data
  * @property bool $is_reconciled
+ * @property Carbon|null $reconciled_at
  * @property-read CreditCard $creditCard
  * @property-read CreditCardInvoice $invoice
+ * @property-read TransactionInstallment|null $transactionInstallment
+ * @property-read User|null $reconciler
  */
 #[Fillable([
     'workspace_id',
@@ -30,6 +33,9 @@ use Illuminate\Support\Carbon;
     'external_id',
     'deduplication_key',
     'raw_data',
+    'transaction_installment_id',
+    'reconciled_by',
+    'reconciled_at',
     'is_reconciled',
 ])]
 class CardStatementEntry extends Model
@@ -58,6 +64,18 @@ class CardStatementEntry extends Model
         return $this->belongsTo(CreditCardInvoice::class, 'credit_card_invoice_id');
     }
 
+    /** @return BelongsTo<TransactionInstallment, $this> */
+    public function transactionInstallment(): BelongsTo
+    {
+        return $this->belongsTo(TransactionInstallment::class);
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function reconciler(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reconciled_by');
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
@@ -67,6 +85,7 @@ class CardStatementEntry extends Model
             'installment_number' => 'integer',
             'total_installments' => 'integer',
             'raw_data' => 'array',
+            'reconciled_at' => 'datetime',
             'is_reconciled' => 'boolean',
         ];
     }

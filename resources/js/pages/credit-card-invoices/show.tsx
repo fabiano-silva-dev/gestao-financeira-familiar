@@ -2,10 +2,16 @@ import { Form, Head, Link, usePage } from '@inertiajs/react';
 import {
     ArrowLeft,
     CheckCircle2,
+    CircleAlert,
     FileSpreadsheet,
+    Link2,
+    Plus,
+    RotateCcw,
+    Sparkles,
     WalletCards,
 } from 'lucide-react';
 import { useState } from 'react';
+import CardStatementReconciliationController from '@/actions/App/Http/Controllers/CardStatementReconciliationController';
 import CreditCardInvoiceController from '@/actions/App/Http/Controllers/CreditCardInvoiceController';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
@@ -21,6 +27,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { index } from '@/routes/credit-card-invoices';
+import { createExpense } from '@/routes/transactions';
 import type {
     CreditCardInvoice,
     FinancialEntryReferenceOption,
@@ -45,8 +52,21 @@ const date = new Intl.DateTimeFormat('pt-BR', {
     timeZone: 'UTC',
 });
 
+const dateTime = new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+});
+
 function formatDate(value: string) {
     return date.format(new Date(`${value}T00:00:00Z`));
+}
+
+function confidenceVariant(confidence: 'high' | 'medium' | 'low') {
+    if (confidence === 'high') return 'secondary' as const;
+    return 'outline' as const;
 }
 
 export default function CreditCardInvoiceShow() {
@@ -65,6 +85,21 @@ export default function CreditCardInvoiceShow() {
     const installments = invoice.installments ?? [];
     const statementEntries = invoice.statement_entries ?? [];
     const payments = invoice.payments ?? [];
+    const [selectedInstallments, setSelectedInstallments] = useState<
+        Record<number, string>
+    >(() =>
+        statementEntries.reduce<Record<number, string>>((selected, entry) => {
+            const suggestion = entry.candidates.find(
+                (candidate) => candidate.is_suggestion,
+            );
+
+            if (suggestion) {
+                selected[entry.id] = String(suggestion.installment_id);
+            }
+
+            return selected;
+        }, {}),
+    );
 
     return (
         <>
@@ -244,38 +279,306 @@ export default function CreditCardInvoiceShow() {
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3">
-                            {statementEntries.map((entry) => (
-                                <div
-                                    key={entry.id}
-                                    className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
-                                >
-                                    <div className="min-w-0">
-                                        <p className="truncate font-medium">
-                                            {entry.description}
-                                        </p>
-                                        <p className="text-muted-foreground text-xs">
-                                            Compra em{' '}
-                                            {formatDate(entry.purchased_on)}
-                                            {entry.installment_number &&
-                                            entry.total_installments
-                                                ? ` · parcela ${entry.installment_number}/${entry.total_installments}`
-                                                : ''}
-                                        </p>
+                            {statementEntries.map((entry) => {
+                                const suggestion = entry.candidates.find(
+                                    (candidate) => candidate.is_suggestion,
+                                );
+                                const selected =
+                                    selectedInstallments[entry.id] ?? '';
+
+                                return (
+                                    <div
+                                        key={entry.id}
+                                        className="rounded-lg border p-4"
+                                    >
+                                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                            <div className="min-w-0">
+                                                <p className="truncate font-medium">
+                                                    {entry.description}
+                                                </p>
+                                                <p className="text-muted-foreground text-xs">
+                                                    Compra em{' '}
+                                                    {formatDate(
+                                                        entry.purchased_on,
+                                                    )}
+                                                    {entry.installment_number &&
+                                                    entry.total_installments
+                                                        ? ` · parcela ${entry.installment_number}/${entry.total_installments}`
+                                                        : ''}
+                                                </p>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <Badge variant="outline">
+                                                    {entry.is_reconciled
+                                                        ? 'Conciliada'
+                                                        : 'Pendente'}
+                                                </Badge>
+                                                <p className="font-semibold tabular-nums">
+                                                    {currency.format(
+                                                        Number(entry.amount),
+                                                    )}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {entry.linked_installment ? (
+                                            <div className="bg-positive/5 border-positive/20 mt-4 flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
+                                                <div>
+                                                    <p className="text-sm font-medium">
+                                                        Vinculada a{' '}
+                                                        {
+                                                            entry
+                                                                .linked_installment
+                                                                .description
+                                                        }
+                                                    </p>
+                                                    <p className="text-muted-foreground mt-1 text-xs">
+                                                        Parcela{' '}
+                                                        {
+                                                            entry
+                                                                .linked_installment
+                                                                .installment_number
+                                                        }
+                                                        /
+                                                        {
+                                                            entry
+                                                                .linked_installment
+                                                                .total_installments
+                                                        }{' '}
+                                                        · compra em{' '}
+                                                        {formatDate(
+                                                            entry
+                                                                .linked_installment
+                                                                .transaction_date,
+                                                        )}
+                                                    </p>
+                                                    {entry.reconciled_at && (
+                                                        <p className="text-muted-foreground mt-1 text-xs">
+                                                            Conciliada em{' '}
+                                                            {dateTime.format(
+                                                                new Date(
+                                                                    entry.reconciled_at,
+                                                                ),
+                                                            )}
+                                                            {entry.reconciled_by_name
+                                                                ? ` por ${entry.reconciled_by_name}`
+                                                                : ''}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                <Form
+                                                    {...CardStatementReconciliationController.destroy.form(
+                                                        {
+                                                            invoice: invoice.id,
+                                                            entry: entry.id,
+                                                        },
+                                                    )}
+                                                    options={{
+                                                        preserveScroll: true,
+                                                    }}
+                                                >
+                                                    {({ processing }) => (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            disabled={
+                                                                processing
+                                                            }
+                                                        >
+                                                            <RotateCcw />
+                                                            Desfazer
+                                                        </Button>
+                                                    )}
+                                                </Form>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                {suggestion && (
+                                                    <div className="bg-primary/5 border-primary/15 mt-4 rounded-lg border p-3">
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <Sparkles className="text-primary size-4" />
+                                                            <p className="text-sm font-medium">
+                                                                Melhor sugestão
+                                                            </p>
+                                                            <Badge
+                                                                variant={confidenceVariant(
+                                                                    suggestion.confidence,
+                                                                )}
+                                                            >
+                                                                {
+                                                                    suggestion.confidence_label
+                                                                }
+                                                            </Badge>
+                                                            <span className="text-muted-foreground text-xs">
+                                                                {
+                                                                    suggestion.score
+                                                                }
+                                                                %
+                                                            </span>
+                                                        </div>
+                                                        <p className="mt-2 text-sm">
+                                                            {
+                                                                suggestion.description
+                                                            }
+                                                        </p>
+                                                        <p className="text-muted-foreground mt-1 text-xs">
+                                                            Parcela{' '}
+                                                            {
+                                                                suggestion.installment_number
+                                                            }
+                                                            /
+                                                            {
+                                                                suggestion.total_installments
+                                                            }{' '}
+                                                            · compra em{' '}
+                                                            {formatDate(
+                                                                suggestion.transaction_date,
+                                                            )}
+                                                        </p>
+                                                    </div>
+                                                )}
+
+                                                {entry.candidates.length > 0 ? (
+                                                    <Form
+                                                        {...CardStatementReconciliationController.store.form(
+                                                            {
+                                                                invoice:
+                                                                    invoice.id,
+                                                                entry: entry.id,
+                                                            },
+                                                        )}
+                                                        options={{
+                                                            preserveScroll: true,
+                                                        }}
+                                                        className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start"
+                                                    >
+                                                        {({
+                                                            processing,
+                                                            errors,
+                                                        }) => (
+                                                            <>
+                                                                <div>
+                                                                    <input
+                                                                        type="hidden"
+                                                                        name="transaction_installment_id"
+                                                                        value={
+                                                                            selected
+                                                                        }
+                                                                    />
+                                                                    <Select
+                                                                        value={
+                                                                            selected
+                                                                        }
+                                                                        onValueChange={(
+                                                                            value,
+                                                                        ) =>
+                                                                            setSelectedInstallments(
+                                                                                (
+                                                                                    current,
+                                                                                ) => ({
+                                                                                    ...current,
+                                                                                    [entry.id]:
+                                                                                        value,
+                                                                                }),
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        <SelectTrigger className="w-full">
+                                                                            <SelectValue placeholder="Selecione uma compra compatível" />
+                                                                        </SelectTrigger>
+                                                                        <SelectContent>
+                                                                            {entry.candidates.map(
+                                                                                (
+                                                                                    candidate,
+                                                                                ) => (
+                                                                                    <SelectItem
+                                                                                        key={
+                                                                                            candidate.installment_id
+                                                                                        }
+                                                                                        value={String(
+                                                                                            candidate.installment_id,
+                                                                                        )}
+                                                                                    >
+                                                                                        {
+                                                                                            candidate.description
+                                                                                        }{' '}
+                                                                                        ·{' '}
+                                                                                        parcela{' '}
+                                                                                        {
+                                                                                            candidate.installment_number
+                                                                                        }
+                                                                                        /
+                                                                                        {
+                                                                                            candidate.total_installments
+                                                                                        }{' '}
+                                                                                        ·{' '}
+                                                                                        {formatDate(
+                                                                                            candidate.transaction_date,
+                                                                                        )}
+                                                                                    </SelectItem>
+                                                                                ),
+                                                                            )}
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                    <InputError
+                                                                        message={
+                                                                            errors.transaction_installment_id
+                                                                        }
+                                                                        className="mt-2"
+                                                                    />
+                                                                </div>
+                                                                <Button
+                                                                    disabled={
+                                                                        processing ||
+                                                                        selected ===
+                                                                            ''
+                                                                    }
+                                                                >
+                                                                    <Link2 />
+                                                                    Conciliar
+                                                                </Button>
+                                                            </>
+                                                        )}
+                                                    </Form>
+                                                ) : (
+                                                    <div className="mt-4 flex flex-col gap-3 rounded-lg border border-dashed p-3 sm:flex-row sm:items-center sm:justify-between">
+                                                        <div className="flex items-start gap-2">
+                                                            <CircleAlert className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+                                                            <div>
+                                                                <p className="text-sm font-medium">
+                                                                    Nenhuma
+                                                                    parcela
+                                                                    compatível
+                                                                </p>
+                                                                <p className="text-muted-foreground mt-1 text-xs">
+                                                                    Cadastre a
+                                                                    compra no
+                                                                    cartão e
+                                                                    volte para
+                                                                    confirmar o
+                                                                    vínculo.
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            asChild
+                                                        >
+                                                            <Link
+                                                                href={createExpense()}
+                                                            >
+                                                                <Plus />
+                                                                Nova compra
+                                                            </Link>
+                                                        </Button>
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
                                     </div>
-                                    <div className="flex items-center gap-3">
-                                        <Badge variant="outline">
-                                            {entry.is_reconciled
-                                                ? 'Conciliada'
-                                                : 'Pendente'}
-                                        </Badge>
-                                        <p className="font-semibold tabular-nums">
-                                            {currency.format(
-                                                Number(entry.amount),
-                                            )}
-                                        </p>
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </CardContent>
                     </Card>
                 )}

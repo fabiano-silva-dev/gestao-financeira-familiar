@@ -13,9 +13,11 @@ use App\Models\FinancialAccount;
 use App\Models\TransactionInstallment;
 use App\Models\Workspace;
 use App\Services\Finance\CreditCardInvoiceService;
+use App\Services\Reconciliation\CardStatementReconciliationSuggestionService;
 use App\Support\Workspaces\CurrentWorkspace;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -24,6 +26,7 @@ class CreditCardInvoiceController extends Controller
     public function __construct(
         private readonly CurrentWorkspace $currentWorkspace,
         private readonly CreditCardInvoiceService $invoiceService,
+        private readonly CardStatementReconciliationSuggestionService $reconciliationSuggestionService,
     ) {}
 
     public function index(): Response
@@ -50,12 +53,17 @@ class CreditCardInvoiceController extends Controller
                 'installments.transaction.category:id,name,parent_id',
                 'installments.transaction.category.parent:id,name',
                 'installments.transaction.familyMember:id,name',
+                'installments.cardStatementEntry:id,transaction_installment_id',
                 'payments.account:id,name',
-                'statementEntries',
+                'statementEntries.transactionInstallment.transaction:id,description,transaction_date',
+                'statementEntries.reconciler:id,name',
             ]);
 
         $workspace = $this->workspace();
         $card = $creditCardInvoice->creditCard()->firstOrFail();
+        $availableInstallments = $creditCardInvoice->installments
+            ->filter(fn (TransactionInstallment $installment): bool => $installment->cardStatementEntry === null)
+            ->values();
 
         return Inertia::render('credit-card-invoices/show', [
             'invoice' => [
@@ -82,15 +90,10 @@ class CreditCardInvoiceController extends Controller
                 'statement_entries' => $creditCardInvoice->statementEntries
                     ->sortByDesc('purchased_on')
                     ->values()
-                    ->map(fn (CardStatementEntry $entry): array => [
-                        'id' => $entry->id,
-                        'purchased_on' => $entry->purchased_on->toDateString(),
-                        'description' => $entry->description,
-                        'amount' => $entry->amount,
-                        'installment_number' => $entry->installment_number,
-                        'total_installments' => $entry->total_installments,
-                        'is_reconciled' => $entry->is_reconciled,
-                    ])
+                    ->map(fn (CardStatementEntry $entry): array => $this->statementEntryData(
+                        $entry,
+                        $availableInstallments,
+                    ))
                     ->all(),
             ],
             'accountOptions' => $workspace->financialAccounts()
@@ -215,6 +218,46 @@ class CreditCardInvoiceController extends Controller
             'status_label' => $installment->status->label(),
             'category_name' => $categoryName,
             'family_member_name' => $transaction->familyMember?->name,
+        ];
+    }
+
+    /**
+     * @param  Collection<int, TransactionInstallment>  $availableInstallments
+     * @return array<string, mixed>
+     */
+    private function statementEntryData(
+        CardStatementEntry $entry,
+        Collection $availableInstallments,
+    ): array {
+        $linkedInstallment = $entry->transactionInstallment;
+        $linkedTransaction = $linkedInstallment?->transaction;
+
+        return [
+            'id' => $entry->id,
+            'purchased_on' => $entry->purchased_on->toDateString(),
+            'description' => $entry->description,
+            'amount' => $entry->amount,
+            'installment_number' => $entry->installment_number,
+            'total_installments' => $entry->total_installments,
+            'is_reconciled' => $entry->is_reconciled,
+            'reconciled_by_name' => $entry->reconciler?->name,
+            'reconciled_at' => $entry->reconciled_at?->toIso8601String(),
+            'linked_installment' => $linkedInstallment === null || $linkedTransaction === null
+                ? null
+                : [
+                    'id' => $linkedInstallment->id,
+                    'transaction_id' => $linkedTransaction->id,
+                    'description' => $linkedTransaction->description,
+                    'transaction_date' => $linkedTransaction->transaction_date->toDateString(),
+                    'installment_number' => $linkedInstallment->installment_number,
+                    'total_installments' => $linkedInstallment->total_installments,
+                ],
+            'candidates' => $entry->is_reconciled
+                ? []
+                : $this->reconciliationSuggestionService->candidates(
+                    $entry,
+                    $availableInstallments,
+                ),
         ];
     }
 }

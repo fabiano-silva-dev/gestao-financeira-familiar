@@ -9,6 +9,7 @@ use App\Enums\TransactionInstallmentStatus;
 use App\Models\CreditCard;
 use App\Models\CreditCardInvoice;
 use App\Models\FinancialTransaction;
+use App\Models\TransactionInstallment;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
@@ -25,8 +26,25 @@ class CardPurchaseService
 
         $installmentCount = max(1, $installmentCount);
         $existingInstallments = $transaction->installments()
-            ->with('invoice.payments')
+            ->with(['invoice.payments', 'cardStatementEntry'])
+            ->orderBy('installment_number')
+            ->lockForUpdate()
             ->get();
+        $card = $transaction->creditCard()->firstOrFail();
+
+        if ($this->hasReconciledInstallment($existingInstallments)) {
+            if ($this->installmentStructureMatches(
+                $transaction,
+                $card,
+                $installmentCount,
+                $existingInstallments,
+            )) {
+                return;
+            }
+
+            $this->throwReconciliationValidation();
+        }
+
         $oldInvoices = $existingInstallments
             ->pluck('invoice')
             ->filter()
@@ -37,7 +55,6 @@ class CardPurchaseService
         $transaction->installments()->delete();
         $this->recalculateInvoices($oldInvoices);
 
-        $card = $transaction->creditCard()->firstOrFail();
         $purchaseDate = CarbonImmutable::parse($transaction->transaction_date);
         $amounts = $this->splitAmount((string) $transaction->amount, $installmentCount);
         $firstClosingMonth = $this->firstClosingMonth($card, $purchaseDate);
@@ -74,11 +91,16 @@ class CardPurchaseService
     public function clear(FinancialTransaction $transaction): void
     {
         $installments = $transaction->installments()
-            ->with('invoice.payments')
+            ->with(['invoice.payments', 'cardStatementEntry'])
+            ->lockForUpdate()
             ->get();
 
         if ($installments->isEmpty()) {
             return;
+        }
+
+        if ($this->hasReconciledInstallment($installments)) {
+            $this->throwReconciliationValidation();
         }
 
         $invoices = $installments
@@ -99,7 +121,8 @@ class CardPurchaseService
         }
 
         $installments = $transaction->installments()
-            ->with('invoice.payments')
+            ->with(['invoice.payments', 'cardStatementEntry'])
+            ->lockForUpdate()
             ->get();
 
         if ($installments->isEmpty()) {
@@ -121,6 +144,16 @@ class CardPurchaseService
             ? TransactionInstallmentStatus::Cancelled
             : TransactionInstallmentStatus::Open;
 
+        if ($this->hasReconciledInstallment($installments)) {
+            if ($installments->every(
+                fn (TransactionInstallment $installment): bool => $installment->status === $status,
+            )) {
+                return;
+            }
+
+            $this->throwReconciliationValidation();
+        }
+
         $transaction->installments()->update([
             'status' => $status->value,
             'paid_at' => null,
@@ -132,6 +165,78 @@ class CardPurchaseService
     {
         return $transaction->type === FinancialTransactionType::Expense
             && $transaction->credit_card_id !== null;
+    }
+
+    /**
+     * @param  Collection<int, TransactionInstallment>  $installments
+     */
+    private function hasReconciledInstallment(Collection $installments): bool
+    {
+        return $installments->contains(
+            fn (TransactionInstallment $installment): bool => $installment->cardStatementEntry !== null,
+        );
+    }
+
+    /**
+     * @param  Collection<int, TransactionInstallment>  $installments
+     */
+    private function installmentStructureMatches(
+        FinancialTransaction $transaction,
+        CreditCard $card,
+        int $installmentCount,
+        Collection $installments,
+    ): bool {
+        if ($installments->count() !== $installmentCount) {
+            return false;
+        }
+
+        $purchaseDate = CarbonImmutable::parse($transaction->transaction_date);
+        $amounts = $this->splitAmount((string) $transaction->amount, $installmentCount);
+        $firstClosingMonth = $this->firstClosingMonth($card, $purchaseDate);
+        $expectedStatus = $transaction->status === FinancialTransactionStatus::Cancelled
+            ? TransactionInstallmentStatus::Cancelled
+            : TransactionInstallmentStatus::Open;
+
+        foreach ($amounts as $index => $amount) {
+            $installment = $installments->values()->get($index);
+
+            if (! $installment instanceof TransactionInstallment) {
+                return false;
+            }
+
+            [, $dueDate] = $this->cycleDates(
+                $card,
+                $firstClosingMonth->addMonths($index),
+            );
+            $invoice = $installment->invoice;
+            $competenceMonth = $purchaseDate
+                ->startOfMonth()
+                ->addMonths($index)
+                ->toDateString();
+
+            if (
+                $invoice === null
+                || $invoice->credit_card_id !== $card->id
+                || $invoice->reference_month->toDateString() !== $dueDate->startOfMonth()->toDateString()
+                || $installment->installment_number !== $index + 1
+                || $installment->total_installments !== $installmentCount
+                || $installment->amount !== $amount
+                || $installment->competence_month->toDateString() !== $competenceMonth
+                || $installment->due_date->toDateString() !== $dueDate->toDateString()
+                || $installment->status !== $expectedStatus
+            ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function throwReconciliationValidation(): never
+    {
+        throw ValidationException::withMessages([
+            'reconciliation' => 'Desfaça a conciliação da fatura antes de alterar cartão, data, valor, parcelamento ou situação da compra.',
+        ]);
     }
 
     /**

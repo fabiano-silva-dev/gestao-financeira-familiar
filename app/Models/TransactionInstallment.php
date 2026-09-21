@@ -6,7 +6,9 @@ use App\Enums\TransactionInstallmentStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\ValidationException;
 
 /**
  * @property int $installment_number
@@ -19,6 +21,7 @@ use Illuminate\Support\Carbon;
  * @property TransactionInstallmentStatus $status
  * @property-read CreditCardInvoice|null $invoice
  * @property-read FinancialTransaction $transaction
+ * @property-read CardStatementEntry|null $cardStatementEntry
  */
 #[Fillable([
     'workspace_id',
@@ -50,6 +53,41 @@ class TransactionInstallment extends Model
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(CreditCardInvoice::class, 'credit_card_invoice_id');
+    }
+
+    /** @return HasOne<CardStatementEntry, $this> */
+    public function cardStatementEntry(): HasOne
+    {
+        return $this->hasOne(CardStatementEntry::class);
+    }
+
+    protected static function booted(): void
+    {
+        static::updating(function (TransactionInstallment $installment): void {
+            if (
+                $installment->isDirty([
+                    'credit_card_invoice_id',
+                    'installment_number',
+                    'total_installments',
+                    'amount',
+                    'competence_month',
+                    'due_date',
+                ])
+                && $installment->cardStatementEntry()->exists()
+            ) {
+                throw ValidationException::withMessages([
+                    'reconciliation' => 'Desfaça a conciliação da fatura antes de alterar a parcela.',
+                ]);
+            }
+        });
+
+        static::deleting(function (TransactionInstallment $installment): void {
+            if ($installment->cardStatementEntry()->exists()) {
+                throw ValidationException::withMessages([
+                    'reconciliation' => 'Desfaça a conciliação da fatura antes de remover a parcela.',
+                ]);
+            }
+        });
     }
 
     /** @return array<string, string> */

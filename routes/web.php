@@ -3,6 +3,7 @@
 use App\Http\Controllers\ActiveWorkspaceController;
 use App\Http\Controllers\BankReconciliationController;
 use App\Http\Controllers\CardStatementImportController;
+use App\Http\Controllers\CardStatementReconciliationController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CreditCardController;
 use App\Http\Controllers\CreditCardInvoiceController;
@@ -95,6 +96,20 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::post('faturas/{invoice}/pagamentos', [CreditCardInvoiceController::class, 'pay'])
         ->whereNumber('invoice')
         ->name('credit-card-invoices.pay');
+    Route::post(
+        'faturas/{invoice}/linhas/{entry}/conciliar',
+        [CardStatementReconciliationController::class, 'store'],
+    )
+        ->whereNumber('invoice')
+        ->whereNumber('entry')
+        ->name('credit-card-invoices.statement-entries.reconcile');
+    Route::delete(
+        'faturas/{invoice}/linhas/{entry}/conciliar',
+        [CardStatementReconciliationController::class, 'destroy'],
+    )
+        ->whereNumber('invoice')
+        ->whereNumber('entry')
+        ->name('credit-card-invoices.statement-entries.reconciliation.destroy');
 
     Route::get('lancamentos', [FinancialTransactionController::class, 'index'])
         ->name('transactions.index');

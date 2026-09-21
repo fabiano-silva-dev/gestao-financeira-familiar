@@ -31,6 +31,30 @@ export type CreditCardInvoicePayment = {
     notes: string | null;
 };
 
+export type CreditCardInvoiceStatementCandidate = {
+    installment_id: number;
+    transaction_id: number;
+    transaction_date: string;
+    description: string;
+    amount: string;
+    installment_number: number;
+    total_installments: number;
+    score: number;
+    confidence: 'high' | 'medium' | 'low';
+    confidence_label: string;
+    date_distance: number;
+    is_suggestion: boolean;
+};
+
+export type CreditCardInvoiceLinkedInstallment = {
+    id: number;
+    transaction_id: number;
+    description: string;
+    transaction_date: string;
+    installment_number: number;
+    total_installments: number;
+};
+
 export type CreditCardInvoiceStatementEntry = {
     id: number;
     purchased_on: string;
@@ -39,6 +63,10 @@ export type CreditCardInvoiceStatementEntry = {
     installment_number: number | null;
     total_installments: number | null;
     is_reconciled: boolean;
+    reconciled_by_name: string | null;
+    reconciled_at: string | null;
+    linked_installment: CreditCardInvoiceLinkedInstallment | null;
+    candidates: CreditCardInvoiceStatementCandidate[];
 };
 
 export type CreditCardInvoice = {

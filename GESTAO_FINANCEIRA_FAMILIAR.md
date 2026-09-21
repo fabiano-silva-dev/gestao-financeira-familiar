@@ -1781,3 +1781,20 @@ Para a primeira versão:
 - pagamentos de despesas, recebimentos de receitas, pagamentos de fatura e as duas pontas de transferências usam o mesmo fluxo de conciliação;
 - a conciliação registra usuário e horário e pode ser desfeita;
 - conta, data, valor e tipo de um movimento conciliado não podem ser alterados até que o vínculo seja desfeito.
+
+---
+
+## 49. Decisões de Implementação — Conciliação de Faturas
+
+A conciliação de faturas vincula uma linha importada da operadora a uma parcela de compra já existente na mesma fatura. O vínculo confirma que os dois registros representam o mesmo fato financeiro e não cria outra despesa, parcela ou fatura.
+
+Para a primeira versão:
+
+- cartão, fatura e valor devem ser idênticos;
+- quando o arquivo informar número e total de parcelas, ambos devem coincidir com a parcela interna;
+- data e descrição ajudam a ordenar as sugestões, mas a confirmação continua sendo feita pelo usuário;
+- uma linha importada só pode ser vinculada a uma parcela e uma parcela só pode ser vinculada a uma linha;
+- a conciliação registra usuário e horário e pode ser desfeita;
+- categoria, pessoa responsável, favorecido e observações da compra podem continuar sendo ajustados sem romper o vínculo;
+- cartão, data, valor, quantidade de parcelas e situação financeira da compra não podem ser alterados enquanto alguma parcela estiver conciliada;
+- linhas sem compra correspondente permanecem pendentes para criação posterior através do motor financeiro.
