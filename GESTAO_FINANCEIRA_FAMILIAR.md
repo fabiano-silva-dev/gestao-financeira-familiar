@@ -1301,3 +1301,221 @@ Para recorrências:
 - a rotina automática de geração deve ser segura para reexecução e trabalhar de forma idempotente.
 
 A projeção de recorrências é uma visão de planejamento e não substitui o fluxo de caixa real nem a fatura efetivamente formada.
+
+---
+
+## 46. Estrutura de Crédito e Obrigações
+
+O sistema deverá distinguir claramente caixa, crédito, obrigação e pagamento.
+
+### 46.1 Conta financeira
+
+Conta financeira representa onde o dinheiro efetivamente está.
+
+Exemplos:
+
+- conta corrente;
+- conta digital;
+- poupança;
+- carteira;
+- dinheiro;
+- conta de investimento.
+
+Uma conta financeira possui saldo e participa diretamente do fluxo de caixa.
+
+---
+
+### 46.2 Cartão de crédito
+
+O cartão de crédito representa uma linha de crédito com ciclos de faturamento.
+
+Ele não deve ser tratado como uma conta bancária comum e não representa dinheiro disponível em caixa.
+
+Fluxo conceitual:
+
+**Compra → Parcela → Fatura → Pagamento da fatura → Movimento bancário**
+
+A compra representa o fato financeiro e a despesa.
+
+A parcela representa o comprometimento daquele período.
+
+A fatura agrupa compras e parcelas pertencentes ao mesmo ciclo.
+
+O pagamento da fatura representa somente a liquidação da obrigação e não cria uma nova despesa.
+
+O movimento bancário representa a saída efetiva de dinheiro da conta utilizada para pagar a fatura.
+
+#### Conta de cartão e instrumentos
+
+Conceitualmente deverá ser possível distinguir a conta de crédito dos instrumentos utilizados para realizar compras.
+
+Exemplo:
+
+**Nubank Crédito**
+
+- cartão físico final 1234 — Fabiano;
+- cartão virtual final 9876 — Fabiano;
+- cartão adicional final 5555 — Lidiane.
+
+Esses instrumentos podem compartilhar:
+
+- o mesmo limite;
+- o mesmo ciclo;
+- a mesma fatura;
+- a mesma conta de crédito.
+
+No MVP essa distinção poderá não ser exposta integralmente na interface, mas a modelagem não deverá impedir sua evolução futura.
+
+Isso será especialmente relevante para importações de fatura, Open Finance e identificação do responsável por determinada compra.
+
+---
+
+### 46.3 Crédito parcelado ou contrato
+
+Crediários, financiamentos, empréstimos e outros contratos parcelados devem ser tratados como obrigações de crédito próprias.
+
+Exemplos:
+
+- carnê de loja;
+- crediário;
+- financiamento de veículo;
+- empréstimo pessoal;
+- parcelamento negociado;
+- outros contratos parcelados.
+
+Diferentemente do cartão de crédito, normalmente não existe uma fatura intermediária.
+
+Fluxo conceitual:
+
+**Compra/contrato → Parcelas → Pagamento da parcela → Movimento bancário**
+
+Exemplo:
+
+Compra na Tumelero:
+
+- valor original: R$ 3.000,00;
+- pagamento: 10 parcelas de R$ 300,00;
+- credor: Tumelero;
+- forma prevista de pagamento: boleto.
+
+O sistema deverá preservar:
+
+- valor original da compra ou contrato;
+- credor;
+- quantidade e valor das parcelas;
+- parcelas pagas;
+- parcelas restantes;
+- vencimentos;
+- saldo ainda comprometido;
+- forma e instruções de pagamento;
+- vínculo entre cada pagamento e a parcela correspondente.
+
+O pagamento de uma parcela não gera nova despesa. Ele liquida uma obrigação originada anteriormente.
+
+---
+
+### 46.4 Obrigações recorrentes
+
+Despesas recorrentes como escola, academia, internet, seguros e atividades esportivas não devem ser confundidas com crédito.
+
+São obrigações periódicas geradas a partir de uma regra recorrente.
+
+Exemplo:
+
+Handebol:
+
+- periodicidade: mensal;
+- valor: R$ 150,00;
+- forma de pagamento: PIX;
+- favorecido: responsável pela atividade;
+- chave PIX cadastrada.
+
+Fluxo conceitual:
+
+**Regra recorrente → Ocorrência/obrigação → Pagamento → Movimento bancário**
+
+---
+
+### 46.5 Famílias de obrigações
+
+Para fins conceituais, o sistema trabalhará inicialmente com três famílias principais:
+
+1. **Cartão de crédito**
+   - possui linha de crédito;
+   - possui ciclos;
+   - possui faturas;
+   - compras e parcelas são agrupadas em faturas.
+
+2. **Crédito parcelado ou contrato**
+   - crediário;
+   - financiamento;
+   - empréstimo;
+   - parcelamentos negociados;
+   - possui parcelas diretamente vinculadas à origem;
+   - normalmente não possui fatura.
+
+3. **Obrigação recorrente**
+   - escola;
+   - academia;
+   - internet;
+   - seguros;
+   - assinaturas;
+   - outras despesas periódicas;
+   - origina ocorrências a partir de uma regra recorrente.
+
+Essas famílias podem compartilhar conceitos como:
+
+- credor ou favorecido;
+- vencimento;
+- forma de pagamento;
+- instruções de pagamento;
+- pagamento;
+- liquidação;
+- movimento bancário;
+- conciliação.
+
+Não deverão, entretanto, ser forçadas para uma única entidade com grande quantidade de campos opcionais.
+
+O domínio deverá compartilhar apenas os conceitos realmente comuns e manter especializações quando houver comportamento financeiro diferente.
+
+---
+
+### 46.6 Comprometimento futuro
+
+Todas as famílias de obrigação deverão alimentar uma visão única de compromissos futuros.
+
+Exemplo:
+
+Outubro:
+
+- Nubank — fatura/cartão: R$ 2.400,00;
+- Tumelero — crediário: R$ 300,00;
+- financiamento do veículo: R$ 1.200,00;
+- escola: R$ 900,00;
+- internet: R$ 150,00.
+
+Total comprometido: R$ 4.950,00.
+
+Essa visão deverá representar obrigações futuras sem confundi-las com despesas novas ou fluxo de caixa já realizado.
+
+---
+
+### 46.7 Princípio fundamental
+
+A modelagem deverá preservar a seguinte distinção:
+
+**Conta bancária = ativo/caixa.**
+
+**Cartão de crédito = linha de crédito com faturas.**
+
+**Crédito parcelado/contrato = obrigação com parcelas.**
+
+**Recorrência = regra que gera obrigações periódicas.**
+
+**Compra/transação = fato financeiro.**
+
+**Pagamento = liquidação de obrigação, e não nova despesa.**
+
+**Movimento bancário = efeito real no caixa.**
+
+Nenhuma implementação deverá duplicar valores entre compra, parcela, fatura, pagamento, contrato de crédito e movimento bancário.
