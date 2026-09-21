@@ -1,21 +1,15 @@
 import { Form, Head, Link, usePage } from '@inertiajs/react';
-import { Landmark, Pencil, Plus, Power } from 'lucide-react';
+import { ArrowRight, Landmark, Pencil, Plus, Power } from 'lucide-react';
 import FinancialAccountController from '@/actions/App/Http/Controllers/FinancialAccountController';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardFooter,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
-import { create, edit, index } from '@/routes/accounts';
-import type { FinancialAccount } from '@/types';
+import { Card, CardContent } from '@/components/ui/card';
+import { create, edit, index, show } from '@/routes/accounts';
+import type { FinancialAccount, FinancialAccountSummary } from '@/types';
 
 type Props = {
     accounts: FinancialAccount[];
+    summary: FinancialAccountSummary;
 };
 
 const currency = new Intl.NumberFormat('pt-BR', {
@@ -28,11 +22,11 @@ const date = new Intl.DateTimeFormat('pt-BR', {
 });
 
 function formatDate(value: string) {
-    return date.format(new Date(`${value}T00:00:00Z`));
+    return date.format(new Date(value + 'T00:00:00Z'));
 }
 
 export default function AccountsIndex() {
-    const { accounts, workspace } = usePage<Props>().props;
+    const { accounts, summary, workspace } = usePage<Props>().props;
 
     return (
         <>
@@ -45,11 +39,11 @@ export default function AccountsIndex() {
                             Contas financeiras
                         </h1>
                         <p className="text-muted-foreground text-sm">
-                            Onde o dinheiro do workspace{' '}
+                            Onde o dinheiro e as reservas do workspace{' '}
                             <span className="font-medium">
                                 {workspace.current?.name}
                             </span>{' '}
-                            está guardado.
+                            estão guardados.
                         </p>
                     </div>
 
@@ -60,6 +54,23 @@ export default function AccountsIndex() {
                         </Link>
                     </Button>
                 </div>
+
+                <Card>
+                    <CardContent className="p-5">
+                        <p className="text-muted-foreground text-xs uppercase">
+                            Saldo total
+                        </p>
+                        <p className="mt-1 text-3xl font-semibold tabular-nums">
+                            {currency.format(Number(summary.total_balance))}
+                        </p>
+                        <p className="text-muted-foreground mt-1 text-xs">
+                            Soma de {summary.active_accounts}{' '}
+                            {summary.active_accounts === 1
+                                ? 'conta ativa'
+                                : 'contas ativas'}
+                        </p>
+                    </CardContent>
+                </Card>
 
                 {accounts.length === 0 ? (
                     <Card className="border-dashed">
@@ -72,8 +83,9 @@ export default function AccountsIndex() {
                                     Nenhuma conta cadastrada
                                 </h2>
                                 <p className="text-muted-foreground max-w-md text-sm">
-                                    Cadastre a primeira conta bancária, carteira
-                                    ou conta digital para começar o controle.
+                                    Cadastre a primeira conta bancária, carteira,
+                                    reserva ou conta de investimento para começar
+                                    o controle.
                                 </p>
                             </div>
                             <Button asChild>
@@ -84,7 +96,7 @@ export default function AccountsIndex() {
                         </CardContent>
                     </Card>
                 ) : (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="space-y-3">
                         {accounts.map((account) => (
                             <Card
                                 key={account.id}
@@ -92,88 +104,118 @@ export default function AccountsIndex() {
                                     account.is_active ? undefined : 'opacity-70'
                                 }
                             >
-                                <CardHeader>
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="min-w-0">
-                                            <CardTitle className="truncate">
-                                                {account.name}
-                                            </CardTitle>
-                                            <CardDescription>
-                                                {account.institution ||
-                                                    'Sem instituição informada'}
-                                            </CardDescription>
-                                        </div>
-                                        <Badge
-                                            variant={
-                                                account.is_active
-                                                    ? 'secondary'
-                                                    : 'outline'
-                                            }
+                                <CardContent className="p-0">
+                                    <div className="flex flex-col lg:flex-row">
+                                        <Link
+                                            href={show(account.id)}
+                                            className="group flex min-w-0 flex-1 flex-col gap-4 p-5 lg:flex-row lg:items-center"
                                         >
-                                            {account.is_active
-                                                ? 'Ativa'
-                                                : 'Inativa'}
-                                        </Badge>
-                                    </div>
-                                </CardHeader>
-                                <CardContent className="space-y-3">
-                                    <div>
-                                        <p className="text-muted-foreground text-xs uppercase">
-                                            Tipo
-                                        </p>
-                                        <p className="text-sm font-medium">
-                                            {account.type_label}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-muted-foreground text-xs uppercase">
-                                            Saldo atual
-                                        </p>
-                                        <p className="text-xl font-semibold tabular-nums">
-                                            {currency.format(
-                                                Number(account.current_balance),
-                                            )}
-                                        </p>
-                                        <p className="text-muted-foreground mt-1 text-xs">
-                                            Inicial:{' '}
-                                            {currency.format(
-                                                Number(account.opening_balance),
-                                            )}
-                                            {account.opening_balance_date
-                                                ? ` em ${formatDate(
-                                                      account.opening_balance_date,
-                                                  )}`
-                                                : ''}
-                                        </p>
+                                            <div className="flex min-w-0 flex-1 items-start gap-3">
+                                                <div className="bg-muted rounded-full p-2.5">
+                                                    <Landmark className="size-5" />
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <p className="truncate font-semibold">
+                                                            {account.name}
+                                                        </p>
+                                                        <Badge
+                                                            variant={
+                                                                account.is_active
+                                                                    ? 'secondary'
+                                                                    : 'outline'
+                                                            }
+                                                        >
+                                                            {account.is_active
+                                                                ? 'Ativa'
+                                                                : 'Inativa'}
+                                                        </Badge>
+                                                    </div>
+                                                    <p className="text-muted-foreground mt-1 text-sm">
+                                                        {account.institution ||
+                                                            'Sem instituição'}{' '}
+                                                        · {account.type_label}
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid flex-1 grid-cols-2 gap-4 sm:grid-cols-3">
+                                                <div>
+                                                    <p className="text-muted-foreground text-xs uppercase">
+                                                        Saldo atual
+                                                    </p>
+                                                    <p className="font-semibold tabular-nums">
+                                                        {currency.format(
+                                                            Number(
+                                                                account.current_balance,
+                                                            ),
+                                                        )}
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-muted-foreground text-xs uppercase">
+                                                        Saldo inicial
+                                                    </p>
+                                                    <p className="font-medium tabular-nums">
+                                                        {currency.format(
+                                                            Number(
+                                                                account.opening_balance,
+                                                            ),
+                                                        )}
+                                                    </p>
+                                                </div>
+                                                <div className="col-span-2 sm:col-span-1">
+                                                    <p className="text-muted-foreground text-xs uppercase">
+                                                        Data inicial
+                                                    </p>
+                                                    <p className="font-medium">
+                                                        {account.opening_balance_date
+                                                            ? formatDate(
+                                                                  account.opening_balance_date,
+                                                              )
+                                                            : 'Não informada'}
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            <ArrowRight className="text-muted-foreground hidden size-5 shrink-0 transition-transform group-hover:translate-x-1 lg:block" />
+                                        </Link>
+
+                                        <div className="flex items-center justify-end gap-2 border-t p-3 lg:border-t-0 lg:border-l">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                asChild
+                                            >
+                                                <Link href={edit(account.id)}>
+                                                    <Pencil />
+                                                    Editar
+                                                </Link>
+                                            </Button>
+                                            <Form
+                                                {...FinancialAccountController.toggleStatus.form(
+                                                    account.id,
+                                                )}
+                                                options={{
+                                                    preserveScroll: true,
+                                                }}
+                                            >
+                                                {({ processing }) => (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        disabled={processing}
+                                                    >
+                                                        <Power />
+                                                        {account.is_active
+                                                            ? 'Desativar'
+                                                            : 'Ativar'}
+                                                    </Button>
+                                                )}
+                                            </Form>
+                                        </div>
                                     </div>
                                 </CardContent>
-                                <CardFooter className="flex flex-wrap justify-end gap-2">
-                                    <Button variant="outline" size="sm" asChild>
-                                        <Link href={edit(account.id)}>
-                                            <Pencil />
-                                            Editar
-                                        </Link>
-                                    </Button>
-                                    <Form
-                                        {...FinancialAccountController.toggleStatus.form(
-                                            account.id,
-                                        )}
-                                        options={{ preserveScroll: true }}
-                                    >
-                                        {({ processing }) => (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                disabled={processing}
-                                            >
-                                                <Power />
-                                                {account.is_active
-                                                    ? 'Desativar'
-                                                    : 'Ativar'}
-                                            </Button>
-                                        )}
-                                    </Form>
-                                </CardFooter>
                             </Card>
                         ))}
                     </div>

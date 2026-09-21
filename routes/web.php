@@ -27,6 +27,9 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->name('accounts.create');
     Route::post('contas', [FinancialAccountController::class, 'store'])
         ->name('accounts.store');
+    Route::get('contas/{account}', [FinancialAccountController::class, 'show'])
+        ->whereNumber('account')
+        ->name('accounts.show');
     Route::get('contas/{account}/editar', [FinancialAccountController::class, 'edit'])
         ->whereNumber('account')
         ->name('accounts.edit');
