@@ -58,6 +58,12 @@ class CreditCardInvoice extends Model
         return $this->hasMany(CreditCardInvoicePayment::class);
     }
 
+    /** @return HasMany<CardStatementEntry, $this> */
+    public function statementEntries(): HasMany
+    {
+        return $this->hasMany(CardStatementEntry::class);
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {

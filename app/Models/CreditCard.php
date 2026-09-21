@@ -76,6 +76,14 @@ class CreditCard extends Model
     }
 
     /**
+     * @return HasMany<CardStatementEntry, $this>
+     */
+    public function statementEntries(): HasMany
+    {
+        return $this->hasMany(CardStatementEntry::class);
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

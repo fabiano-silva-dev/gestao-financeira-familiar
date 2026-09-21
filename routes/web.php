@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ActiveWorkspaceController;
+use App\Http\Controllers\CardStatementImportController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CreditCardController;
 use App\Http\Controllers\CreditCardInvoiceController;
@@ -151,6 +152,11 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->name('imports.ofx.index');
     Route::post('importacoes/ofx', [OfxImportController::class, 'store'])
         ->name('imports.ofx.store');
+
+    Route::get('importacoes/faturas', [CardStatementImportController::class, 'index'])
+        ->name('imports.card-statements.index');
+    Route::post('importacoes/faturas', [CardStatementImportController::class, 'store'])
+        ->name('imports.card-statements.store');
 
     Route::post('workspaces/{workspace}/activate', ActiveWorkspaceController::class)
         ->name('workspaces.activate');

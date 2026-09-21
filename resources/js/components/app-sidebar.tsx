@@ -3,6 +3,7 @@ import {
     ArrowLeftRight,
     Repeat2,
     CreditCard,
+    FileSpreadsheet,
     Landmark,
     LayoutGrid,
     ReceiptText,
@@ -30,6 +31,7 @@ import { index as creditCardInvoicesIndex } from '@/routes/credit-card-invoices'
 import { index as creditCardsIndex } from '@/routes/credit-cards';
 import { index as familyMembersIndex } from '@/routes/family-members';
 import { index as ofxImportsIndex } from '@/routes/imports/ofx';
+import { index as cardStatementImportsIndex } from '@/routes/imports/card-statements';
 import { index as recurrencesIndex } from '@/routes/recurrences';
 import { index as transactionsIndex } from '@/routes/transactions';
 import { index as transfersIndex } from '@/routes/transfers';
@@ -75,6 +77,11 @@ const mainNavItems: NavItem[] = [
         title: 'Importar OFX',
         href: ofxImportsIndex(),
         icon: Upload,
+    },
+    {
+        title: 'Importar faturas',
+        href: cardStatementImportsIndex(),
+        icon: FileSpreadsheet,
     },
     {
         title: 'Categorias',

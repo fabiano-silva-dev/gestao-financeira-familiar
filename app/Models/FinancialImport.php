@@ -75,6 +75,12 @@ class FinancialImport extends Model
         return $this->hasMany(BankStatementEntry::class);
     }
 
+    /** @return HasMany<CardStatementEntry, $this> */
+    public function cardStatementEntries(): HasMany
+    {
+        return $this->hasMany(CardStatementEntry::class);
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {

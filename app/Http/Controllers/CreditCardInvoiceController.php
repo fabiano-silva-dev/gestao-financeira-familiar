@@ -6,6 +6,7 @@ use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\PaymentMethod;
 use App\Http\Requests\CloseCreditCardInvoiceRequest;
 use App\Http\Requests\StoreCreditCardInvoicePaymentRequest;
+use App\Models\CardStatementEntry;
 use App\Models\CreditCardInvoice;
 use App\Models\CreditCardInvoicePayment;
 use App\Models\FinancialAccount;
@@ -50,6 +51,7 @@ class CreditCardInvoiceController extends Controller
                 'installments.transaction.category.parent:id,name',
                 'installments.transaction.familyMember:id,name',
                 'payments.account:id,name',
+                'statementEntries',
             ]);
 
         $workspace = $this->workspace();
@@ -75,6 +77,19 @@ class CreditCardInvoiceController extends Controller
                         'payment_method_label' => $payment->payment_method->label(),
                         'account_name' => $payment->account->name,
                         'notes' => $payment->notes,
+                    ])
+                    ->all(),
+                'statement_entries' => $creditCardInvoice->statementEntries
+                    ->sortByDesc('purchased_on')
+                    ->values()
+                    ->map(fn (CardStatementEntry $entry): array => [
+                        'id' => $entry->id,
+                        'purchased_on' => $entry->purchased_on->toDateString(),
+                        'description' => $entry->description,
+                        'amount' => $entry->amount,
+                        'installment_number' => $entry->installment_number,
+                        'total_installments' => $entry->total_installments,
+                        'is_reconciled' => $entry->is_reconciled,
                     ])
                     ->all(),
             ],

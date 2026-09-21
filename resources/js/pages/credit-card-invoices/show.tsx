@@ -1,5 +1,10 @@
 import { Form, Head, Link, usePage } from '@inertiajs/react';
-import { ArrowLeft, CheckCircle2, WalletCards } from 'lucide-react';
+import {
+    ArrowLeft,
+    CheckCircle2,
+    FileSpreadsheet,
+    WalletCards,
+} from 'lucide-react';
 import { useState } from 'react';
 import CreditCardInvoiceController from '@/actions/App/Http/Controllers/CreditCardInvoiceController';
 import InputError from '@/components/input-error';
@@ -58,6 +63,7 @@ export default function CreditCardInvoiceShow() {
     );
     const [paymentMethod, setPaymentMethod] = useState(defaultPaymentMethod);
     const installments = invoice.installments ?? [];
+    const statementEntries = invoice.statement_entries ?? [];
     const payments = invoice.payments ?? [];
 
     return (
@@ -228,6 +234,51 @@ export default function CreditCardInvoiceShow() {
                         )}
                     </CardContent>
                 </Card>
+
+                {statementEntries.length > 0 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <FileSpreadsheet className="size-5" />
+                                Linhas importadas da operadora
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            {statementEntries.map((entry) => (
+                                <div
+                                    key={entry.id}
+                                    className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+                                >
+                                    <div className="min-w-0">
+                                        <p className="truncate font-medium">
+                                            {entry.description}
+                                        </p>
+                                        <p className="text-muted-foreground text-xs">
+                                            Compra em{' '}
+                                            {formatDate(entry.purchased_on)}
+                                            {entry.installment_number &&
+                                            entry.total_installments
+                                                ? ` · parcela ${entry.installment_number}/${entry.total_installments}`
+                                                : ''}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <Badge variant="outline">
+                                            {entry.is_reconciled
+                                                ? 'Conciliada'
+                                                : 'Pendente'}
+                                        </Badge>
+                                        <p className="font-semibold tabular-nums">
+                                            {currency.format(
+                                                Number(entry.amount),
+                                            )}
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
+                        </CardContent>
+                    </Card>
+                )}
 
                 {invoice.can_pay && (
                     <Card>

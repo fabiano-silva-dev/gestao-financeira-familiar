@@ -479,6 +479,18 @@ Informações desejadas:
 - cartão;
 - fatura.
 
+Decisões adotadas para a primeira versão:
+
+- o usuário informa o cartão, o mês de vencimento da fatura e a convenção de sinal usada no arquivo;
+- arquivos CSV, XLSX e exportações XLS estruturadas em XML, HTML ou texto delimitado são normalizados pelo mesmo importador;
+- arquivos XLS binários legados devem ser convertidos para XLSX ou CSV antes do envio;
+- o arquivo original é preservado em armazenamento privado e cada processamento mantém histórico auditável;
+- as linhas importadas são vinculadas à entidade de fatura em uma área intermediária, preservando número e total de parcelas;
+- uma linha de fatura parcelada não cria uma despesa independente nem multiplica compras já existentes;
+- arquivos reenviados e linhas sobrepostas são tratados de forma idempotente por cartão e mês de referência;
+- o total normalizado atualiza o valor informado pela operadora somente enquanto a fatura estiver aberta;
+- a conciliação posterior será responsável por vincular cada linha importada a uma parcela existente ou criar a compra por meio do motor financeiro.
+
 ---
 
 ## 16. Recorrências

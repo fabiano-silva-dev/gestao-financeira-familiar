@@ -31,6 +31,16 @@ export type CreditCardInvoicePayment = {
     notes: string | null;
 };
 
+export type CreditCardInvoiceStatementEntry = {
+    id: number;
+    purchased_on: string;
+    description: string;
+    amount: string;
+    installment_number: number | null;
+    total_installments: number | null;
+    is_reconciled: boolean;
+};
+
 export type CreditCardInvoice = {
     id: number;
     credit_card_id: number;
@@ -50,5 +60,6 @@ export type CreditCardInvoice = {
     can_pay: boolean;
     payment_instructions?: string | null;
     installments?: CreditCardInvoiceInstallment[];
+    statement_entries?: CreditCardInvoiceStatementEntry[];
     payments?: CreditCardInvoicePayment[];
 };
