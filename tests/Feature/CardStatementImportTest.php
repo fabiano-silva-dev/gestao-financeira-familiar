@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Workspaces\CurrentWorkspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -296,14 +297,18 @@ class CardStatementImportTest extends TestCase
         config()->set('financial_ai.gemini.models', ['gemini-test']);
         config()->set('financial_ai.groq.api_key', '');
 
-        Http::fake([
-            'generativelanguage.googleapis.com/*' => Http::response([
+        Http::fake(function (Request $request) use ($category) {
+            $prompt = $request->data()['contents'][0]['parts'][0]['text'] ?? '';
+            preg_match('/"entry_id":(\\d+)/', (string) $prompt, $matches);
+            $entryId = (int) ($matches[1] ?? 0);
+
+            return Http::response([
                 'candidates' => [[
                     'content' => [
                         'parts' => [[
                             'text' => json_encode([
                                 'items' => [[
-                                    'entry_id' => 1,
+                                    'entry_id' => $entryId,
                                     'merchant_name' => 'Supermercado XYZ',
                                     'merchant_confidence' => 0.96,
                                     'category_id' => $category->id,
@@ -313,8 +318,8 @@ class CardStatementImportTest extends TestCase
                         ]],
                     ],
                 ]],
-            ]),
-        ]);
+            ]);
+        });
 
         $this->actingAs($user)
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
