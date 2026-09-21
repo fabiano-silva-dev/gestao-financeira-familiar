@@ -74,6 +74,7 @@ class CategoryTest extends TestCase
 
         $request->post(route('categories.store'), [
             'name' => 'Energia elétrica',
+            'type' => 'expense',
             'parent_id' => $parent->id,
         ])
             ->assertRedirect(route('categories.index'))
