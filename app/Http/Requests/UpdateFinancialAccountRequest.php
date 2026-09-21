@@ -24,6 +24,7 @@ class UpdateFinancialAccountRequest extends FormRequest
             'institution' => ['nullable', 'string', 'max:120'],
             'type' => ['required', Rule::enum(FinancialAccountType::class)],
             'opening_balance' => ['required', 'numeric', 'decimal:0,2', 'between:-9999999999999.99,9999999999999.99'],
+            'opening_balance_date' => ['required', 'date'],
         ];
     }
 
@@ -37,6 +38,7 @@ class UpdateFinancialAccountRequest extends FormRequest
             'institution' => 'instituição',
             'type' => 'tipo',
             'opening_balance' => 'saldo inicial',
+            'opening_balance_date' => 'data do saldo inicial',
         ];
     }
 }

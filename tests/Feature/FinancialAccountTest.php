@@ -59,6 +59,7 @@ class FinancialAccountTest extends TestCase
                 'institution' => 'Sicredi',
                 'type' => FinancialAccountType::Checking->value,
                 'opening_balance' => '1250.45',
+                'opening_balance_date' => '2026-09-01',
             ])
             ->assertRedirect(route('accounts.index'))
             ->assertSessionHasNoErrors();
@@ -68,10 +69,11 @@ class FinancialAccountTest extends TestCase
         $this->assertSame($workspace->id, $account->workspace_id);
         $this->assertSame('Sicredi principal', $account->name);
         $this->assertSame('1250.45', $account->opening_balance);
+        $this->assertSame('2026-09-01', $account->opening_balance_date?->toDateString());
         $this->assertTrue($account->is_active);
     }
 
-    public function test_account_requires_valid_type_and_two_decimal_places(): void
+    public function test_account_requires_valid_type_two_decimal_places_and_opening_date(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();
 
@@ -82,8 +84,13 @@ class FinancialAccountTest extends TestCase
                 'institution' => null,
                 'type' => 'credit_card',
                 'opening_balance' => '10.999',
+                'opening_balance_date' => 'data-invalida',
             ])
-            ->assertSessionHasErrors(['type', 'opening_balance']);
+            ->assertSessionHasErrors([
+                'type',
+                'opening_balance',
+                'opening_balance_date',
+            ]);
 
         $this->assertDatabaseCount('financial_accounts', 0);
     }
@@ -102,6 +109,7 @@ class FinancialAccountTest extends TestCase
                 'institution' => 'Nubank',
                 'type' => FinancialAccountType::Digital->value,
                 'opening_balance' => '-25.50',
+                'opening_balance_date' => '2026-09-10',
             ])
             ->assertRedirect(route('accounts.index'))
             ->assertSessionHasNoErrors();
@@ -111,6 +119,7 @@ class FinancialAccountTest extends TestCase
         $this->assertSame('Nubank pessoal', $account->name);
         $this->assertSame(FinancialAccountType::Digital, $account->type);
         $this->assertSame('-25.50', $account->opening_balance);
+        $this->assertSame('2026-09-10', $account->opening_balance_date?->toDateString());
     }
 
     public function test_account_from_another_active_workspace_cannot_be_changed(): void
@@ -131,6 +140,7 @@ class FinancialAccountTest extends TestCase
                 'institution' => null,
                 'type' => FinancialAccountType::Cash->value,
                 'opening_balance' => '0',
+                'opening_balance_date' => '2026-09-01',
             ])
             ->assertNotFound();
 

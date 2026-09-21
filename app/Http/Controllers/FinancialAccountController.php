@@ -34,6 +34,10 @@ class FinancialAccountController extends Controller
                         WHERE account_movements.financial_account_id = financial_accounts.id
                             AND account_movements.workspace_id = financial_accounts.workspace_id
                             AND (
+                                financial_accounts.opening_balance_date IS NULL
+                                OR account_movements.occurred_on > financial_accounts.opening_balance_date
+                            )
+                            AND (
                                 financial_transactions.status = ?
                                 OR account_movements.credit_card_invoice_payment_id IS NOT NULL
                             )
@@ -133,6 +137,7 @@ class FinancialAccountController extends Controller
      *     type: string,
      *     type_label: string,
      *     opening_balance: string,
+     *     opening_balance_date: string|null,
      *     current_balance: string,
      *     is_active: bool
      * }
@@ -146,6 +151,7 @@ class FinancialAccountController extends Controller
             'type' => $account->type->value,
             'type_label' => $account->type->label(),
             'opening_balance' => $account->opening_balance,
+            'opening_balance_date' => $account->opening_balance_date?->toDateString(),
             'current_balance' => (string) ($account->getAttribute('current_balance')
                 ?? $account->opening_balance),
             'is_active' => $account->is_active,

@@ -25,6 +25,7 @@ class FinancialAccountFactory extends Factory
             'institution' => fake()->company(),
             'type' => fake()->randomElement(FinancialAccountType::cases()),
             'opening_balance' => fake()->randomFloat(2, -500, 10000),
+            'opening_balance_date' => fake()->dateTimeBetween('-1 year', 'now')->format('Y-m-d'),
             'is_active' => true,
         ];
     }

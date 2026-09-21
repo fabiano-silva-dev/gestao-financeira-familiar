@@ -23,6 +23,14 @@ const currency = new Intl.NumberFormat('pt-BR', {
     currency: 'BRL',
 });
 
+const date = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'UTC',
+});
+
+function formatDate(value: string) {
+    return date.format(new Date(`${value}T00:00:00Z`));
+}
+
 export default function AccountsIndex() {
     const { accounts, workspace } = usePage<Props>().props;
 
@@ -131,6 +139,11 @@ export default function AccountsIndex() {
                                             {currency.format(
                                                 Number(account.opening_balance),
                                             )}
+                                            {account.opening_balance_date
+                                                ? ` em ${formatDate(
+                                                      account.opening_balance_date,
+                                                  )}`
+                                                : ''}
                                         </p>
                                     </div>
                                 </CardContent>

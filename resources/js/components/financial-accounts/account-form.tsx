@@ -85,22 +85,48 @@ export default function AccountForm({ account, accountTypes }: Props) {
                         <InputError message={errors.type} />
                     </div>
 
-                    <div className="grid gap-2">
-                        <Label htmlFor="opening_balance">Saldo inicial</Label>
-                        <Input
-                            id="opening_balance"
-                            name="opening_balance"
-                            type="number"
-                            inputMode="decimal"
-                            step="0.01"
-                            defaultValue={account?.opening_balance ?? '0.00'}
-                            required
-                        />
-                        <p className="text-muted-foreground text-xs">
-                            Esse valor inicia o saldo da conta e não será
-                            tratado como receita.
-                        </p>
-                        <InputError message={errors.opening_balance} />
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="grid gap-2">
+                            <Label htmlFor="opening_balance">
+                                Saldo inicial
+                            </Label>
+                            <Input
+                                id="opening_balance"
+                                name="opening_balance"
+                                type="number"
+                                inputMode="decimal"
+                                step="0.01"
+                                defaultValue={account?.opening_balance ?? '0.00'}
+                                required
+                            />
+                            <p className="text-muted-foreground text-xs">
+                                Esse valor inicia o saldo da conta e não será
+                                tratado como receita.
+                            </p>
+                            <InputError message={errors.opening_balance} />
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="opening_balance_date">
+                                Data do saldo inicial
+                            </Label>
+                            <Input
+                                id="opening_balance_date"
+                                name="opening_balance_date"
+                                type="date"
+                                defaultValue={
+                                    account?.opening_balance_date ?? ''
+                                }
+                                required
+                            />
+                            <p className="text-muted-foreground text-xs">
+                                O saldo atual considera os movimentos
+                                posteriores a essa data.
+                            </p>
+                            <InputError
+                                message={errors.opening_balance_date}
+                            />
+                        </div>
                     </div>
 
                     <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">

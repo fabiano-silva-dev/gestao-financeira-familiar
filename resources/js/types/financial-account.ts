@@ -5,6 +5,7 @@ export type FinancialAccount = {
     type: string;
     type_label: string;
     opening_balance: string;
+    opening_balance_date: string | null;
     current_balance: string;
     is_active: boolean;
 };
