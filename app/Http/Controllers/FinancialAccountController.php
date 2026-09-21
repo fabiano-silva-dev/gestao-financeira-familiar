@@ -11,6 +11,7 @@ use App\Models\AccountMovement;
 use App\Models\FinancialAccount;
 use App\Models\Workspace;
 use App\Support\Workspaces\CurrentWorkspace;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -162,10 +163,14 @@ class FinancialAccountController extends Controller
             ->findOrFail($account);
     }
 
-    private function accountsWithCurrentBalance(Workspace $workspace)
+    /**
+     * @return Builder<FinancialAccount>
+     */
+    private function accountsWithCurrentBalance(Workspace $workspace): Builder
     {
         return $workspace
             ->financialAccounts()
+            ->getQuery()
             ->select('financial_accounts.*')
             ->selectRaw(
                 <<<'SQL'
@@ -194,10 +199,14 @@ class FinancialAccountController extends Controller
             );
     }
 
-    private function effectiveMovementsQuery(FinancialAccount $account)
+    /**
+     * @return Builder<AccountMovement>
+     */
+    private function effectiveMovementsQuery(FinancialAccount $account): Builder
     {
         $query = $account
             ->movements()
+            ->getQuery()
             ->where(function ($query): void {
                 $query
                     ->whereHas(
