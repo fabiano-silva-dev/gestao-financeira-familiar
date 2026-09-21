@@ -8,6 +8,7 @@ enum FinancialAccountType: string
     case Digital = 'digital';
     case Savings = 'savings';
     case Cash = 'cash';
+    case Reserve = 'reserve';
     case Investment = 'investment';
     case Other = 'other';
 
@@ -18,6 +19,7 @@ enum FinancialAccountType: string
             self::Digital => 'Conta digital',
             self::Savings => 'Poupança',
             self::Cash => 'Carteira / dinheiro',
+            self::Reserve => 'Reserva / Cofrinho',
             self::Investment => 'Conta de investimento',
             self::Other => 'Outra',
         };

@@ -192,6 +192,7 @@ Exemplos:
 - Poupança
 - Carteira
 - Dinheiro
+- Reserva / Cofrinho
 - Conta de investimento
 
 Campos principais:
