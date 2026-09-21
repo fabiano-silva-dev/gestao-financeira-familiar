@@ -1718,22 +1718,26 @@ Ao ocorrer venda, conversão ou resgate, o ganho ou perda realizado poderá ser 
 A plataforma deverá distinguir pelo menos:
 
 **Caixa**
+
 - dinheiro efetivamente disponível;
 - entradas e saídas realizadas.
 
 **Patrimônio**
+
 - caixa;
 - reservas;
 - investimentos;
 - outros ativos considerados no futuro.
 
 **Resultado financeiro**
+
 - rendimentos;
 - cashback e benefícios;
 - ganhos ou perdas realizados;
 - outras receitas ou despesas financeiras.
 
 **Valorização patrimonial não realizada**
+
 - variações de preço de ativos ainda mantidos.
 
 Essas visões não devem ser somadas de forma que o mesmo valor seja contado mais de uma vez.
