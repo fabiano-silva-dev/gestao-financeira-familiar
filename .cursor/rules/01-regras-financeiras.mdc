@@ -24,4 +24,11 @@ Considere `GESTAO_FINANCEIRA_FAMILIAR.md` a referência principal do produto.
 - Importações precisam ser idempotentes sempre que possível: reimportar o mesmo arquivo não deve duplicar movimentos.
 - Faturas devem ser entidades próprias, ligadas ao cartão e às compras/parcelas do ciclo.
 - Preserve a possibilidade de consultar compromissos futuros independentemente do que já foi pago.
+- Cartão de crédito representa linha de crédito com ciclos e faturas; não deve ser tratado como conta bancária ou caixa.
+- Preserve a possibilidade de uma conta de cartão possuir múltiplos instrumentos, como cartão físico, virtual ou adicional, compartilhando limite e fatura quando aplicável.
+- Crediários, financiamentos, empréstimos e parcelamentos negociados são créditos parcelados/contratos: possuem obrigação e parcelas diretamente vinculadas à origem e normalmente não possuem fatura intermediária.
+- O pagamento de parcela de crediário, financiamento, empréstimo ou outro contrato não é nova despesa; apenas liquida a obrigação correspondente.
+- Obrigações recorrentes não devem ser confundidas com crédito: a regra recorrente gera ocorrências periódicas que depois podem ser liquidadas e conciliadas.
+- Cartão de crédito, crédito parcelado/contrato e obrigação recorrente podem compartilhar conceitos comuns, mas não devem ser forçados em uma única entidade com grande quantidade de campos opcionais.
+- Todas as famílias de obrigação devem alimentar a visão de compromissos futuros sem duplicar a despesa ou o fluxo de caixa.
 - Não invente regras financeiras para casos ainda não definidos. Modele de forma compatível com o documento do projeto e sinalize a lacuna ao final da tarefa.
