@@ -121,6 +121,27 @@ class FinancialTransactionController extends Controller
         return to_route('transactions.index');
     }
 
+    public function toggleSettlement(int $entry): RedirectResponse
+    {
+        $financialEntry = $this->entryService->toggleSettlement(
+            $this->findEntry($entry),
+        );
+        $isExpense = $financialEntry->type === FinancialTransactionType::Expense;
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => $financialEntry->settled_on !== null
+                ? ($isExpense
+                    ? 'Pagamento registrado com sucesso.'
+                    : 'Recebimento registrado com sucesso.')
+                : ($isExpense
+                    ? 'Pagamento desfeito com sucesso.'
+                    : 'Recebimento desfeito com sucesso.'),
+        ]);
+
+        return to_route('transactions.index');
+    }
+
     private function createResponse(FinancialTransactionType $type): Response
     {
         return Inertia::render('transactions/create', [
@@ -232,6 +253,8 @@ class FinancialTransactionController extends Controller
             'type' => $entry->type->value,
             'type_label' => $entry->type->label(),
             'transaction_date' => $entry->transaction_date->toDateString(),
+            'competence_date' => $entry->competence_date?->toDateString()
+                ?? $entry->transaction_date->toDateString(),
             'description' => $entry->description,
             'amount' => $entry->amount,
             'financial_account_id' => $entry->financial_account_id,
@@ -252,6 +275,8 @@ class FinancialTransactionController extends Controller
             'payee_name' => $entry->payee_name,
             'payment_instructions' => $entry->payment_instructions,
             'due_date' => $entry->due_date?->toDateString(),
+            'settled_on' => $entry->settled_on?->toDateString(),
+            'is_settled' => $entry->settled_on !== null,
             'status' => $entry->status->value,
             'status_label' => $entry->status->label(),
             'notes' => $entry->notes,

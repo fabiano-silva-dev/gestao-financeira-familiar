@@ -287,7 +287,7 @@ export default function Dashboard() {
                     <MetricCard
                         title="Saldo projetado"
                         value={money(metrics.projected_balance)}
-                        description="Inclui lançamentos planejados"
+                        description="Inclui compromissos pendentes e faturas"
                         icon={Landmark}
                         tone="warning"
                         valueClassName={
@@ -304,8 +304,8 @@ export default function Dashboard() {
                             <div>
                                 <CardTitle>Fluxo de caixa</CardTitle>
                                 <CardDescription className="mt-1">
-                                    Receitas e despesas confirmadas nos últimos
-                                    seis meses.
+                                    Entradas e saídas efetivas nos últimos seis
+                                    meses.
                                 </CardDescription>
                             </div>
                         </CardHeader>
@@ -333,7 +333,7 @@ export default function Dashboard() {
                             <div>
                                 <CardTitle>Próximos vencimentos</CardTitle>
                                 <CardDescription className="mt-1">
-                                    Compromissos planejados para os próximos 30
+                                    Compromissos pendentes para os próximos 30
                                     dias.
                                 </CardDescription>
                             </div>
@@ -347,7 +347,7 @@ export default function Dashboard() {
                         <CardContent>
                             {upcomingEntries.length === 0 ? (
                                 <EmptyCardState>
-                                    Nenhum vencimento planejado para os próximos
+                                    Nenhum vencimento pendente para os próximos
                                     30 dias.
                                 </EmptyCardState>
                             ) : (

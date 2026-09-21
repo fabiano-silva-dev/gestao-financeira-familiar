@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'type',
     'transaction_date',
+    'competence_date',
     'description',
     'amount',
     'financial_account_id',
@@ -26,6 +27,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'payee_name',
     'payment_instructions',
     'due_date',
+    'settled_on',
+    'financial_recurrence_id',
+    'recurrence_occurrence_date',
     'status',
     'origin',
     'notes',
@@ -88,6 +92,11 @@ class FinancialTransaction extends Model
         return $this->belongsTo(FamilyMember::class);
     }
 
+    public function recurrence(): BelongsTo
+    {
+        return $this->belongsTo(FinancialRecurrence::class, 'financial_recurrence_id');
+    }
+
     /**
      * @return HasMany<AccountMovement, $this>
      */
@@ -112,9 +121,12 @@ class FinancialTransaction extends Model
         return [
             'type' => FinancialTransactionType::class,
             'transaction_date' => 'date',
+            'competence_date' => 'date',
             'amount' => 'decimal:2',
             'payment_method' => PaymentMethod::class,
             'due_date' => 'date',
+            'settled_on' => 'date',
+            'recurrence_occurrence_date' => 'date',
             'status' => FinancialTransactionStatus::class,
             'origin' => FinancialTransactionOrigin::class,
         ];

@@ -2,12 +2,7 @@ import { Head, Link, usePage } from '@inertiajs/react';
 import { CalendarClock, CreditCard, ReceiptText } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { index, show } from '@/routes/credit-card-invoices';
 import type { CreditCardInvoice } from '@/types';
 
@@ -158,10 +153,15 @@ export default function CreditCardInvoicesIndex() {
 
                                     <div className="text-muted-foreground flex items-center gap-2 text-xs">
                                         <CalendarClock className="size-4" />
-                                        Fecha em {formatDate(invoice.closing_date)}
+                                        Fecha em{' '}
+                                        {formatDate(invoice.closing_date)}
                                     </div>
 
-                                    <Button className="w-full" variant="outline" asChild>
+                                    <Button
+                                        className="w-full"
+                                        variant="outline"
+                                        asChild
+                                    >
                                         <Link href={show(invoice.id)}>
                                             <CreditCard />
                                             Ver fatura

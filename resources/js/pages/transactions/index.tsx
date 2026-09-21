@@ -4,10 +4,12 @@ import {
     Check,
     CircleArrowDown,
     CircleArrowUp,
+    CircleCheckBig,
     Pencil,
     Plus,
     ReceiptText,
     RotateCcw,
+    Undo2,
     X,
 } from 'lucide-react';
 import FinancialTransactionController from '@/actions/App/Http/Controllers/FinancialTransactionController';
@@ -121,6 +123,8 @@ export default function TransactionsIndex() {
                     <div className="space-y-3">
                         {entries.map((entry) => {
                             const isExpense = entry.type === 'expense';
+                            const usesCreditCard =
+                                entry.payment_method === 'credit_card';
                             const action = statusAction(entry);
                             const StatusIcon = action.icon;
                             const TypeIcon = isExpense
@@ -175,7 +179,7 @@ export default function TransactionsIndex() {
                                                         Number(entry.amount),
                                                     )}
                                                 </p>
-                                                <div className="flex gap-2">
+                                                <div className="flex flex-wrap justify-end gap-2">
                                                     <Badge
                                                         variant={
                                                             isExpense
@@ -188,11 +192,39 @@ export default function TransactionsIndex() {
                                                     <Badge variant="outline">
                                                         {entry.status_label}
                                                     </Badge>
+                                                    {usesCreditCard ? (
+                                                        <Badge variant="outline">
+                                                            {entry.installment_count >
+                                                            1
+                                                                ? `${entry.installment_count} parcelas`
+                                                                : 'Via fatura'}
+                                                        </Badge>
+                                                    ) : entry.is_settled ? (
+                                                        <Badge variant="secondary">
+                                                            {isExpense
+                                                                ? 'Pago'
+                                                                : 'Recebido'}
+                                                        </Badge>
+                                                    ) : (
+                                                        <Badge variant="outline">
+                                                            Pendente
+                                                        </Badge>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
                                     </CardHeader>
                                     <CardContent className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                                        <div>
+                                            <p className="text-muted-foreground text-xs uppercase">
+                                                Competência
+                                            </p>
+                                            <p className="font-medium">
+                                                {formatDate(
+                                                    entry.competence_date,
+                                                )}
+                                            </p>
+                                        </div>
                                         <div>
                                             <p className="text-muted-foreground text-xs uppercase">
                                                 {isExpense
@@ -236,6 +268,26 @@ export default function TransactionsIndex() {
                                                 )}
                                             </p>
                                         </div>
+                                        {!usesCreditCard && (
+                                            <div>
+                                                <p className="text-muted-foreground text-xs uppercase">
+                                                    {isExpense
+                                                        ? 'Pago em'
+                                                        : 'Recebido em'}
+                                                </p>
+                                                <p className="font-medium">
+                                                    {entry.settled_on ? (
+                                                        formatDate(
+                                                            entry.settled_on,
+                                                        )
+                                                    ) : (
+                                                        <span className="text-muted-foreground">
+                                                            Ainda não
+                                                        </span>
+                                                    )}
+                                                </p>
+                                            </div>
+                                        )}
                                         {(entry.payee_name ||
                                             entry.payment_instructions) && (
                                             <div className="bg-muted/50 rounded-lg p-3 sm:col-span-2 lg:col-span-4">
@@ -252,13 +304,17 @@ export default function TransactionsIndex() {
                                                 )}
                                             </div>
                                         )}
-                                        {entry.status === 'planned' && (
-                                            <div className="text-muted-foreground flex items-center gap-2 sm:col-span-2 lg:col-span-4">
-                                                <CalendarClock className="size-4" />
-                                                Compromisso futuro; ainda não
-                                                altera o saldo da conta.
-                                            </div>
-                                        )}
+                                        {!usesCreditCard &&
+                                            !entry.is_settled &&
+                                            entry.status !== 'cancelled' && (
+                                                <div className="text-muted-foreground flex items-center gap-2 sm:col-span-2 lg:col-span-4">
+                                                    <CalendarClock className="size-4" />
+                                                    Ainda não altera o saldo da
+                                                    conta; o caixa será afetado
+                                                    somente no pagamento ou
+                                                    recebimento.
+                                                </div>
+                                            )}
                                     </CardContent>
                                     <CardFooter className="flex flex-wrap justify-end gap-2">
                                         <Button
@@ -271,6 +327,44 @@ export default function TransactionsIndex() {
                                                 Editar
                                             </Link>
                                         </Button>
+                                        {!usesCreditCard &&
+                                            entry.status !== 'cancelled' && (
+                                                <Form
+                                                    {...FinancialTransactionController.toggleSettlement.form(
+                                                        entry.id,
+                                                    )}
+                                                    options={{
+                                                        preserveScroll: true,
+                                                    }}
+                                                >
+                                                    {({ processing }) => (
+                                                        <Button
+                                                            variant={
+                                                                entry.is_settled
+                                                                    ? 'ghost'
+                                                                    : 'default'
+                                                            }
+                                                            size="sm"
+                                                            disabled={
+                                                                processing
+                                                            }
+                                                        >
+                                                            {entry.is_settled ? (
+                                                                <Undo2 />
+                                                            ) : (
+                                                                <CircleCheckBig />
+                                                            )}
+                                                            {entry.is_settled
+                                                                ? isExpense
+                                                                    ? 'Desfazer pagamento'
+                                                                    : 'Desfazer recebimento'
+                                                                : isExpense
+                                                                  ? 'Pagar hoje'
+                                                                  : 'Receber hoje'}
+                                                        </Button>
+                                                    )}
+                                                </Form>
+                                            )}
                                         <Form
                                             {...FinancialTransactionController.advanceStatus.form(
                                                 entry.id,
