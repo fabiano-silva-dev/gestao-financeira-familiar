@@ -86,7 +86,9 @@ export default function CreditCardsIndex() {
                                 Limite disponível
                             </p>
                             <p className="mt-1 text-2xl font-semibold tabular-nums">
-                                {currency.format(Number(summary.available_limit))}
+                                {currency.format(
+                                    Number(summary.available_limit),
+                                )}
                             </p>
                             <p className="text-muted-foreground mt-1 text-xs">
                                 Total menos o valor utilizado
@@ -207,8 +209,8 @@ export default function CreditCardsIndex() {
                                                         Ciclo
                                                     </p>
                                                     <p className="font-medium">
-                                                        Fecha {card.closing_day} ·
-                                                        vence {card.due_day}
+                                                        Fecha {card.closing_day}{' '}
+                                                        · vence {card.due_day}
                                                     </p>
                                                 </div>
                                             </div>

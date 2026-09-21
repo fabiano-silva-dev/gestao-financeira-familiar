@@ -126,7 +126,10 @@ export default function CreditCardShow() {
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex items-start gap-3">
                         <Button variant="ghost" size="icon" asChild>
-                            <Link href={index()} aria-label="Voltar para cartões">
+                            <Link
+                                href={index()}
+                                aria-label="Voltar para cartões"
+                            >
                                 <ArrowLeft />
                             </Link>
                         </Button>
@@ -137,9 +140,7 @@ export default function CreditCardShow() {
                                 </h1>
                                 <Badge
                                     variant={
-                                        card.is_active
-                                            ? 'secondary'
-                                            : 'outline'
+                                        card.is_active ? 'secondary' : 'outline'
                                     }
                                 >
                                     {card.is_active ? 'Ativo' : 'Inativo'}

@@ -96,7 +96,9 @@ export default function AccountForm({ account, accountTypes }: Props) {
                                 type="number"
                                 inputMode="decimal"
                                 step="0.01"
-                                defaultValue={account?.opening_balance ?? '0.00'}
+                                defaultValue={
+                                    account?.opening_balance ?? '0.00'
+                                }
                                 required
                             />
                             <p className="text-muted-foreground text-xs">
@@ -123,9 +125,7 @@ export default function AccountForm({ account, accountTypes }: Props) {
                                 O saldo atual considera os movimentos
                                 posteriores a essa data.
                             </p>
-                            <InputError
-                                message={errors.opening_balance_date}
-                            />
+                            <InputError message={errors.opening_balance_date} />
                         </div>
                     </div>
 
