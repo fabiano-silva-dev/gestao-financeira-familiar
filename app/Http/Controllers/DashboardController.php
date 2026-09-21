@@ -124,9 +124,13 @@ class DashboardController extends Controller
             ])
             ->get(['type', 'amount'])
             ->each(function (FinancialTransaction $entry) use (&$totals): void {
-                $totals[$entry->type->value] += $this->moneyToCents(
-                    (string) $entry->amount,
-                );
+                if ($entry->type === FinancialTransactionType::Income) {
+                    $totals['income'] += $this->moneyToCents((string) $entry->amount);
+                }
+
+                if ($entry->type === FinancialTransactionType::Expense) {
+                    $totals['expense'] += $this->moneyToCents((string) $entry->amount);
+                }
             });
 
         $cardExpenses = TransactionInstallment::query()
@@ -142,7 +146,7 @@ class DashboardController extends Controller
             ->pluck('amount')
             ->all();
 
-        $totals[FinancialTransactionType::Expense->value] += $this->sumMoney(
+        $totals['expense'] += $this->sumMoney(
             $cardExpenses,
         );
 
@@ -172,9 +176,13 @@ class DashboardController extends Controller
             ])
             ->get(['type', 'amount'])
             ->each(function (FinancialTransaction $entry) use (&$totals): void {
-                $totals[$entry->type->value] += $this->moneyToCents(
-                    (string) $entry->amount,
-                );
+                if ($entry->type === FinancialTransactionType::Income) {
+                    $totals['income'] += $this->moneyToCents((string) $entry->amount);
+                }
+
+                if ($entry->type === FinancialTransactionType::Expense) {
+                    $totals['expense'] += $this->moneyToCents((string) $entry->amount);
+                }
             });
 
         return $totals;
@@ -302,7 +310,7 @@ class DashboardController extends Controller
             ])
             ->get(['id', 'financial_transaction_id', 'amount'])
             ->each(function (TransactionInstallment $installment) use (&$totals): void {
-                $name = $this->categoryName($installment->transaction?->category);
+                $name = $this->categoryName($installment->transaction->category);
                 $totals[$name] = ($totals[$name] ?? 0)
                     + $this->moneyToCents((string) $installment->amount);
             });
@@ -421,9 +429,13 @@ class DashboardController extends Controller
 
     private function categoryName(?Category $category): string
     {
-        return $category?->parent?->name
-            ?? $category?->name
-            ?? 'Sem categoria';
+        if ($category === null) {
+            return 'Sem categoria';
+        }
+
+        return $category->parent !== null
+            ? $category->parent->name
+            : $category->name;
     }
 
     /**

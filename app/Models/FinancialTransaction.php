@@ -10,7 +10,22 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property FinancialTransactionType $type
+ * @property Carbon $transaction_date
+ * @property Carbon|null $competence_date
+ * @property string $amount
+ * @property PaymentMethod|null $payment_method
+ * @property Carbon|null $due_date
+ * @property Carbon|null $settled_on
+ * @property int|null $financial_recurrence_id
+ * @property Carbon|null $recurrence_occurrence_date
+ * @property bool $recurrence_is_overridden
+ * @property FinancialTransactionStatus $status
+ * @property FinancialTransactionOrigin $origin
+ */
 #[Fillable([
     'type',
     'transaction_date',
@@ -30,6 +45,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'settled_on',
     'financial_recurrence_id',
     'recurrence_occurrence_date',
+    'recurrence_is_overridden',
     'status',
     'origin',
     'notes',
@@ -92,6 +108,7 @@ class FinancialTransaction extends Model
         return $this->belongsTo(FamilyMember::class);
     }
 
+    /** @return BelongsTo<FinancialRecurrence, $this> */
     public function recurrence(): BelongsTo
     {
         return $this->belongsTo(FinancialRecurrence::class, 'financial_recurrence_id');
@@ -127,6 +144,7 @@ class FinancialTransaction extends Model
             'due_date' => 'date',
             'settled_on' => 'date',
             'recurrence_occurrence_date' => 'date',
+            'recurrence_is_overridden' => 'boolean',
             'status' => FinancialTransactionStatus::class,
             'origin' => FinancialTransactionOrigin::class,
         ];

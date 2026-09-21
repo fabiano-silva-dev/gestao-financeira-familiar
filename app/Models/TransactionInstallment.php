@@ -6,7 +6,20 @@ use App\Enums\TransactionInstallmentStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property int $installment_number
+ * @property int $total_installments
+ * @property string $amount
+ * @property Carbon $competence_month
+ * @property Carbon $due_date
+ * @property Carbon|null $expected_payment_date
+ * @property Carbon|null $paid_at
+ * @property TransactionInstallmentStatus $status
+ * @property-read CreditCardInvoice|null $invoice
+ * @property-read FinancialTransaction $transaction
+ */
 #[Fillable([
     'workspace_id',
     'credit_card_invoice_id',

@@ -7,7 +7,19 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property Carbon $reference_month
+ * @property Carbon $closing_date
+ * @property Carbon $due_date
+ * @property string $calculated_amount
+ * @property string|null $statement_amount
+ * @property string $paid_amount
+ * @property Carbon|null $paid_at
+ * @property CreditCardInvoiceStatus $status
+ * @property-read CreditCard $creditCard
+ */
 #[Fillable([
     'workspace_id',
     'credit_card_id',

@@ -73,7 +73,7 @@ class CreditCardInvoiceController extends Controller
                         'amount' => $payment->amount,
                         'payment_method' => $payment->payment_method->value,
                         'payment_method_label' => $payment->payment_method->label(),
-                        'account_name' => $payment->account?->name ?? 'Conta não encontrada',
+                        'account_name' => $payment->account->name,
                         'notes' => $payment->notes,
                     ])
                     ->all(),
@@ -156,8 +156,8 @@ class CreditCardInvoiceController extends Controller
         return [
             'id' => $invoice->id,
             'credit_card_id' => $invoice->credit_card_id,
-            'credit_card_name' => $invoice->creditCard?->name ?? 'Cartão',
-            'credit_card_last_four' => $invoice->creditCard?->last_four ?? '',
+            'credit_card_name' => $invoice->creditCard->name,
+            'credit_card_last_four' => $invoice->creditCard->last_four,
             'reference_month' => $invoice->reference_month->toDateString(),
             'closing_date' => $invoice->closing_date->toDateString(),
             'due_date' => $invoice->due_date->toDateString(),
@@ -181,7 +181,6 @@ class CreditCardInvoiceController extends Controller
     private function installmentData(TransactionInstallment $installment): array
     {
         $transaction = $installment->transaction;
-        abort_if($transaction === null, 500);
         $category = $transaction->category;
         $categoryName = $category?->parent !== null
             ? "{$category->parent->name} / {$category->name}"

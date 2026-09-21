@@ -6,7 +6,14 @@ use App\Enums\AccountMovementType;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property Carbon $occurred_on
+ * @property string $amount
+ * @property AccountMovementType $type
+ * @property bool $is_reconciled
+ */
 #[Fillable([
     'workspace_id',
     'financial_transaction_id',

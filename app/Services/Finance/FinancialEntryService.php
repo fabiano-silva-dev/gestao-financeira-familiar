@@ -46,6 +46,11 @@ class FinancialEntryService
     {
         return DB::transaction(function () use ($entry, $data): FinancialTransaction {
             $entry->update($this->entryData($data, $entry));
+
+            if ($entry->financial_recurrence_id !== null) {
+                $entry->update(['recurrence_is_overridden' => true]);
+            }
+
             $entry->refresh();
             $this->syncMovement($entry);
             $this->syncInstallments($entry, $data);

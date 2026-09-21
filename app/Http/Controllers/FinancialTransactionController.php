@@ -280,6 +280,9 @@ class FinancialTransactionController extends Controller
             'status' => $entry->status->value,
             'status_label' => $entry->status->label(),
             'notes' => $entry->notes,
+            'origin' => $entry->origin->value,
+            'financial_recurrence_id' => $entry->financial_recurrence_id,
+            'recurrence_is_overridden' => $entry->recurrence_is_overridden,
         ];
     }
 }

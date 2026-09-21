@@ -257,47 +257,36 @@ class FinancialRecurrenceService
     ): array {
         $firstMonth = $start->startOfMonth();
         $lastMonth = $firstMonth->addMonths($months - 1)->endOfMonth();
-        $projection = [];
+        $projection = $this->initializeProjection($firstMonth, $months);
 
-        for ($index = 0; $index < $months; $index++) {
-            $month = $firstMonth->addMonths($index);
-            $projection[$month->format('Y-m')] = [
-                'month' => $month->toDateString(),
-                'income' => 0,
-                'expenses' => 0,
-            ];
-        }
-
-        $workspace->financialRecurrences()
+        $recurrences = $workspace->financialRecurrences()
             ->where('is_active', true)
-            ->get()
-            ->each(function (FinancialRecurrence $recurrence) use (
-                $firstMonth,
+            ->get();
+
+        foreach ($recurrences as $recurrence) {
+            $amount = $this->moneyToCents((string) $recurrence->amount);
+
+            $generationStart = CarbonImmutable::parse(
+                $recurrence->generation_started_on->toDateString(),
+            );
+            $projectionStart = $generationStart->greaterThan($firstMonth)
+                ? $generationStart
+                : $firstMonth;
+
+            foreach ($this->occurrencesBetween(
+                $recurrence,
+                $projectionStart,
                 $lastMonth,
-                &$projection,
-            ): void {
-                $amount = $this->moneyToCents((string) $recurrence->amount);
+            ) as $occurrence) {
+                $key = $occurrence->format('Y-m');
 
-                $generationStart = CarbonImmutable::parse(
-                    $recurrence->generation_started_on->toDateString(),
-                );
-                $projectionStart = $generationStart->greaterThan($firstMonth)
-                    ? $generationStart
-                    : $firstMonth;
-
-                foreach ($this->occurrencesBetween(
-                    $recurrence,
-                    $projectionStart,
-                    $lastMonth,
-                ) as $occurrence) {
-                    $key = $occurrence->format('Y-m');
-                    $field = $recurrence->type === FinancialTransactionType::Income
-                        ? 'income'
-                        : 'expenses';
-
-                    $projection[$key][$field] += $amount;
+                if ($recurrence->type === FinancialTransactionType::Income) {
+                    $projection[$key]['income'] += $amount;
+                } else {
+                    $projection[$key]['expenses'] += $amount;
                 }
-            });
+            }
+        }
 
         $result = [];
 
@@ -313,11 +302,33 @@ class FinancialRecurrenceService
         return $result;
     }
 
+    /**
+     * @return array<string, array{month: string, income: int, expenses: int}>
+     */
+    private function initializeProjection(
+        CarbonImmutable $firstMonth,
+        int $months,
+    ): array {
+        $projection = [];
+
+        for ($index = 0; $index < $months; $index++) {
+            $month = $firstMonth->addMonths($index);
+            $projection[$month->format('Y-m')] = [
+                'month' => $month->toDateString(),
+                'income' => 0,
+                'expenses' => 0,
+            ];
+        }
+
+        return $projection;
+    }
+
     private function clearFuturePlannedOccurrences(
         FinancialRecurrence $recurrence,
     ): void {
         $recurrence->transactions()
             ->where('status', FinancialTransactionStatus::Planned->value)
+            ->where('recurrence_is_overridden', false)
             ->whereDate('recurrence_occurrence_date', '>=', CarbonImmutable::today())
             ->whereDoesntHave('accountMovements')
             ->delete();

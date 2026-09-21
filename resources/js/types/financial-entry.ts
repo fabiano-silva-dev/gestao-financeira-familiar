@@ -27,6 +27,9 @@ export type FinancialEntry = {
     status: 'planned' | 'confirmed' | 'cancelled';
     status_label: string;
     notes: string | null;
+    origin: 'manual' | 'recurrence' | 'ofx' | 'card_import' | 'api';
+    financial_recurrence_id: number | null;
+    recurrence_is_overridden: boolean;
 };
 
 export type FinancialEntryReferenceOption = {

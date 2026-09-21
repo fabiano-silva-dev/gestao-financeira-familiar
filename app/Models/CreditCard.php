@@ -10,6 +10,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * @property string $credit_limit
+ * @property int $closing_day
+ * @property int $due_day
+ * @property PaymentMethod $invoice_payment_method
+ * @property bool $is_active
+ */
 #[Fillable([
     'name',
     'institution',

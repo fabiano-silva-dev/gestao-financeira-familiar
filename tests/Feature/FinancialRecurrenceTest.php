@@ -144,6 +144,73 @@ class FinancialRecurrenceTest extends TestCase
         $this->assertDatabaseCount('financial_transactions', 0);
     }
 
+    public function test_manual_occurrence_adjustment_survives_template_update_and_pause(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-20 12:00:00'));
+
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('recurrences.store'), [
+            ...$this->validRecurrenceData($account),
+            'starts_on' => '2026-09-25',
+        ])->assertSessionHasNoErrors();
+
+        $recurrence = FinancialRecurrence::query()->sole();
+        $occurrence = $recurrence->transactions()
+            ->orderBy('recurrence_occurrence_date')
+            ->firstOrFail();
+
+        $request->put(route('transactions.update', $occurrence), [
+            'type' => FinancialTransactionType::Expense->value,
+            'transaction_date' => '2026-09-25',
+            'competence_date' => '2026-09-25',
+            'description' => 'Mensalidade ajustada em setembro',
+            'amount' => '140.00',
+            'financial_account_id' => $account->id,
+            'credit_card_id' => null,
+            'category_id' => null,
+            'family_member_id' => null,
+            'payment_method' => PaymentMethod::Pix->value,
+            'payee_name' => 'Professor substituto',
+            'payment_instructions' => 'PIX chave alternativa',
+            'due_date' => '2026-09-25',
+            'settled_on' => null,
+            'status' => FinancialTransactionStatus::Planned->value,
+            'notes' => null,
+        ])
+            ->assertRedirect(route('transactions.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertTrue($occurrence->fresh()->recurrence_is_overridden);
+
+        $request->put(route('recurrences.update', $recurrence), [
+            ...$this->validRecurrenceData($account),
+            'amount' => '200.00',
+            'starts_on' => '2026-09-25',
+            'payment_instructions' => 'PIX nova chave padrão',
+        ])
+            ->assertRedirect(route('recurrences.index'))
+            ->assertSessionHasNoErrors();
+
+        $occurrence->refresh();
+
+        $this->assertSame('140.00', $occurrence->amount);
+        $this->assertSame('PIX chave alternativa', $occurrence->payment_instructions);
+        $this->assertSame(3, $recurrence->transactions()->count());
+
+        $request->patch(route('recurrences.toggle-status', $recurrence))
+            ->assertRedirect(route('recurrences.index'));
+
+        $this->assertFalse($recurrence->fresh()->is_active);
+        $this->assertSame(1, $recurrence->transactions()->count());
+        $this->assertTrue(
+            $recurrence->transactions()->sole()->recurrence_is_overridden,
+        );
+    }
+
     public function test_card_recurrence_materializes_only_the_due_occurrence(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-09-20 12:00:00'));

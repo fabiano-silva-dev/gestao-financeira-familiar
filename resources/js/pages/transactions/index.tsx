@@ -8,6 +8,7 @@ import {
     Pencil,
     Plus,
     ReceiptText,
+    Repeat2,
     RotateCcw,
     Undo2,
     X,
@@ -28,6 +29,7 @@ import {
     edit,
     index,
 } from '@/routes/transactions';
+import { edit as editRecurrence } from '@/routes/recurrences';
 import type { FinancialEntry } from '@/types';
 
 type Props = {
@@ -164,6 +166,25 @@ export default function TransactionsIndex() {
                                                             ? ` · ${entry.category_name}`
                                                             : ''}
                                                     </p>
+                                                    {entry.financial_recurrence_id !==
+                                                        null && (
+                                                        <Badge
+                                                            variant="outline"
+                                                            className="mt-2"
+                                                            asChild
+                                                        >
+                                                            <Link
+                                                                href={editRecurrence(
+                                                                    entry.financial_recurrence_id,
+                                                                )}
+                                                            >
+                                                                <Repeat2 />
+                                                                {entry.recurrence_is_overridden
+                                                                    ? 'Recorrência · ajustada'
+                                                                    : 'Gerada por recorrência'}
+                                                            </Link>
+                                                        </Badge>
+                                                    )}
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-2 sm:flex-col sm:items-end">

@@ -7,7 +7,15 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property Carbon $paid_on
+ * @property string $amount
+ * @property PaymentMethod $payment_method
+ * @property-read CreditCardInvoice $invoice
+ * @property-read FinancialAccount $account
+ */
 #[Fillable([
     'workspace_id',
     'financial_account_id',

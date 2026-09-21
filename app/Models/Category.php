@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/** @property-read Category|null $parent */
 #[Fillable(['name', 'parent_id', 'is_active'])]
 class Category extends Model
 {
