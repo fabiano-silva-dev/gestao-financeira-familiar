@@ -83,9 +83,9 @@ export default function AccountsIndex() {
                                     Nenhuma conta cadastrada
                                 </h2>
                                 <p className="text-muted-foreground max-w-md text-sm">
-                                    Cadastre a primeira conta bancária, carteira,
-                                    reserva ou conta de investimento para começar
-                                    o controle.
+                                    Cadastre a primeira conta bancária,
+                                    carteira, reserva ou conta de investimento
+                                    para começar o controle.
                                 </p>
                             </div>
                             <Button asChild>
@@ -146,7 +146,9 @@ export default function AccountsIndex() {
                                                     </p>
                                                     <p className="font-semibold tabular-nums">
                                                         {currency.format(
-                                                            Number(account.current_balance),
+                                                            Number(
+                                                                account.current_balance,
+                                                            ),
                                                         )}
                                                     </p>
                                                 </div>
@@ -156,7 +158,9 @@ export default function AccountsIndex() {
                                                     </p>
                                                     <p className="font-medium tabular-nums">
                                                         {currency.format(
-                                                            Number(account.opening_balance),
+                                                            Number(
+                                                                account.opening_balance,
+                                                            ),
                                                         )}
                                                     </p>
                                                 </div>
