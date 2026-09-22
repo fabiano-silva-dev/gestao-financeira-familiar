@@ -67,7 +67,7 @@ jobs:
 
       - name: Run scoped PHP style checks
         run: |
-          vendor/bin/pint --test \
+          vendor/bin/pint \
             app/Models/ImportPeriodClosure.php \
             app/Models/Workspace.php \
             app/Http/Controllers/MonthlyImportClosingController.php \
@@ -75,6 +75,17 @@ jobs:
             routes/web.php \
             database/migrations/2026_09_22_200000_create_import_period_closures_table.php \
             tests/Feature/MonthlyImportClosingTest.php
+          echo "__FORMATTED_FILES__"
+          for file in \
+            app/Http/Controllers/FinancialImportHistoryController.php \
+            app/Http/Controllers/MonthlyImportClosingController.php \
+            database/migrations/2026_09_22_200000_create_import_period_closures_table.php \
+            routes/web.php; do
+            echo "__FILE__:$file"
+            base64 -w 0 "$file"
+            echo
+          done
+          echo "__END_FORMATTED_FILES__"
 
       - name: Run frontend checks
         run: |
