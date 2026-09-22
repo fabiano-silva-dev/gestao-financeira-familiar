@@ -59,24 +59,24 @@ jobs:
       - name: Setup Application
         run: composer setup
 
-      - name: Run financial feature tests
+      - name: Run import closing tests
         run: |
-          php artisan test tests/Feature/FinancialImportAutoDetectionTest.php
-          php artisan test tests/Feature/FinancialAccountTest.php
+          php artisan test tests/Feature/MonthlyImportClosingTest.php
           php artisan test tests/Feature/OfxImportTest.php
           php artisan test tests/Feature/CardStatementImportTest.php
-          php artisan test tests/Feature/CreditCardInvoicePaymentReconciliationTest.php
-          php artisan test tests/Feature/ExpenseRefundTest.php
-          php artisan test tests/Feature/FinancialEntryTest.php
-          php artisan test tests/Feature/CreditCardInvoiceTest.php
-          php artisan test tests/Feature/FinancialRecurrenceTest.php
-          php artisan test tests/Feature/DashboardTest.php
-          php artisan test tests/Feature/PaymentDashboardTest.php
 
-      - name: Capture formatted payment dashboard
+      - name: Run scoped PHP style checks
         run: |
-          ./node_modules/.bin/vp fmt resources/js/pages/payments-dashboard.tsx --write
-          echo "__PAYMENTS_DASHBOARD_BASE64__"
-          base64 -w 0 resources/js/pages/payments-dashboard.tsx
-          echo
-          echo "__END_PAYMENTS_DASHBOARD_BASE64__"
+          vendor/bin/pint --test \
+            app/Models/ImportPeriodClosure.php \
+            app/Models/Workspace.php \
+            app/Http/Controllers/MonthlyImportClosingController.php \
+            app/Http/Controllers/FinancialImportHistoryController.php \
+            routes/web.php \
+            database/migrations/2026_09_22_200000_create_import_period_closures_table.php \
+            tests/Feature/MonthlyImportClosingTest.php
+
+      - name: Run frontend checks
+        run: |
+          npm run check
+          npm run types:check

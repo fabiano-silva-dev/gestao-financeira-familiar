@@ -80,9 +80,19 @@ const mainNavItems: NavItem[] = [
         icon: Upload,
     },
     {
+        title: 'Fechamento mensal',
+        href: '/importacoes/fechamento-mensal',
+        icon: CalendarCheck2,
+    },
+    {
         title: 'Conciliação',
         href: reconciliationIndex(),
         icon: ListChecks,
+    },
+    {
+        title: 'Histórico de arquivos',
+        href: '/importacoes/historico',
+        icon: History,
     },
     {
         title: 'Regras',
