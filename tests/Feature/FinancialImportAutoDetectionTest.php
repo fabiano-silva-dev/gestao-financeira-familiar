@@ -93,7 +93,7 @@ class FinancialImportAutoDetectionTest extends TestCase
         );
     }
 
-    public function test_ambiguous_nubank_csv_waits_only_for_card_confirmation(): void
+    public function test_ambiguous_nubank_csv_keeps_uncategorized_purchase_pending_after_card_confirmation(): void
     {
         Storage::fake('local');
         [$user, $workspace] = $this->userAndWorkspace();
@@ -140,7 +140,8 @@ class FinancialImportAutoDetectionTest extends TestCase
         $this->assertSame(FinancialImportType::CardStatement, $final->type);
         $this->assertSame($first->id, $final->credit_card_id);
         $this->assertTrue((bool) data_get($final->metadata, 'autodetection.confirmed_by_user'));
-        $this->assertDatabaseCount('financial_transactions', 1);
+        $this->assertDatabaseCount('financial_transactions', 0);
+        $this->assertFalse(CardStatementEntry::query()->sole()->is_reconciled);
     }
 
     public function test_mercado_pago_pdf_detects_card_holder_name(): void
