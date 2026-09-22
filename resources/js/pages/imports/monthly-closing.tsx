@@ -282,15 +282,18 @@ function SourceCard({ item, period }: { item: SourceItem; period: string }) {
 
                     <div className="flex flex-wrap gap-2">
                         {item.status === 'not_imported' && (
-                            <>
-                                <Button asChild size="sm">
-                                    <Link href="/importacoes">
-                                        <Upload />
-                                        {item.kind === 'account'
-                                            ? 'Importar extrato'
-                                            : 'Importar fatura'}
-                                    </Link>
-                                </Button>
+                            <Button asChild size="sm">
+                                <Link href="/importacoes">
+                                    <Upload />
+                                    {item.kind === 'account'
+                                        ? 'Importar extrato'
+                                        : 'Importar fatura'}
+                                </Link>
+                            </Button>
+                        )}
+                        {(item.status === 'not_imported' ||
+                            item.status === 'imported') &&
+                            item.total_items === 0 && (
                                 <Form
                                     action={`/importacoes/fechamento-mensal/${item.kind}/${item.id}/sem-movimento`}
                                     method="post"
@@ -305,11 +308,12 @@ function SourceCard({ item, period }: { item: SourceItem; period: string }) {
                                         variant="outline"
                                         size="sm"
                                     >
-                                        Sem movimento
+                                        {item.kind === 'account'
+                                            ? 'Marcar conta sem movimento'
+                                            : 'Marcar fatura sem movimento'}
                                     </Button>
                                 </Form>
-                            </>
-                        )}
+                            )}
                         {item.status === 'pending_reconciliation' && (
                             <Button asChild size="sm">
                                 <Link
@@ -320,8 +324,7 @@ function SourceCard({ item, period }: { item: SourceItem; period: string }) {
                                 </Link>
                             </Button>
                         )}
-                        {(item.status === 'reconciled' ||
-                            item.status === 'imported') && (
+                        {item.status === 'reconciled' && (
                             <Form
                                 action={`/importacoes/fechamento-mensal/${item.kind}/${item.id}/fechar`}
                                 method="post"

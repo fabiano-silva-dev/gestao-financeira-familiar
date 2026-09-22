@@ -201,6 +201,72 @@ class MonthlyImportClosingTest extends TestCase
             );
     }
 
+    public function test_account_can_be_marked_as_no_movement(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post("/importacoes/fechamento-mensal/account/{$account->id}/sem-movimento", [
+                'period' => '2026-09',
+            ])
+            ->assertRedirect('/importacoes/fechamento-mensal?period=2026-09');
+
+        $this->assertDatabaseHas('import_period_closures', [
+            'workspace_id' => $workspace->id,
+            'financial_account_id' => $account->id,
+            'credit_card_id' => null,
+            'period_month' => '2026-09-01',
+            'status' => 'no_movement',
+            'closed_by' => $user->id,
+        ]);
+    }
+
+    public function test_card_invoice_can_be_marked_as_no_movement(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post("/importacoes/fechamento-mensal/card/{$card->id}/sem-movimento", [
+                'period' => '2026-09',
+            ])
+            ->assertRedirect('/importacoes/fechamento-mensal?period=2026-09');
+
+        $this->assertDatabaseHas('import_period_closures', [
+            'workspace_id' => $workspace->id,
+            'financial_account_id' => null,
+            'credit_card_id' => $card->id,
+            'period_month' => '2026-09-01',
+            'status' => 'no_movement',
+            'closed_by' => $user->id,
+        ]);
+    }
+
+    public function test_no_movement_is_rejected_when_account_has_known_movement(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $import = $this->accountImport($workspace, $account, $user, '2026-09-01', '2026-09-30');
+        $this->bankEntry($workspace, $account, $import, true);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post("/importacoes/fechamento-mensal/account/{$account->id}/sem-movimento", [
+                'period' => '2026-09',
+            ])
+            ->assertUnprocessable();
+
+        $this->assertDatabaseMissing('import_period_closures', [
+            'workspace_id' => $workspace->id,
+            'financial_account_id' => $account->id,
+            'period_month' => '2026-09-01',
+            'status' => 'no_movement',
+        ]);
+    }
+
     public function test_closed_source_can_be_reopened_with_audit_fields(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();
