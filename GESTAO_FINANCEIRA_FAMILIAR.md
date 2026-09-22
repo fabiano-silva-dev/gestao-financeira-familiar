@@ -120,6 +120,8 @@ O objetivo é que o usuário não precise reconstruir o financeiro manualmente.
 
 Ele deverá revisar e resolver somente aquilo que exigir intervenção.
 
+Na importação de faturas de cartão, uma compra só deve ser marcada como **conciliada** quando possuir uma categoria válida. A categoria pode ser definida por regra determinística, histórico, heurística conhecida, sugestão de IA com confiança suficiente ou confirmação do usuário. Se nenhuma categoria puder ser determinada com segurança, a linha permanece pendente na Caixa de Entrada Financeira e não deve ser marcada como conciliada.
+
 ---
 
 ## 35. Inteligência Artificial
