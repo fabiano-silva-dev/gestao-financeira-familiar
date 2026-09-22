@@ -56,6 +56,7 @@ export type CardStatementImportHistoryItem = {
     statement_amount: string | null;
     statement_amount_applied: boolean | null;
     source_format: string | null;
+    processing_summary: FinancialImportProcessingSummary | null;
     error_message: string | null;
     created_at: string | null;
 };
@@ -66,6 +67,22 @@ export type PdfLayoutOption = {
     value: string;
     label: string;
     kind: UnifiedImportKind;
+};
+
+export type FinancialImportProcessingSummary = {
+    items_imported: number;
+    new_items: number;
+    automatically_reconciled: number;
+    matched_existing: number;
+    new_transactions_created: number;
+    transfers_identified: number;
+    invoice_payments_identified: number;
+    categorized_automatically: number;
+    pending_categorization: number;
+    pending_confirmation: number;
+    duplicates_ignored: number;
+    remaining_exceptions: number;
+    processed_at: string;
 };
 
 export type UnifiedImportHistoryItem = {

@@ -829,11 +829,38 @@ export default function ImportsIndex({
                                         </Badge>
                                         <div className="text-right text-sm">
                                             {item.status === 'completed' ? (
-                                                <p className="tabular-nums">
-                                                    {item.imported_records} novos
-                                                    · {item.duplicate_records}{' '}
-                                                    duplicados
-                                                </p>
+                                                item.processing_summary ? (
+                                                    <div className="space-y-0.5 tabular-nums">
+                                                        <p>
+                                                            {item.processing_summary.automatically_reconciled}{' '}
+                                                            conciliados ·{' '}
+                                                            {item.processing_summary.new_transactions_created}{' '}
+                                                            lançamentos
+                                                        </p>
+                                                        <p className="text-muted-foreground text-xs">
+                                                            {item.processing_summary.transfers_identified}{' '}
+                                                            transferências ·{' '}
+                                                            {item.processing_summary.invoice_payments_identified}{' '}
+                                                            pgto. fatura ·{' '}
+                                                            {item.processing_summary.categorized_automatically}{' '}
+                                                            categorizados
+                                                        </p>
+                                                        <p className="text-muted-foreground text-xs">
+                                                            {item.processing_summary.pending_categorization}{' '}
+                                                            sem categoria ·{' '}
+                                                            {item.processing_summary.pending_confirmation}{' '}
+                                                            confirmações ·{' '}
+                                                            {item.processing_summary.duplicates_ignored}{' '}
+                                                            duplicados
+                                                        </p>
+                                                    </div>
+                                                ) : (
+                                                    <p className="tabular-nums">
+                                                        {item.imported_records} novos
+                                                        · {item.duplicate_records}{' '}
+                                                        duplicados
+                                                    </p>
+                                                )
                                             ) : item.error_message ? (
                                                 <p className="text-destructive text-xs">
                                                     {item.error_message}

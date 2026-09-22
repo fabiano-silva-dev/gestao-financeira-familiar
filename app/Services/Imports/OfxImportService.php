@@ -23,6 +23,7 @@ final class OfxImportService
 {
     public function __construct(
         private readonly BankStatementParser $parser,
+        private readonly FinancialImportProcessor $processor,
     ) {}
 
     public function import(
@@ -162,6 +163,8 @@ final class OfxImportService
                 'file' => 'O arquivo não pôde ser processado. Tente novamente.',
             ]);
         }
+
+        $this->processor->process($workspace, $financialImport->refresh(), $user);
 
         return new OfxImportResult($financialImport->refresh(), false);
     }

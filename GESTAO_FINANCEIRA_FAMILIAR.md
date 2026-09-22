@@ -463,14 +463,19 @@ Fluxo desejado:
 7. Sugere conciliações.
 8. Usuário trata apenas exceções.
 
-Decisões adotadas para a primeira versão:
+Decisões adotadas:
 
 - o arquivo original é preservado em armazenamento privado para auditoria;
 - cada envio gera histórico com status, período e contadores de processamento;
-- os itens importados ficam em uma área bancária intermediária e não criam automaticamente receitas, despesas ou movimentos no livro financeiro;
+- os itens importados passam primeiro por uma área bancária intermediária, preservando a evidência externa antes de qualquer alteração no domínio financeiro;
+- após a normalização, um motor comum de pós-importação procura primeiro correspondências já existentes e só cria um novo lançamento quando não houver vínculo compatível;
+- correspondências seguras podem ser conciliadas automaticamente; casos ambíguos permanecem para confirmação do usuário;
+- quando não existir lançamento correspondente, o motor poderá criar receita ou despesa através dos serviços do domínio e conciliá-la imediatamente com o movimento importado;
+- ausência de categoria não impede a criação e a conciliação de um lançamento seguro; o item fica pendente somente de categorização na Caixa de Entrada Financeira;
+- transferências entre contas próprias e pagamentos de fatura devem ser identificados antes da criação de receita ou despesa;
 - a duplicidade do arquivo é verificada pelo conteúdo, independentemente do nome recebido;
 - a duplicidade dos itens usa o identificador bancário `FITID` quando disponível e uma impressão determinística dos dados como alternativa;
-- somente a conciliação transforma ou vincula o registro bancário a uma obrigação, fatura, transferência ou lançamento do sistema.
+- reprocessar uma importação deve reutilizar vínculos e lançamentos já existentes, sem duplicar fatos financeiros.
 
 ---
 
@@ -497,17 +502,21 @@ Informações desejadas:
 - cartão;
 - fatura.
 
-Decisões adotadas para a primeira versão:
+Decisões adotadas:
 
 - o usuário informa o cartão, o mês de vencimento da fatura e a convenção de sinal usada no arquivo;
 - arquivos CSV, XLSX e exportações XLS estruturadas em XML, HTML ou texto delimitado são normalizados pelo mesmo importador;
 - arquivos XLS binários legados devem ser convertidos para XLSX ou CSV antes do envio;
 - o arquivo original é preservado em armazenamento privado e cada processamento mantém histórico auditável;
 - as linhas importadas são vinculadas à entidade de fatura em uma área intermediária, preservando número e total de parcelas;
+- o motor comum procura primeiro uma parcela ou compra já existente na mesma fatura e somente materializa uma nova compra quando não houver correspondência relevante;
+- correspondências seguras podem ser conciliadas automaticamente; ambiguidades permanecem para confirmação;
+- uma compra parcelada materializada pela importação mantém uma transação principal pelo valor econômico total e parcelas vinculadas, incluindo as futuras nas respectivas faturas;
 - uma linha de fatura parcelada não cria uma despesa independente nem multiplica compras já existentes;
+- categoria e favorecido devem ser aplicados por regras ou classificadores confiáveis quando disponíveis; ausência de categoria não bloqueia a criação segura da compra e gera apenas pendência de categorização;
 - arquivos reenviados e linhas sobrepostas são tratados de forma idempotente por cartão e mês de referência;
 - o total normalizado atualiza o valor informado pela operadora somente enquanto a fatura estiver aberta;
-- a conciliação posterior será responsável por vincular cada linha importada a uma parcela existente ou criar a compra por meio do motor financeiro.
+- linhas de estorno, pagamento ou qualquer situação cujo tratamento financeiro não seja seguro permanecem como exceção até existir regra de domínio adequada.
 
 ---
 
@@ -1782,8 +1791,9 @@ A conciliação bancária vincula uma linha importada do OFX a um movimento de c
 Para a primeira versão:
 
 - conta e valor com sinal devem ser idênticos entre o movimento do banco e o movimento financeiro;
-- data e descrição são usadas para ordenar sugestões, mas a confirmação continua sendo feita pelo usuário;
-- correspondências com diferença de até sete dias podem ser apresentadas como sugestões automáticas;
+- data e descrição são usadas para ordenar e qualificar as correspondências;
+- correspondências de alta confiança, únicas e sem ambiguidade relevante podem ser conciliadas automaticamente; as demais continuam disponíveis para confirmação do usuário;
+- quando não houver lançamento compatível, o motor comum pode criar receita ou despesa pelo serviço do domínio e conciliá-la imediatamente, inclusive sem categoria quando os demais dados forem suficientes;
 - candidatos compatíveis mais antigos continuam disponíveis para seleção manual, sem pré-seleção automática;
 - cada movimento financeiro só pode ser vinculado a uma linha bancária;
 - saída e entrada de uma transferência são conciliadas separadamente, cada uma na sua conta;
@@ -1803,9 +1813,9 @@ Para a primeira versão:
 
 - cartão, fatura e valor devem ser idênticos;
 - quando o arquivo informar número e total de parcelas, ambos devem coincidir com a parcela interna;
-- data e descrição ajudam a ordenar as sugestões, mas a confirmação continua sendo feita pelo usuário;
+- data e descrição ajudam a ordenar as sugestões; correspondências de alta confiança e sem ambiguidade podem ser conciliadas automaticamente;
 - uma linha importada só pode ser vinculada a uma parcela e uma parcela só pode ser vinculada a uma linha;
 - a conciliação registra usuário e horário e pode ser desfeita;
 - categoria, pessoa responsável, favorecido e observações da compra podem continuar sendo ajustados sem romper o vínculo;
 - cartão, data, valor, quantidade de parcelas e situação financeira da compra não podem ser alterados enquanto alguma parcela estiver conciliada;
-- linhas sem compra correspondente permanecem pendentes para criação posterior através do motor financeiro.
+- linhas sem compra correspondente podem criar automaticamente a compra através do motor financeiro quando os dados forem suficientes; somente ambiguidades e casos de domínio ainda não cobertos permanecem pendentes.

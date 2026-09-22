@@ -12,7 +12,6 @@ use App\Models\FinancialImport;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Finance\CardStatementAiEnrichmentService;
-use App\Services\Finance\CardStatementMaterializationService;
 use App\Services\Imports\Data\CardStatementImportResult;
 use App\Services\Imports\Data\CardStatementRow;
 use Carbon\CarbonImmutable;
@@ -28,7 +27,7 @@ final class CardStatementImportService
 {
     public function __construct(
         private readonly CardStatementParser $parser,
-        private readonly CardStatementMaterializationService $materializationService,
+        private readonly FinancialImportProcessor $processor,
         private readonly CardStatementAiEnrichmentService $aiEnrichmentService,
     ) {}
 
@@ -171,13 +170,6 @@ final class CardStatementImportService
 
                     if ($entry->wasRecentlyCreated) {
                         $imported++;
-                        $this->materializationService->materialize(
-                            $workspace,
-                            $card,
-                            $invoice,
-                            $entry,
-                            $user,
-                        );
                     } else {
                         $duplicates++;
                     }
@@ -230,7 +222,9 @@ final class CardStatementImportService
             ]);
         }
 
+        $this->processor->process($workspace, $financialImport->refresh(), $user);
         $this->enrichWithAiSafely($workspace, $financialImport);
+        $this->processor->refreshSummary($workspace, $financialImport->refresh());
 
         return new CardStatementImportResult($financialImport->refresh(), false);
     }

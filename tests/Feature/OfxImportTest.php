@@ -2,12 +2,24 @@
 
 namespace Tests\Feature;
 
+use App\Enums\CategoryType;
+use App\Enums\ClassificationRuleMatchType;
+use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\FinancialImportStatus;
 use App\Enums\FinancialImportType;
+use App\Enums\FinancialTransactionOrigin;
+use App\Enums\FinancialTransactionStatus;
+use App\Enums\FinancialTransactionType;
+use App\Enums\PaymentMethod;
+use App\Models\Category;
+use App\Models\ClassificationRule;
+use App\Models\CreditCard;
+use App\Models\CreditCardInvoice;
 use App\Models\FinancialAccount;
 use App\Models\FinancialImport;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Finance\FinancialEntryService;
 use App\Support\Workspaces\CurrentWorkspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -42,7 +54,7 @@ class OfxImportTest extends TestCase
             );
     }
 
-    public function test_user_can_import_ofx_without_creating_financial_entries(): void
+    public function test_user_can_import_ofx_and_auto_process_financial_entries(): void
     {
         Storage::fake('local');
         [$user, $workspace] = $this->userAndWorkspace();
@@ -63,6 +75,7 @@ class OfxImportTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $financialImport = FinancialImport::query()->sole();
+        $summary = data_get($financialImport->metadata, 'processing_summary');
 
         $this->assertSame(FinancialImportType::Ofx, $financialImport->type);
         $this->assertSame(FinancialImportStatus::Completed, $financialImport->status);
@@ -82,14 +95,19 @@ class OfxImportTest extends TestCase
             'occurred_on' => '2026-09-10',
             'amount' => '-89.90',
             'description' => 'Energia elétrica',
-            'is_reconciled' => false,
+            'is_reconciled' => true,
         ]);
         $this->assertDatabaseHas('bank_statement_entries', [
             'external_id' => 'fit-002',
             'amount' => '2500.00',
+            'is_reconciled' => true,
         ]);
-        $this->assertDatabaseCount('financial_transactions', 0);
-        $this->assertDatabaseCount('account_movements', 0);
+        $this->assertDatabaseCount('financial_transactions', 2);
+        $this->assertDatabaseCount('account_movements', 2);
+        $this->assertSame(2, $summary['automatically_reconciled']);
+        $this->assertSame(2, $summary['new_transactions_created']);
+        $this->assertSame(2, $summary['pending_categorization']);
+        $this->assertSame(0, $summary['pending_confirmation']);
 
         $this->actingAs($user)
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
@@ -99,9 +117,228 @@ class OfxImportTest extends TestCase
                 ->component('imports/index')
                 ->has('imports', 1)
                 ->where('imports.0.imported_records', 2)
+                ->where('imports.0.processing_summary.automatically_reconciled', 2)
                 ->has('entries', 2)
-                ->where('pendingEntriesCount', 2)
+                ->where('pendingEntriesCount', 0)
             );
+    }
+
+    public function test_import_reconciles_existing_movement_before_creating_new_transaction(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+
+        app(FinancialEntryService::class)->create($workspace, [
+            'type' => FinancialTransactionType::Expense->value,
+            'transaction_date' => '2026-09-10',
+            'competence_date' => '2026-09-10',
+            'description' => 'Energia elétrica',
+            'amount' => '89.90',
+            'financial_account_id' => $account->id,
+            'credit_card_id' => null,
+            'category_id' => null,
+            'family_member_id' => null,
+            'payment_method' => PaymentMethod::Other->value,
+            'payee_name' => 'RGE',
+            'payment_instructions' => null,
+            'due_date' => '2026-09-10',
+            'settled_on' => '2026-09-10',
+            'status' => FinancialTransactionStatus::Confirmed->value,
+            'notes' => null,
+        ], FinancialTransactionOrigin::Manual);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.ofx.store'), [
+                'financial_account_id' => $account->id,
+                'file' => UploadedFile::fake()->createWithContent(
+                    'energia.ofx',
+                    $this->ofxFile([[
+                        'type' => 'DEBIT',
+                        'date' => '20260910120000[-3:BRT]',
+                        'amount' => '-89.90',
+                        'fitid' => 'energia-001',
+                        'name' => 'Energia elétrica',
+                        'memo' => 'Débito automático',
+                    ]]),
+                ),
+            ])
+            ->assertSessionHasNoErrors();
+
+        $import = FinancialImport::query()->sole();
+        $summary = data_get($import->metadata, 'processing_summary');
+
+        $this->assertDatabaseCount('financial_transactions', 1);
+        $this->assertDatabaseCount('account_movements', 1);
+        $this->assertDatabaseHas('bank_statement_entries', [
+            'external_id' => 'energia-001',
+            'is_reconciled' => true,
+        ]);
+        $this->assertSame(1, $summary['matched_existing']);
+        $this->assertSame(0, $summary['new_transactions_created']);
+    }
+
+    public function test_import_applies_classification_rule_when_creating_transaction(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $category = Category::factory()->for($workspace)->create([
+            'name' => 'Combustível',
+            'type' => CategoryType::Expense->value,
+        ]);
+        ClassificationRule::factory()->for($workspace)->create([
+            'match_type' => ClassificationRuleMatchType::Contains->value,
+            'pattern' => 'POSTO IPIRANGA',
+            'action_type' => FinancialTransactionType::Expense->value,
+            'payee_name' => 'Posto Ipiranga',
+            'category_id' => $category->id,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.ofx.store'), [
+                'financial_account_id' => $account->id,
+                'file' => UploadedFile::fake()->createWithContent(
+                    'posto.ofx',
+                    $this->ofxFile([[
+                        'type' => 'DEBIT',
+                        'date' => '20260912120000[-3:BRT]',
+                        'amount' => '-185.90',
+                        'fitid' => 'posto-001',
+                        'name' => 'POSTO IPIRANGA',
+                        'memo' => 'Compra no débito',
+                    ]]),
+                ),
+            ])
+            ->assertSessionHasNoErrors();
+
+        $import = FinancialImport::query()->sole();
+        $summary = data_get($import->metadata, 'processing_summary');
+
+        $this->assertDatabaseHas('financial_transactions', [
+            'description' => 'POSTO IPIRANGA',
+            'category_id' => $category->id,
+            'payee_name' => 'Posto Ipiranga',
+        ]);
+        $this->assertDatabaseHas('bank_statement_entries', [
+            'external_id' => 'posto-001',
+            'is_reconciled' => true,
+        ]);
+        $this->assertSame(1, $summary['categorized_automatically']);
+        $this->assertSame(0, $summary['pending_categorization']);
+    }
+
+    public function test_import_identifies_invoice_payment_without_creating_expense(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $card = CreditCard::factory()->for($workspace)->create([
+            'name' => 'Nubank',
+            'institution' => 'Nubank',
+            'payment_account_id' => $account->id,
+            'invoice_payment_method' => PaymentMethod::Boleto->value,
+        ]);
+        $invoice = CreditCardInvoice::query()->create([
+            'workspace_id' => $workspace->id,
+            'credit_card_id' => $card->id,
+            'reference_month' => '2026-09-01',
+            'closing_date' => '2026-09-08',
+            'due_date' => '2026-09-15',
+            'calculated_amount' => '3250.00',
+            'statement_amount' => '3250.00',
+            'paid_amount' => '0.00',
+            'status' => CreditCardInvoiceStatus::Open->value,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.ofx.store'), [
+                'financial_account_id' => $account->id,
+                'file' => UploadedFile::fake()->createWithContent(
+                    'pagamento-fatura.ofx',
+                    $this->ofxFile([[
+                        'type' => 'DEBIT',
+                        'date' => '20260915120000[-3:BRT]',
+                        'amount' => '-3250.00',
+                        'fitid' => 'fatura-001',
+                        'name' => 'PAGAMENTO FATURA NUBANK',
+                        'memo' => 'Pagamento cartão de crédito',
+                    ]]),
+                ),
+            ])
+            ->assertSessionHasNoErrors();
+
+        $import = FinancialImport::query()->sole();
+        $summary = data_get($import->metadata, 'processing_summary');
+
+        $this->assertDatabaseCount('financial_transactions', 0);
+        $this->assertDatabaseCount('credit_card_invoice_payments', 1);
+        $this->assertDatabaseCount('account_movements', 1);
+        $this->assertDatabaseHas('bank_statement_entries', [
+            'external_id' => 'fatura-001',
+            'is_reconciled' => true,
+        ]);
+        $this->assertSame(CreditCardInvoiceStatus::Paid, $invoice->fresh()->status);
+        $this->assertSame(1, $summary['invoice_payments_identified']);
+        $this->assertSame(0, $summary['new_transactions_created']);
+    }
+
+    public function test_import_links_both_sides_of_transfer_between_workspace_accounts(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $source = FinancialAccount::factory()->for($workspace)->create(['name' => 'Nubank']);
+        $destination = FinancialAccount::factory()->for($workspace)->create(['name' => 'Mercado Pago']);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('imports.ofx.store'), [
+            'financial_account_id' => $source->id,
+            'file' => UploadedFile::fake()->createWithContent(
+                'saida.ofx',
+                $this->ofxFile([[
+                    'type' => 'DEBIT',
+                    'date' => '20260918120000[-3:BRT]',
+                    'amount' => '-1000.00',
+                    'fitid' => 'transf-out-001',
+                    'name' => 'TRANSFERENCIA ENVIADA',
+                    'memo' => 'Transferência entre contas',
+                ]]),
+            ),
+        ])->assertSessionHasNoErrors();
+
+        $this->assertDatabaseCount('financial_transactions', 0);
+
+        $request->post(route('imports.ofx.store'), [
+            'financial_account_id' => $destination->id,
+            'file' => UploadedFile::fake()->createWithContent(
+                'entrada.ofx',
+                $this->ofxFile([[
+                    'type' => 'CREDIT',
+                    'date' => '20260918120000[-3:BRT]',
+                    'amount' => '1000.00',
+                    'fitid' => 'transf-in-001',
+                    'name' => 'TRANSFERENCIA RECEBIDA',
+                    'memo' => 'Transferência entre contas',
+                ]]),
+            ),
+        ])->assertSessionHasNoErrors();
+
+        $latestImport = FinancialImport::query()->latest('id')->firstOrFail();
+        $summary = data_get($latestImport->metadata, 'processing_summary');
+
+        $this->assertDatabaseCount('financial_transactions', 1);
+        $this->assertDatabaseHas('financial_transactions', [
+            'type' => FinancialTransactionType::Transfer->value,
+            'amount' => '1000.00',
+        ]);
+        $this->assertDatabaseCount('account_movements', 2);
+        $this->assertSame(2, $workspace->bankStatementEntries()->where('is_reconciled', true)->count());
+        $this->assertSame(1, $summary['transfers_identified']);
+        $this->assertSame(0, $summary['pending_confirmation']);
     }
 
     public function test_reimporting_same_file_is_rejected(): void
@@ -252,7 +489,7 @@ class OfxImportTest extends TestCase
             'description' => 'PIX Enviado',
             'amount' => '-50.00',
         ]);
-        $this->assertDatabaseCount('financial_transactions', 0);
+        $this->assertDatabaseCount('financial_transactions', 2);
     }
 
     public function test_user_can_import_mercado_pago_csv_statement(): void
@@ -296,7 +533,7 @@ class OfxImportTest extends TestCase
             'external_id' => '166801941210',
             'amount' => '500.00',
         ]);
-        $this->assertDatabaseCount('financial_transactions', 0);
+        $this->assertDatabaseCount('financial_transactions', 1);
     }
 
     public function test_user_can_import_banrisul_pdf_statement(): void

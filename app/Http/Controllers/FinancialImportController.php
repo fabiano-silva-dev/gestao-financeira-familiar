@@ -273,6 +273,9 @@ class FinancialImportController extends Controller
             'statement_amount_applied' => $metadata['statement_amount_applied'] ?? null,
             'reference_month' => $metadata['reference_month'] ?? null,
             'source_format' => $metadata['source_format'] ?? null,
+            'processing_summary' => is_array($metadata['processing_summary'] ?? null)
+                ? $metadata['processing_summary']
+                : null,
             'error_message' => $import->error_message,
             'created_at' => $import->created_at?->toIso8601String(),
         ];

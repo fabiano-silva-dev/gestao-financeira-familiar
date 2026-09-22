@@ -58,6 +58,7 @@ class CardStatementImportTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $financialImport = FinancialImport::query()->sole();
+        $summary = data_get($financialImport->metadata, 'processing_summary');
         $invoice = CreditCardInvoice::query()
             ->where('reference_month', '2026-10-01')
             ->sole();
@@ -115,6 +116,10 @@ class CardStatementImportTest extends TestCase
         ]);
         $this->assertDatabaseCount('credit_card_invoices', 9);
         $this->assertDatabaseCount('account_movements', 0);
+        $this->assertSame(1, $summary['automatically_reconciled']);
+        $this->assertSame(1, $summary['new_transactions_created']);
+        $this->assertSame(1, $summary['pending_categorization']);
+        $this->assertSame(1, $summary['pending_confirmation']);
 
         $this->actingAs($user)
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
