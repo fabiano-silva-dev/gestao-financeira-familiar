@@ -1,5 +1,7 @@
 import { Link } from '@inertiajs/react';
 import {
+    CalendarCheck2,
+    History,
     Repeat2,
     Clock3,
     CreditCard,
