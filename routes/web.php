@@ -179,6 +179,9 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::put('lancamentos/{entry}', [FinancialTransactionController::class, 'update'])
         ->whereNumber('entry')
         ->name('transactions.update');
+    Route::post('lancamentos/{entry}/reembolsos', [FinancialTransactionController::class, 'refund'])
+        ->whereNumber('entry')
+        ->name('transactions.refunds.store');
     Route::patch('lancamentos/{entry}/status', [FinancialTransactionController::class, 'advanceStatus'])
         ->whereNumber('entry')
         ->name('transactions.advance-status');
@@ -266,6 +269,9 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::post('conciliacao/{entry}/pagamento-cartao', [BankReconciliationController::class, 'cardPayment'])
         ->whereNumber('entry')
         ->name('reconciliation.card-payment');
+    Route::post('conciliacao/{entry}/reembolso', [BankReconciliationController::class, 'refund'])
+        ->whereNumber('entry')
+        ->name('reconciliation.refund');
 
     Route::post('workspaces/{workspace}/activate', ActiveWorkspaceController::class)
         ->name('workspaces.activate');

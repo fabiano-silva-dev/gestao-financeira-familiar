@@ -131,6 +131,14 @@ class FinancialTransaction extends Model
     }
 
     /**
+     * @return HasMany<ExpenseRefund, $this>
+     */
+    public function refunds(): HasMany
+    {
+        return $this->hasMany(ExpenseRefund::class, 'financial_transaction_id');
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

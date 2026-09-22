@@ -14,6 +14,9 @@ export type ReconciliationCandidate = {
     installment_id?: number;
     invoice_id?: number | null;
     invoice_payment_id?: number | null;
+    transaction_id?: number | null;
+    is_refund?: boolean;
+    remaining_refundable_amount?: string | null;
     occurred_on: string;
     description: string;
     amount: string;
@@ -114,6 +117,7 @@ export type ReconciliationPendingEntry = {
     has_suggestion: boolean;
     is_likely_transfer: boolean;
     is_likely_invoice_payment: boolean;
+    is_likely_refund: boolean;
     is_uncategorized: boolean;
     is_possible_duplicate: boolean;
     is_reconciled: boolean;

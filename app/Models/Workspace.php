@@ -107,6 +107,14 @@ class Workspace extends Model
     }
 
     /**
+     * @return HasMany<ExpenseRefund, $this>
+     */
+    public function expenseRefunds(): HasMany
+    {
+        return $this->hasMany(ExpenseRefund::class);
+    }
+
+    /**
      * @return HasMany<AccountMovement, $this>
      */
     public function accountMovements(): HasMany

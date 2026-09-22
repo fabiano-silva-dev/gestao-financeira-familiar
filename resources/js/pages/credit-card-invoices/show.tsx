@@ -141,7 +141,7 @@ export default function CreditCardInvoiceShow() {
                     </Badge>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-4">
                     <Card>
                         <CardHeader>
                             <CardTitle className="text-sm">Fatura</CardTitle>
@@ -149,10 +149,17 @@ export default function CreditCardInvoiceShow() {
                         <CardContent className="text-2xl font-semibold tabular-nums">
                             {currency.format(
                                 Number(
-                                    invoice.statement_amount ??
-                                        invoice.calculated_amount,
+                                    invoice.net_invoice_amount,
                                 ),
                             )}
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-sm">Estornos</CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-2xl font-semibold tabular-nums">
+                            {currency.format(Number(invoice.refund_amount))}
                         </CardContent>
                     </Card>
                     <Card>

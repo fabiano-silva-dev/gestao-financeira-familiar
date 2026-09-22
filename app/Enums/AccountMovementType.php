@@ -9,6 +9,7 @@ enum AccountMovementType: string
     case ExpensePayment = 'expense_payment';
     case IncomeReceipt = 'income_receipt';
     case CardPayment = 'card_payment';
+    case Refund = 'refund';
     case Adjustment = 'adjustment';
 
     public function label(): string
@@ -19,6 +20,7 @@ enum AccountMovementType: string
             self::ExpensePayment => 'Pagamento de despesa',
             self::IncomeReceipt => 'Recebimento de receita',
             self::CardPayment => 'Pagamento de fatura',
+            self::Refund => 'Reembolso',
             self::Adjustment => 'Ajuste de conta',
         };
     }

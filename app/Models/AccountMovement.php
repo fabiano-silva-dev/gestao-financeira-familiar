@@ -20,6 +20,7 @@ use Illuminate\Validation\ValidationException;
     'workspace_id',
     'financial_transaction_id',
     'credit_card_invoice_payment_id',
+    'expense_refund_id',
     'financial_account_id',
     'occurred_on',
     'description',
@@ -51,6 +52,14 @@ class AccountMovement extends Model
     public function invoicePayment(): BelongsTo
     {
         return $this->belongsTo(CreditCardInvoicePayment::class, 'credit_card_invoice_payment_id');
+    }
+
+    /**
+     * @return BelongsTo<ExpenseRefund, $this>
+     */
+    public function refund(): BelongsTo
+    {
+        return $this->belongsTo(ExpenseRefund::class, 'expense_refund_id');
     }
 
     /**

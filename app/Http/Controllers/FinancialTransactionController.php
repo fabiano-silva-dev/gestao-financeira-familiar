@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ExpenseRefundOrigin;
 use App\Enums\FinancialTransactionOrigin;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
 use App\Http\Requests\SaveFinancialEntryRequest;
+use App\Http\Requests\StoreExpenseRefundRequest;
 use App\Models\BankStatementEntry;
 use App\Models\CardStatementEntry;
 use App\Models\Category;
@@ -15,6 +17,7 @@ use App\Models\FamilyMember;
 use App\Models\FinancialAccount;
 use App\Models\FinancialTransaction;
 use App\Models\Workspace;
+use App\Services\Finance\ExpenseRefundService;
 use App\Services\Finance\FinancialEntryService;
 use App\Services\Finance\TransferService;
 use App\Support\Listings\ListingQuery;
@@ -31,6 +34,7 @@ class FinancialTransactionController extends Controller
         private readonly CurrentWorkspace $currentWorkspace,
         private readonly FinancialEntryService $entryService,
         private readonly TransferService $transferService,
+        private readonly ExpenseRefundService $refundService,
     ) {}
 
     public function index(Request $request): Response
@@ -58,6 +62,13 @@ class FinancialTransactionController extends Controller
                 'familyMember:id,name',
                 'sourceAccount:id,name',
                 'destinationAccount:id,name',
+                'refunds.destinationAccount:id,name',
+                'refunds.creditCard:id,name,last_four',
+                'refunds.invoice:id,reference_month',
+                'refunds.movement.bankStatementEntry:id,account_movement_id,financial_import_id',
+                'refunds.movement.bankStatementEntry.financialImport:id,source_filename',
+                'refunds.creator:id,name',
+                'refunds.linker:id,name',
             ])
             ->withCount('installments')
             ->select('financial_transactions.*');
@@ -269,6 +280,17 @@ class FinancialTransactionController extends Controller
         return Inertia::render('transactions/edit', [
             'entry' => $this->entryData($financialEntry),
             'typeOptions' => FinancialTransactionType::options(),
+            'refundInvoiceOptions' => $financialEntry->credit_card_id === null
+                ? []
+                : $this->workspace()->creditCardInvoices()
+                    ->where('credit_card_id', $financialEntry->credit_card_id)
+                    ->orderByDesc('reference_month')
+                    ->get(['id', 'reference_month'])
+                    ->map(fn ($invoice): array => [
+                        'id' => $invoice->id,
+                        'label' => 'Fatura '.$invoice->reference_month->format('m/Y'),
+                    ])
+                    ->all(),
             ...$this->referenceOptions(),
         ]);
     }
@@ -309,6 +331,30 @@ class FinancialTransactionController extends Controller
         ]);
 
         return to_route('transactions.index');
+    }
+
+    public function refund(
+        StoreExpenseRefundRequest $request,
+        int $entry,
+    ): RedirectResponse {
+        $user = $request->user();
+        abort_unless($user instanceof \App\Models\User, 403);
+        $financialEntry = $this->findEntry($entry);
+
+        $this->refundService->register(
+            $this->workspace(),
+            $financialEntry,
+            $user,
+            $request->validated(),
+            ExpenseRefundOrigin::Manual,
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Reembolso registrado sem alterar o valor original da despesa.',
+        ]);
+
+        return to_route('transactions.edit', $entry);
     }
 
     public function toggleSettlement(int $entry): RedirectResponse
@@ -374,6 +420,12 @@ class FinancialTransactionController extends Controller
                 'installments.cardStatementEntry.creditCard:id,name,last_four',
                 'installments.cardStatementEntry.invoice:id,reference_month',
                 'installments.invoice:id,reference_month',
+                'refunds.destinationAccount:id,name',
+                'refunds.creditCard:id,name,last_four',
+                'refunds.invoice:id,reference_month',
+                'refunds.movement.bankStatementEntry.financialImport',
+                'refunds.creator:id,name',
+                'refunds.linker:id,name',
             ])
             ->withCount('installments')
             ->findOrFail($entry);
@@ -469,6 +521,17 @@ class FinancialTransactionController extends Controller
             $categoryName = "{$entry->category->parent->name} / {$entry->category->name}";
         }
 
+        $refundSummary = $entry->type === FinancialTransactionType::Expense
+            ? $this->refundService->summary($entry)
+            : [
+                'original_amount' => $entry->amount,
+                'refunded_amount' => '0.00',
+                'refundable_amount' => '0.00',
+                'net_amount' => $entry->amount,
+                'refund_status' => 'none',
+                'refund_status_label' => 'Sem reembolso',
+            ];
+
         return [
             'id' => $entry->id,
             'type' => $entry->type->value,
@@ -478,6 +541,35 @@ class FinancialTransactionController extends Controller
                 ?? $entry->transaction_date->toDateString(),
             'description' => $entry->description,
             'amount' => $entry->amount,
+            ...$refundSummary,
+            'refunds' => $entry->relationLoaded('refunds')
+                ? $entry->refunds
+                    ->sortByDesc('refunded_on')
+                    ->values()
+                    ->map(fn ($refund): array => [
+                        'id' => $refund->id,
+                        'amount' => $refund->amount,
+                        'refunded_on' => $refund->refunded_on->toDateString(),
+                        'destination_type' => $refund->destination_type->value,
+                        'destination_label' => $refund->destination_type->value === 'account'
+                            ? ($refund->destinationAccount?->name ?? 'Conta financeira')
+                            : collect([
+                                $refund->creditCard?->name,
+                                $refund->invoice?->reference_month?->format('m/Y'),
+                            ])->filter()->join(' · '),
+                        'status' => $refund->status->value,
+                        'status_label' => $refund->status->label(),
+                        'origin' => $refund->origin->value,
+                        'origin_label' => $refund->origin->label(),
+                        'notes' => $refund->notes,
+                        'created_by_name' => $refund->creator?->name,
+                        'linked_by_name' => $refund->linker?->name,
+                        'linked_at' => $refund->linked_at?->toIso8601String(),
+                        'movement_reconciled' => (bool) $refund->movement?->is_reconciled,
+                        'movement_import_filename' => $refund->movement?->bankStatementEntry?->financialImport?->source_filename,
+                    ])
+                    ->all()
+                : [],
             'financial_account_id' => $entry->financial_account_id,
             'financial_account_name' => $entry->account?->name,
             'credit_card_id' => $entry->credit_card_id,

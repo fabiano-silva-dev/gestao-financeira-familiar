@@ -64,6 +64,12 @@ class CreditCardInvoice extends Model
         return $this->hasMany(CardStatementEntry::class);
     }
 
+    /** @return HasMany<ExpenseRefund, $this> */
+    public function refunds(): HasMany
+    {
+        return $this->hasMany(ExpenseRefund::class, 'credit_card_invoice_id');
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {

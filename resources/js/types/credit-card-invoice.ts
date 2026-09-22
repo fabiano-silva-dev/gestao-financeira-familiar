@@ -79,6 +79,8 @@ export type CreditCardInvoice = {
     due_date: string;
     calculated_amount: string;
     statement_amount: string | null;
+    net_invoice_amount: string;
+    refund_amount: string;
     paid_amount: string;
     outstanding_amount: string;
     paid_at: string | null;

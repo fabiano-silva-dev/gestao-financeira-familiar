@@ -4,6 +4,7 @@ namespace App\Services\Finance;
 
 use App\Enums\AccountMovementType;
 use App\Enums\CreditCardInvoiceStatus;
+use App\Enums\ExpenseRefundStatus;
 use App\Enums\TransactionInstallmentStatus;
 use App\Models\CreditCard;
 use App\Models\CreditCardInvoice;
@@ -260,7 +261,7 @@ class CreditCardInvoiceService
         string $paidOn,
     ): void {
         $totalCents = $this->moneyToCents(
-            (string) ($invoice->statement_amount ?? $invoice->calculated_amount),
+            $this->totalAmount($invoice),
         );
         $paidCents = $this->moneyToCents((string) $invoice->paid_amount);
         $newPaidCents = $paidCents + $paymentCents;
@@ -289,9 +290,45 @@ class CreditCardInvoiceService
         return $this->centsToMoney($this->outstandingCents($invoice));
     }
 
-    public function totalAmount(CreditCardInvoice $invoice): string
+    public function grossTotalAmount(CreditCardInvoice $invoice): string
     {
         return (string) ($invoice->statement_amount ?? $invoice->calculated_amount);
+    }
+
+    public function grossTotalCents(CreditCardInvoice $invoice): int
+    {
+        return $this->moneyToCents($this->grossTotalAmount($invoice));
+    }
+
+    public function totalAmount(CreditCardInvoice $invoice): string
+    {
+        if ($invoice->statement_amount !== null) {
+            return (string) $invoice->statement_amount;
+        }
+
+        return $this->centsToMoney(
+            max(0, $this->grossTotalCents($invoice) - $this->refundCents($invoice)),
+        );
+    }
+
+    public function refundCents(CreditCardInvoice $invoice): int
+    {
+        $refunds = $invoice->refunds()
+            ->where('status', ExpenseRefundStatus::Confirmed->value)
+            ->pluck('amount')
+            ->all();
+
+        return array_reduce(
+            $refunds,
+            fn (int $total, mixed $amount): int =>
+                $total + $this->moneyToCents((string) $amount),
+            0,
+        );
+    }
+
+    public function refundAmount(CreditCardInvoice $invoice): string
+    {
+        return $this->centsToMoney($this->refundCents($invoice));
     }
 
     public function findCompatibleUnreconciledPayment(

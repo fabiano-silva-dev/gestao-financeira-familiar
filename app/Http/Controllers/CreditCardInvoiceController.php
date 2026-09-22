@@ -277,6 +277,8 @@ class CreditCardInvoiceController extends Controller
             'due_date' => $invoice->due_date->toDateString(),
             'calculated_amount' => $invoice->calculated_amount,
             'statement_amount' => $invoice->statement_amount,
+            'net_invoice_amount' => $this->invoiceService->totalAmount($invoice),
+            'refund_amount' => $this->invoiceService->refundAmount($invoice),
             'paid_amount' => $invoice->paid_amount,
             'outstanding_amount' => $this->invoiceService->outstandingAmount($invoice),
             'paid_at' => $invoice->paid_at?->toDateString(),

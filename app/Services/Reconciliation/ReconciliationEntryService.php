@@ -5,6 +5,8 @@ namespace App\Services\Reconciliation;
 use App\Enums\AccountMovementType;
 use App\Enums\CategoryType;
 use App\Enums\CreditCardInvoiceStatus;
+use App\Enums\ExpenseRefundDestination;
+use App\Enums\ExpenseRefundOrigin;
 use App\Enums\FinancialTransactionOrigin;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
@@ -23,6 +25,7 @@ use App\Services\Finance\CardStatementMaterializationService;
 use App\Services\Finance\ClassificationRuleMatcher;
 use App\Services\Finance\CreditCardInvoiceService;
 use App\Services\Finance\ExpenseCategoryMatcher;
+use App\Services\Finance\ExpenseRefundService;
 use App\Services\Finance\FinancialEntryService;
 use App\Services\Finance\TransferService;
 use Illuminate\Support\Collection;
@@ -42,6 +45,7 @@ final class ReconciliationEntryService
         private readonly ExpenseCategoryMatcher $categoryMatcher,
         private readonly ClassificationRuleMatcher $ruleMatcher,
         private readonly CreditCardInvoiceService $invoiceService,
+        private readonly ExpenseRefundService $refundService,
     ) {}
 
     public function ignoreBankEntry(
@@ -237,6 +241,56 @@ final class ReconciliationEntryService
                 $movement,
                 $user,
             );
+
+            return $entry->refresh();
+        });
+    }
+
+    public function reconcileRefund(
+        Workspace $workspace,
+        BankStatementEntry $entry,
+        FinancialTransaction $transaction,
+        User $user,
+    ): BankStatementEntry {
+        $this->assertSameWorkspace($workspace, $entry->workspace_id);
+        $this->assertSameWorkspace($workspace, $transaction->workspace_id);
+        $this->guardPendingBankEntry($entry);
+
+        if ($this->interpreter->moneyToCents($entry->amount) <= 0) {
+            throw ValidationException::withMessages([
+                'financial_transaction_id' => 'Somente entradas bancárias podem ser vinculadas como reembolso.',
+            ]);
+        }
+
+        return DB::transaction(function () use (
+            $workspace,
+            $entry,
+            $transaction,
+            $user,
+        ): BankStatementEntry {
+            $refund = $this->refundService->register(
+                $workspace,
+                $transaction,
+                $user,
+                [
+                    'amount' => $this->interpreter->unsignedAmount($entry->amount),
+                    'refunded_on' => $entry->occurred_on->toDateString(),
+                    'destination_type' => ExpenseRefundDestination::Account->value,
+                    'destination_account_id' => $entry->financial_account_id,
+                    'credit_card_invoice_id' => null,
+                    'notes' => 'Reembolso conciliado com movimento bancário importado: '.$entry->description,
+                ],
+                ExpenseRefundOrigin::BankReconciliation,
+            );
+            $movement = $refund->movement()->firstOrFail();
+
+            $this->bankReconciliation->reconcile(
+                $workspace,
+                $entry->refresh(),
+                $movement,
+                $user,
+            );
+            $this->refundService->markLinked($refund, $user);
 
             return $entry->refresh();
         });

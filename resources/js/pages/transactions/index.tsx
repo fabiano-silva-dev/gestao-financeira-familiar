@@ -394,6 +394,12 @@ export default function TransactionsIndex() {
                                                                     entry.status_label
                                                                 }
                                                             </Badge>
+                                                            {entry.refund_status !==
+                                                                'none' && (
+                                                                <Badge variant="outline">
+                                                                    {entry.refund_status_label}
+                                                                </Badge>
+                                                            )}
                                                             {entry.financial_recurrence_id !==
                                                                 null && (
                                                                 <Badge variant="outline">
@@ -428,8 +434,21 @@ export default function TransactionsIndex() {
                                                 >
                                                     {amountPrefix(entry)}
                                                     {currency.format(
-                                                        Number(entry.amount),
+                                                        Number(
+                                                            entry.type === 'expense'
+                                                                ? entry.net_amount
+                                                                : entry.amount,
+                                                        ),
                                                     )}
+                                                    {entry.type === 'expense' &&
+                                                        entry.refund_status !== 'none' && (
+                                                            <span className="text-muted-foreground block text-[11px] font-normal">
+                                                                original{' '}
+                                                                {currency.format(
+                                                                    Number(entry.amount),
+                                                                )}
+                                                            </span>
+                                                        )}
                                                 </p>
                                                 <ArrowRight className="text-muted-foreground hidden size-4 shrink-0 transition-transform group-hover:translate-x-0.5 md:block" />
                                             </Link>

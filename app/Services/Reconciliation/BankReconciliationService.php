@@ -71,6 +71,13 @@ final class BankReconciliationService
             ]);
             $lockedMovement->update(['is_reconciled' => true]);
 
+            if ($lockedMovement->expense_refund_id !== null) {
+                $lockedMovement->refund()->update([
+                    'linked_by' => $user->id,
+                    'linked_at' => now(),
+                ]);
+            }
+
             return $lockedEntry->refresh();
         });
     }
@@ -95,11 +102,22 @@ final class BankReconciliationService
             ]);
 
             if ($movementId !== null) {
-                AccountMovement::query()
+                $movement = AccountMovement::query()
                     ->where('workspace_id', $workspace->id)
                     ->whereKey($movementId)
                     ->lockForUpdate()
-                    ->first()?->update(['is_reconciled' => false]);
+                    ->first();
+
+                if ($movement instanceof AccountMovement) {
+                    $movement->update(['is_reconciled' => false]);
+
+                    if ($movement->expense_refund_id !== null) {
+                        $movement->refund()->update([
+                            'linked_by' => null,
+                            'linked_at' => null,
+                        ]);
+                    }
+                }
             }
 
             return $lockedEntry->refresh();

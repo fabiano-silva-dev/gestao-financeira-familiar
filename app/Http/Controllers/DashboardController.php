@@ -12,6 +12,8 @@ use App\Models\CreditCardInvoice;
 use App\Models\FinancialTransaction;
 use App\Models\TransactionInstallment;
 use App\Models\Workspace;
+use App\Services\Finance\CreditCardInvoiceService;
+use App\Services\Finance\ExpenseRefundService;
 use App\Services\Finance\FinancialRecurrenceService;
 use App\Support\Workspaces\CurrentWorkspace;
 use Carbon\CarbonImmutable;
@@ -24,6 +26,8 @@ class DashboardController extends Controller
     public function __construct(
         private readonly CurrentWorkspace $currentWorkspace,
         private readonly FinancialRecurrenceService $recurrenceService,
+        private readonly ExpenseRefundService $refundService,
+        private readonly CreditCardInvoiceService $invoiceService,
     ) {}
 
     public function __invoke(Request $request): Response
@@ -48,7 +52,8 @@ class DashboardController extends Controller
                                 FinancialTransactionStatus::Confirmed->value,
                             ),
                         )
-                        ->orWhereNotNull('credit_card_invoice_payment_id');
+                        ->orWhereNotNull('credit_card_invoice_payment_id')
+                        ->orWhereNotNull('expense_refund_id');
                 })
                 ->pluck('amount')
                 ->all(),
@@ -128,18 +133,19 @@ class DashboardController extends Controller
                 $start->toDateString(),
                 $end->toDateString(),
             ])
-            ->get(['type', 'amount'])
+            ->with('refunds:id,financial_transaction_id,amount,status')
+            ->get(['id', 'type', 'amount'])
             ->each(function (FinancialTransaction $entry) use (&$totals): void {
                 if ($entry->type === FinancialTransactionType::Income) {
                     $totals['income'] += $this->moneyToCents((string) $entry->amount);
                 }
 
                 if ($entry->type === FinancialTransactionType::Expense) {
-                    $totals['expense'] += $this->moneyToCents((string) $entry->amount);
+                    $totals['expense'] += $this->refundService->netAmountCents($entry);
                 }
             });
 
-        $cardExpenses = TransactionInstallment::query()
+        $totals['expense'] += TransactionInstallment::query()
             ->where('workspace_id', $workspace->id)
             ->where('status', '!=', TransactionInstallmentStatus::Cancelled->value)
             ->whereBetween('competence_month', [
@@ -149,12 +155,15 @@ class DashboardController extends Controller
             ->whereHas('transaction', fn ($query) => $query
                 ->where('status', FinancialTransactionStatus::Confirmed->value)
                 ->where('type', FinancialTransactionType::Expense->value))
-            ->pluck('amount')
-            ->all();
+            ->with('transaction:id,amount')
+            ->get(['id', 'financial_transaction_id', 'amount', 'installment_number'])
+            ->sum(function (TransactionInstallment $installment): int {
+                $gross = $this->moneyToCents((string) $installment->amount);
+                $refund = $this->refundService
+                    ->allocatedRefundCentsForInstallment($installment);
 
-        $totals['expense'] += $this->sumMoney(
-            $cardExpenses,
-        );
+                return max(0, $gross - $refund);
+            });
 
         return $totals;
     }
@@ -180,14 +189,15 @@ class DashboardController extends Controller
                 FinancialTransactionType::Income->value,
                 FinancialTransactionType::Expense->value,
             ])
-            ->get(['type', 'amount'])
+            ->with('refunds:id,financial_transaction_id,amount,status')
+            ->get(['id', 'type', 'amount'])
             ->each(function (FinancialTransaction $entry) use (&$totals): void {
                 if ($entry->type === FinancialTransactionType::Income) {
                     $totals['income'] += $this->moneyToCents((string) $entry->amount);
                 }
 
                 if ($entry->type === FinancialTransactionType::Expense) {
-                    $totals['expense'] += $this->moneyToCents((string) $entry->amount);
+                    $totals['expense'] += $this->refundService->netAmountCents($entry);
                 }
             });
 
@@ -200,14 +210,9 @@ class DashboardController extends Controller
 
         $workspace->creditCardInvoices()
             ->where('status', '!=', CreditCardInvoiceStatus::Paid->value)
-            ->get(['calculated_amount', 'statement_amount', 'paid_amount'])
-            ->each(function ($invoice) use (&$total): void {
-                $target = (string) ($invoice->statement_amount
-                    ?? $invoice->calculated_amount);
-                $outstanding = $this->moneyToCents($target)
-                    - $this->moneyToCents((string) $invoice->paid_amount);
-
-                $total += max(0, $outstanding);
+            ->get()
+            ->each(function (CreditCardInvoice $invoice) use (&$total): void {
+                $total += $this->invoiceService->outstandingCents($invoice);
             });
 
         return $total;
@@ -258,6 +263,7 @@ class DashboardController extends Controller
                 AccountMovementType::IncomeReceipt->value,
                 AccountMovementType::ExpensePayment->value,
                 AccountMovementType::CardPayment->value,
+                AccountMovementType::Refund->value,
             ])
             ->whereBetween('occurred_on', [
                 $firstMonth->toDateString(),
@@ -276,6 +282,8 @@ class DashboardController extends Controller
 
                 if ($movement->type === AccountMovementType::IncomeReceipt) {
                     $month['income'] += $amount;
+                } elseif ($movement->type === AccountMovementType::Refund) {
+                    $month['expenses'] -= $amount;
                 } else {
                     $month['expenses'] += $amount;
                 }
@@ -350,10 +358,18 @@ class DashboardController extends Controller
                 $monthStart->toDateString(),
                 $monthEnd->toDateString(),
             ])
-            ->with(['category:id,name,parent_id', 'category.parent:id,name'])
+            ->with([
+                'category:id,name,parent_id',
+                'category.parent:id,name',
+                'refunds:id,financial_transaction_id,amount,status',
+            ])
             ->get(['id', 'category_id', 'amount'])
             ->each(function (FinancialTransaction $entry) use (&$totals): void {
-                $this->addCategoryTotal($totals, $entry->category, (string) $entry->amount);
+                $this->addCategoryTotal(
+                    $totals,
+                    $entry->category,
+                    $this->money($this->refundService->netAmountCents($entry)),
+                );
             });
 
         TransactionInstallment::query()
@@ -367,16 +383,20 @@ class DashboardController extends Controller
                 ->where('status', FinancialTransactionStatus::Confirmed->value)
                 ->where('type', FinancialTransactionType::Expense->value))
             ->with([
-                'transaction:id,category_id',
+                'transaction:id,category_id,amount',
+                'transaction.refunds:id,financial_transaction_id,amount,status',
                 'transaction.category:id,name,parent_id',
                 'transaction.category.parent:id,name',
             ])
             ->get(['id', 'financial_transaction_id', 'amount'])
             ->each(function (TransactionInstallment $installment) use (&$totals): void {
+                $gross = $this->moneyToCents((string) $installment->amount);
+                $refund = $this->refundService
+                    ->allocatedRefundCentsForInstallment($installment);
                 $this->addCategoryTotal(
                     $totals,
                     $installment->transaction->category,
-                    (string) $installment->amount,
+                    $this->money(max(0, $gross - $refund)),
                 );
             });
 
@@ -488,10 +508,7 @@ class DashboardController extends Controller
             ->orderBy('id')
             ->get()
             ->map(function (CreditCardInvoice $invoice) use ($today): ?array {
-                $target = (string) ($invoice->statement_amount
-                    ?? $invoice->calculated_amount);
-                $outstanding = $this->moneyToCents($target)
-                    - $this->moneyToCents((string) $invoice->paid_amount);
+                $outstanding = $this->invoiceService->outstandingCents($invoice);
 
                 if ($outstanding <= 0) {
                     return null;

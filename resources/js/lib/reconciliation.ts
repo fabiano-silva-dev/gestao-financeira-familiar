@@ -34,6 +34,10 @@ export function candidateMatchId(
             return `invoice:${candidate.invoice_id}`;
         }
 
+        if (candidate.is_refund && candidate.transaction_id) {
+            return `refund:${candidate.transaction_id}`;
+        }
+
         return '';
     }
 

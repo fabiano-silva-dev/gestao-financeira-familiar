@@ -121,6 +121,7 @@ class FinancialAccountController extends Controller
                 'transaction.sourceAccount:id,name',
                 'transaction.destinationAccount:id,name',
                 'invoicePayment.invoice.creditCard:id,name',
+                'refund.originalTransaction:id,description',
             ]);
         $listing->applySearch($listedMovements, ['description']);
 
@@ -253,6 +254,7 @@ class FinancialAccountController extends Controller
                             AND (
                                 financial_transactions.status = ?
                                 OR account_movements.credit_card_invoice_payment_id IS NOT NULL
+                                OR account_movements.expense_refund_id IS NOT NULL
                                 OR account_movements.type = ?
                             )
                     ), 0) AS current_balance
@@ -282,6 +284,7 @@ class FinancialAccountController extends Controller
                         ),
                     )
                     ->orWhereNotNull('credit_card_invoice_payment_id')
+                    ->orWhereNotNull('expense_refund_id')
                     ->orWhere('type', AccountMovementType::Adjustment->value);
             });
 
@@ -311,6 +314,7 @@ class FinancialAccountController extends Controller
         };
 
         $creditCardName = $movement->invoicePayment?->invoice?->creditCard?->name;
+        $refundTransaction = $movement->refund?->originalTransaction;
 
         return [
             'id' => $movement->id,
@@ -320,10 +324,12 @@ class FinancialAccountController extends Controller
             'type' => $movement->type->value,
             'type_label' => $movement->type->label(),
             'is_reconciled' => $movement->is_reconciled,
-            'transaction_id' => $transaction?->id,
+            'transaction_id' => $transaction?->id ?? $refundTransaction?->id,
             'transaction_type' => $transaction?->type->value,
+
             'transaction_type_label' => $transaction?->type->label(),
             'category_name' => $categoryName,
+            'refund_description' => $refundTransaction?->description,
             'family_member_name' => $transaction?->familyMember?->name,
             'counterparty_account_name' => $counterpartyAccountName,
             'credit_card_name' => $creditCardName,

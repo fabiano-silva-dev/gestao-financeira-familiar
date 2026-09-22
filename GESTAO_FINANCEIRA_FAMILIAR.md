@@ -124,6 +124,10 @@ Na importação de faturas de cartão, uma compra só deve ser marcada como **co
 
 Pagamentos de cartão devem existir independentemente da presença da fatura no sistema. Quando um movimento bancário for identificado como pagamento de cartão e a fatura ainda não existir, o sistema deve registrar o pagamento vinculado ao cartão e à conta de origem, conciliar o movimento bancário e manter apenas o vínculo com a fatura como pendência. Esse pagamento não é uma nova despesa. Quando a fatura for importada, pagamentos pendentes do mesmo cartão devem ser vinculados automaticamente somente quando houver correspondência inequívoca; em casos ambíguos, o usuário deve poder vincular manualmente o pagamento à fatura.
 
+Reembolso é um fato financeiro próprio, sempre vinculado à compra ou despesa original. A compra original não deve ser excluída nem ter seu valor destruído. Para análise gerencial, a despesa líquida corresponde ao valor original menos os reembolsos confirmados. Reembolso recebido em conta financeira gera entrada de caixa do tipo reembolso, não receita, e não reduz a fatura do cartão quando a compra original foi feita no cartão. Estorno recebido diretamente no cartão deve ser vinculado ao mesmo cartão e a uma fatura compatível, reduzindo o valor devido nessa fatura sem criar movimento bancário fictício.
+
+Em compras parceladas, o reembolso permanece vinculado à transação principal. Para indicadores por competência, o valor reembolsado deve ser distribuído entre as parcelas de forma determinística, preservando o valor original da compra, das parcelas e das faturas. Importações e conciliações devem sugerir reembolsos por valor, descrição, estabelecimento e proximidade de data, mas só podem concluir automaticamente quando a correspondência for inequívoca. Em caso de ambiguidade, a decisão permanece na Caixa de Entrada Financeira.
+
 ---
 
 ## 35. Inteligência Artificial

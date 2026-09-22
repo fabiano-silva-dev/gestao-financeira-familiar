@@ -741,6 +741,8 @@ export default function ImportsIndex({
                                                             transferências ·{' '}
                                                             {item.processing_summary.invoice_payments_identified}{' '}
                                                             pgto. fatura ·{' '}
+                                                            {item.processing_summary.refunds_identified}{' '}
+                                                            reembolsos ·{' '}
                                                             {item.processing_summary.categorized_automatically}{' '}
                                                             categorizados
                                                         </p>

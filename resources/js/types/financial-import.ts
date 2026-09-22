@@ -102,6 +102,7 @@ export type FinancialImportProcessingSummary = {
     new_transactions_created: number;
     transfers_identified: number;
     invoice_payments_identified: number;
+    refunds_identified: number;
     categorized_automatically: number;
     pending_categorization: number;
     pending_confirmation: number;

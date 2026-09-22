@@ -136,7 +136,10 @@ final class CardStatementImportService
                 $statementEndOn = $firstRow->purchasedOn;
 
                 foreach ($statement->rows as $row) {
-                    $statementCents += $this->moneyToCents($row->amount);
+                    $statementCents += max(
+                        0,
+                        $this->moneyToCents($row->amount),
+                    );
                     $statementStartOn = $row->purchasedOn < $statementStartOn
                         ? $row->purchasedOn
                         : $statementStartOn;
@@ -181,7 +184,13 @@ final class CardStatementImportService
                 $statementApplied = $invoice->status === CreditCardInvoiceStatus::Open;
 
                 if ($statementApplied) {
-                    $invoice->update(['statement_amount' => $statementAmount]);
+                    $netStatementCents = max(
+                        0,
+                        $statementCents - $this->invoiceService->refundCents($invoice),
+                    );
+                    $invoice->update([
+                        'statement_amount' => $this->centsToMoney($netStatementCents),
+                    ]);
                 }
 
                 $lockedImport->update([
@@ -309,6 +318,7 @@ final class CardStatementImportService
             'new_transactions_created',
             'transfers_identified',
             'invoice_payments_identified',
+            'refunds_identified',
         ];
         $combined = [];
 

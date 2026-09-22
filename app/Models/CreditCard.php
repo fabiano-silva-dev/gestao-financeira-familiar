@@ -76,6 +76,14 @@ class CreditCard extends Model
     }
 
     /**
+     * @return HasMany<ExpenseRefund, $this>
+     */
+    public function refunds(): HasMany
+    {
+        return $this->hasMany(ExpenseRefund::class);
+    }
+
+    /**
      * @return HasMany<FinancialTransaction, $this>
      */
     public function transactions(): HasMany

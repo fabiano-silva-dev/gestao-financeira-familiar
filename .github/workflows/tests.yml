@@ -66,6 +66,7 @@ jobs:
           php artisan test tests/Feature/OfxImportTest.php
           php artisan test tests/Feature/CardStatementImportTest.php
           php artisan test tests/Feature/CreditCardInvoicePaymentReconciliationTest.php
+          php artisan test tests/Feature/ExpenseRefundTest.php
           php artisan test tests/Feature/FinancialEntryTest.php
           php artisan test tests/Feature/CreditCardInvoiceTest.php
           php artisan test tests/Feature/FinancialRecurrenceTest.php

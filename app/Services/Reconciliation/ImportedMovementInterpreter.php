@@ -63,6 +63,16 @@ final class ImportedMovementInterpreter
         return false;
     }
 
+    public function isLikelyRefund(string $description): bool
+    {
+        $normalized = $this->normalize($description);
+
+        return str_contains($normalized, 'reembolso')
+            || str_contains($normalized, 'estorno')
+            || str_contains($normalized, 'devolucao')
+            || str_contains($normalized, 'refund');
+    }
+
     public function isLikelyTransfer(string $description, ?string $movementType = null): bool
     {
         if (in_array($movementType, [

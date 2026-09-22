@@ -248,6 +248,7 @@ export function ReconciliationRow({
             : null;
     const showInvoicePayment =
         entry.is_likely_invoice_payment || selectedInvoice !== null;
+    const showRefund = Boolean(selectedCandidate?.is_refund);
     const canRegisterPendingCardPayment =
         entry.kind === 'statement' &&
         showInvoicePayment &&
@@ -257,7 +258,9 @@ export function ReconciliationRow({
         !entry.is_reconciled &&
         !entry.has_suggestion &&
         !entry.is_likely_invoice_payment &&
-        !entry.is_likely_transfer;
+        !entry.is_likely_refund &&
+        !entry.is_likely_transfer &&
+        !showRefund;
     const counterpartOptions = counterpartAccountOptions.filter(
         (account) => account.id !== entry.financial_account_id,
     );
@@ -336,6 +339,23 @@ export function ReconciliationRow({
 
     const conciliate = () => {
         if (entry.kind === 'statement') {
+            if (matchId.startsWith('refund:')) {
+                router.post(
+                    listingUrl(
+                        BankReconciliationController.refund.url(entry.id),
+                        query,
+                    ),
+                    {
+                        financial_transaction_id: Number(
+                            matchId.slice('refund:'.length),
+                        ),
+                    },
+                    visitOptions(),
+                );
+
+                return;
+            }
+
             if (matchId.startsWith('invoice:')) {
                 router.post(
                     listingUrl(
@@ -540,6 +560,9 @@ export function ReconciliationRow({
                     {entry.is_likely_invoice_payment && (
                         <Badge variant="outline">Pagamento de fatura</Badge>
                     )}
+                    {entry.is_likely_refund && (
+                        <Badge variant="outline">Possível reembolso</Badge>
+                    )}
                     {entry.is_likely_transfer && (
                         <Badge variant="outline">Transferência</Badge>
                     )}
@@ -565,6 +588,7 @@ export function ReconciliationRow({
                                     ? entry.suggestion_description
                                     : 'Sugestão de classificação'}
                                 {!showInvoicePayment &&
+                                !showRefund &&
                                 entry.matcher_category_name
                                     ? ` · ${entry.matcher_category_name}${
                                           entry.matcher_subcategory_name
@@ -667,7 +691,7 @@ export function ReconciliationRow({
                 ) : null}
 
                 <div className="grid gap-2 sm:grid-cols-2">
-                    {!showInvoicePayment && (
+                    {!showInvoicePayment && !showRefund && (
                         <label className="grid gap-1">
                             <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
                                 Empresa
@@ -765,7 +789,7 @@ export function ReconciliationRow({
                             </Select>
                         </label>
                     )}
-                    {!showInvoicePayment && (
+                    {!showInvoicePayment && !showRefund && (
                         <>
                             <label className="grid gap-1">
                                 <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
@@ -892,7 +916,8 @@ export function ReconciliationRow({
                             Desfazer
                         </Button>
                         {entry.matcher_rule_id == null &&
-                            !entry.is_likely_invoice_payment && (
+                            !entry.is_likely_invoice_payment &&
+                            !entry.is_likely_refund && (
                             <Button variant="outline" size="sm" asChild>
                                 <Link
                                     href={`${createRule.url()}${classificationRuleCreateQuery(rulePrompt())}`}
@@ -912,7 +937,7 @@ export function ReconciliationRow({
                             onClick={conciliate}
                         >
                             <Link2 />
-                            Conciliar
+                            {showRefund ? 'Vincular como reembolso' : 'Conciliar'}
                         </Button>
                         <Button
                             type="button"

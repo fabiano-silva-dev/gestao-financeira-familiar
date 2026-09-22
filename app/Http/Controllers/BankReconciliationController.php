@@ -11,6 +11,7 @@ use App\Enums\FinancialTransactionType;
 use App\Http\Requests\ClassifyReconciliationEntryRequest;
 use App\Http\Requests\StoreBankReconciliationRequest;
 use App\Http\Requests\StoreReconciliationCardPaymentRequest;
+use App\Http\Requests\StoreReconciliationRefundRequest;
 use App\Http\Requests\StoreReconciliationInvoicePaymentRequest;
 use App\Http\Requests\StoreReconciliationTransferRequest;
 use App\Models\AccountMovement;
@@ -30,6 +31,7 @@ use App\Services\Finance\ExpenseCategoryMatcher;
 use App\Services\Reconciliation\BankReconciliationService;
 use App\Services\Reconciliation\BankReconciliationSuggestionService;
 use App\Services\Reconciliation\CardStatementReconciliationSuggestionService;
+use App\Services\Reconciliation\ExpenseRefundSuggestionService;
 use App\Services\Reconciliation\ImportedMovementInterpreter;
 use App\Services\Reconciliation\ImportReconciliationReprocessor;
 use App\Services\Reconciliation\InvoicePaymentSuggestionService;
@@ -54,6 +56,7 @@ class BankReconciliationController extends Controller
         private readonly ReconciliationEntryService $entryActions,
         private readonly ImportReconciliationReprocessor $importReprocessor,
         private readonly ImportedMovementInterpreter $interpreter,
+        private readonly ExpenseRefundSuggestionService $refundSuggestionService,
         private readonly ExpenseCategoryMatcher $categoryMatcher,
         private readonly ClassificationRuleMatcher $ruleMatcher,
     ) {}
@@ -260,6 +263,32 @@ class BankReconciliationController extends Controller
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => 'Pagamento da fatura conciliado sem criar uma nova despesa.',
+        ]);
+
+        return to_route('reconciliation.index', $this->filterQuery($request));
+    }
+
+    public function refund(
+        StoreReconciliationRefundRequest $request,
+        int $entry,
+    ): RedirectResponse {
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $workspace = $this->workspace();
+        $statementEntry = $this->findEntry($workspace, $entry);
+        $transaction = $workspace->financialTransactions()
+            ->findOrFail($request->integer('financial_transaction_id'));
+
+        $this->entryActions->reconcileRefund(
+            $workspace,
+            $statementEntry,
+            $transaction,
+            $user,
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Entrada vinculada como reembolso sem criar receita.',
         ]);
 
         return to_route('reconciliation.index', $this->filterQuery($request));
@@ -840,6 +869,7 @@ class BankReconciliationController extends Controller
 
                 return [
                     ...$candidate,
+                    'is_refund' => $movement?->type === AccountMovementType::Refund,
                     ...$this->internalFromTransaction($movement?->transaction, $movement),
                     ...$invoiceFields,
                 ];
@@ -852,12 +882,16 @@ class BankReconciliationController extends Controller
         $invoiceCandidates = collect(
             $this->invoicePaymentSuggestion->candidates($entry, $invoices, $claimedInvoiceIds),
         );
+        $refundCandidates = collect(
+            $this->refundSuggestionService->candidates($this->workspace(), $entry),
+        );
 
         return $movementCandidates
             ->concat($invoiceCandidates)
+            ->concat($refundCandidates)
             ->sort(function (array $left, array $right): int {
-                return [$right['score'], $left['date_distance'], $right['invoice_id'] ?? $right['movement_id'] ?? 0]
-                    <=> [$left['score'], $right['date_distance'], $left['invoice_id'] ?? $left['movement_id'] ?? 0];
+                return [$right['score'], $left['date_distance'], $right['invoice_id'] ?? $right['movement_id'] ?? $right['transaction_id'] ?? 0]
+                    <=> [$left['score'], $right['date_distance'], $left['invoice_id'] ?? $left['movement_id'] ?? $left['transaction_id'] ?? 0];
             })
             ->values()
             ->all();
@@ -1191,8 +1225,16 @@ class BankReconciliationController extends Controller
                 fn (array $candidate): bool => (bool) ($candidate['is_invoice_payment'] ?? false)
                     && (bool) ($candidate['is_suggestion'] ?? false),
             );
+        $isRefund = $this->interpreter->moneyToCents($entry['amount']) > 0
+            && (
+                $this->interpreter->isLikelyRefund($entry['description'])
+                || collect($candidates)->contains(
+                    fn (array $candidate): bool => (bool) ($candidate['is_refund'] ?? false)
+                        && (bool) ($candidate['is_suggestion'] ?? false),
+                )
+            );
 
-        if ($isInvoicePayment) {
+        if ($isInvoicePayment || $isRefund) {
             $isTransfer = false;
         }
 
@@ -1204,7 +1246,8 @@ class BankReconciliationController extends Controller
             'has_suggestion' => $hasSuggestion,
             'is_likely_transfer' => $isTransfer,
             'is_likely_invoice_payment' => $isInvoicePayment,
-            'is_uncategorized' => ! $hasCategory && ! $isTransfer && ! $isInvoicePayment,
+            'is_likely_refund' => $isRefund,
+            'is_uncategorized' => ! $hasCategory && ! $isTransfer && ! $isInvoicePayment && ! $isRefund,
             'is_possible_duplicate' => false,
             'suggestion_confidence' => is_array($best) ? ($best['confidence'] ?? null) : null,
             'suggestion_confidence_label' => is_array($best) ? ($best['confidence_label'] ?? null) : null,
