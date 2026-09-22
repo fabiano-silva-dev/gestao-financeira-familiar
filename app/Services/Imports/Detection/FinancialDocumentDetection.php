@@ -16,6 +16,7 @@ final readonly class FinancialDocumentDetection
         public ?string $identifierType = null,
         public ?string $identifierValue = null,
         public ?string $referenceMonth = null,
+        public ?string $holderName = null,
         public array $metadata = [],
     ) {}
 
@@ -31,6 +32,7 @@ final readonly class FinancialDocumentDetection
             'identifier_type' => $this->identifierType,
             'identifier_value' => $this->identifierValue,
             'reference_month' => $this->referenceMonth,
+            'holder_name' => $this->holderName,
             'metadata' => $this->metadata,
         ];
     }
@@ -47,6 +49,7 @@ final readonly class FinancialDocumentDetection
             identifierType: is_string($data['identifier_type'] ?? null) ? $data['identifier_type'] : null,
             identifierValue: is_string($data['identifier_value'] ?? null) ? $data['identifier_value'] : null,
             referenceMonth: is_string($data['reference_month'] ?? null) ? $data['reference_month'] : null,
+            holderName: is_string($data['holder_name'] ?? null) ? $data['holder_name'] : null,
             metadata: is_array($data['metadata'] ?? null) ? $data['metadata'] : [],
         );
     }

@@ -83,6 +83,7 @@ export type FinancialDocumentDetection = {
     identifier_type: string | null;
     identifier_value: string | null;
     reference_month: string | null;
+    holder_name: string | null;
     metadata: Record<string, unknown>;
     confirmed_by_user?: boolean;
 };

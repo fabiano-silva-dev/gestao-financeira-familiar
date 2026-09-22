@@ -119,11 +119,14 @@ function detectedDocumentLabel(item: UnifiedImportHistoryItem) {
                 ? `final ${detection.identifier_value}`
                 : `identificador ${detection.identifier_value}`
             : null;
+    const holder = detection.holder_name
+        ? `titular ${detection.holder_name}`
+        : null;
     const reference = detection.reference_month
         ? `referência ${detection.reference_month}`
         : null;
 
-    return [identifier, reference].filter(Boolean).join(' · ') || null;
+    return [holder, identifier, reference].filter(Boolean).join(' · ') || null;
 }
 
 function PendingImportResolver({

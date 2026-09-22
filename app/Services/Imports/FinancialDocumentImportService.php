@@ -140,6 +140,7 @@ final class FinancialDocumentImportService
             referenceMonth: is_string($data['reference_month'] ?? null)
                 ? $data['reference_month']
                 : $original->referenceMonth,
+            holderName: $original->holderName,
             metadata: $original->metadata,
         );
         $extension = $this->extension($pending->source_filename);

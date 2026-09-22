@@ -87,6 +87,7 @@ final class ImportTargetResolver
         }
 
         $cards = $workspace->creditCards()
+            ->with('holder:id,name')
             ->where('is_active', true)
             ->get();
 
@@ -106,7 +107,13 @@ final class ImportTargetResolver
                 })
                 ->values();
 
-            return $matches->count() === 1 ? $matches->first() : null;
+            if ($matches->count() === 1) {
+                return $matches->first();
+            }
+
+            $holderMatches = $this->filterCardsByHolder($matches, $detection);
+
+            return $holderMatches->count() === 1 ? $holderMatches->first() : null;
         }
 
         if ($detection->institution !== null) {
@@ -120,10 +127,54 @@ final class ImportTargetResolver
                 ))
                 ->values();
 
-            return $matches->count() === 1 ? $matches->first() : null;
+            if ($matches->count() === 1) {
+                return $matches->first();
+            }
+
+            $holderMatches = $this->filterCardsByHolder($matches, $detection);
+
+            return $holderMatches->count() === 1 ? $holderMatches->first() : null;
+        }
+
+        $holderMatches = $this->filterCardsByHolder($cards, $detection);
+
+        if ($holderMatches->count() === 1) {
+            return $holderMatches->first();
         }
 
         return $cards->count() === 1 ? $cards->first() : null;
+    }
+
+    private function filterCardsByHolder(
+        \Illuminate\Support\Collection $cards,
+        FinancialDocumentDetection $detection,
+    ): \Illuminate\Support\Collection {
+        if ($detection->holderName === null) {
+            return collect();
+        }
+
+        $detectedHolder = $this->normalizePersonName($detection->holderName);
+
+        return $cards
+            ->filter(function (CreditCard $card) use ($detectedHolder): bool {
+                $holderName = $card->holder?->name;
+
+                if ($holderName === null) {
+                    return false;
+                }
+
+                $registeredHolder = $this->normalizePersonName($holderName);
+
+                return $registeredHolder === $detectedHolder
+                    || str_contains($detectedHolder, $registeredHolder)
+                    || str_contains($registeredHolder, $detectedHolder);
+            })
+            ->values();
+    }
+
+    private function normalizePersonName(string $value): string
+    {
+        return $this->institutions->normalize($value);
     }
 
     public function learnAccount(

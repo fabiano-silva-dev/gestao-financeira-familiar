@@ -143,6 +143,36 @@ class FinancialImportAutoDetectionTest extends TestCase
         $this->assertDatabaseCount('financial_transactions', 1);
     }
 
+    public function test_mercado_pago_pdf_detects_card_holder_name(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.store'), [
+                'files' => [
+                    UploadedFile::fake()->createWithContent(
+                        'fatura-mercado-pago.pdf',
+                        $this->mercadoPagoDetectionPdf(),
+                    ),
+                ],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $pending = FinancialImport::query()->sole();
+
+        $this->assertSame(FinancialImportStatus::NeedsConfirmation, $pending->status);
+        $this->assertSame('mercado_pago', data_get($pending->metadata, 'autodetection.institution'));
+        $this->assertSame('credit_card_statement', data_get($pending->metadata, 'autodetection.document_type'));
+        $this->assertSame('3759', data_get($pending->metadata, 'autodetection.identifier_value'));
+        $this->assertSame('2026-08', data_get($pending->metadata, 'autodetection.reference_month'));
+        $this->assertSame(
+            'Fabiano Carvalho da Silva',
+            data_get($pending->metadata, 'autodetection.holder_name'),
+        );
+    }
+
     public function test_import_confirmation_options_include_account_and_card_identification_details(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();
@@ -343,6 +373,22 @@ CHARSET:UTF-8
 </BANKMSGSRSV1>
 </OFX>
 OFX;
+    }
+
+    private function mercadoPagoDetectionPdf(): string
+    {
+        return $this->simplePdf([
+            'Fabiano Carvalho da Silva',
+            'Emitida em: 03/08/2026',
+            'Olá, Fabiano',
+            'Essa é sua fatura de agosto',
+            'Vence em 07/08/2026',
+            'Pague sua fatura pelo app Mercado Pago',
+            'Detalhes de consumo',
+            'Movimentações na fatura',
+            'Cartão Visa [************3759]',
+            '30/06 DL*GOOGLE Google R$ 14,99',
+        ]);
     }
 
     private function banrisulPdf(string $day, string $amount): string

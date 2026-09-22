@@ -81,6 +81,7 @@ final class PdfDocumentDetector implements FinancialDocumentDetector
                 identifierType: $lastFour !== null ? 'card_last_four' : null,
                 identifierValue: $lastFour,
                 referenceMonth: $this->referenceMonth($text),
+                holderName: $this->mercadoPagoHolderName($text),
             );
         }
 
@@ -120,6 +121,50 @@ final class PdfDocumentDetector implements FinancialDocumentDetector
             confidence: $institution !== null ? 0.55 : 0.2,
             format: 'pdf',
         );
+    }
+
+    private function mercadoPagoHolderName(string $text): ?string
+    {
+        foreach ([
+            '/\A\s*([^\r\n]{2,120})\R+\s*Emitida em:/u',
+            '/(?:\A|\R)\s*([^\r\n]{2,120})\R+\s*Vencimento:/u',
+        ] as $pattern) {
+            if (preg_match($pattern, $text, $match) !== 1) {
+                continue;
+            }
+
+            $name = trim(preg_replace('/\s+/u', ' ', $match[1]) ?? $match[1]);
+
+            if ($this->looksLikePersonName($name)) {
+                return $name;
+            }
+        }
+
+        return null;
+    }
+
+    private function looksLikePersonName(string $value): bool
+    {
+        if (mb_strlen($value) < 2 || mb_strlen($value) > 120) {
+            return false;
+        }
+
+        $normalized = mb_strtoupper($this->ascii($value));
+
+        foreach ([
+            'MERCADO PAGO',
+            'CARTAO',
+            'FATURA',
+            'DETALHES',
+            'VENCIMENTO',
+            'EMITIDA EM',
+        ] as $forbidden) {
+            if (str_contains($normalized, $forbidden)) {
+                return false;
+            }
+        }
+
+        return preg_match('/[A-Za-zÀ-ÿ]/u', $value) === 1;
     }
 
     private function referenceMonth(string $text): ?string
