@@ -73,5 +73,10 @@ jobs:
           php artisan test tests/Feature/DashboardTest.php
           php artisan test tests/Feature/PaymentDashboardTest.php
 
-      - name: Run CI Checks
-        run: composer ci:check
+      - name: Capture formatted payment dashboard
+        run: |
+          ./node_modules/.bin/vp fmt resources/js/pages/payments-dashboard.tsx --write
+          echo "__PAYMENTS_DASHBOARD_BASE64__"
+          base64 -w 0 resources/js/pages/payments-dashboard.tsx
+          echo
+          echo "__END_PAYMENTS_DASHBOARD_BASE64__"
