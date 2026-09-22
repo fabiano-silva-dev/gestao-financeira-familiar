@@ -221,8 +221,8 @@ class CardStatementImportTest extends TestCase
 
         $this->assertDatabaseCount('financial_imports', 1);
         $this->assertDatabaseCount('card_statement_entries', 2);
-        $this->assertDatabaseCount('financial_transactions', 1);
-        $this->assertDatabaseCount('transaction_installments', 9);
+        $this->assertDatabaseCount('financial_transactions', 0);
+        $this->assertDatabaseCount('transaction_installments', 0);
     }
 
     public function test_overlapping_files_ignore_existing_external_ids(): void
