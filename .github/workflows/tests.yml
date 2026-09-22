@@ -72,5 +72,25 @@ jobs:
           php artisan test tests/Feature/FinancialRecurrenceTest.php
           php artisan test tests/Feature/DashboardTest.php
 
+      - name: Run scoped category tests
+        run: php artisan test tests/Feature/FinancialTransactionCategoryUpdateTest.php
+
+      - name: Run scoped PHP style
+        if: always()
+        run: |
+          ./vendor/bin/pint --test app/Services/Finance/FinancialEntryService.php app/Http/Controllers/FinancialTransactionController.php app/Http/Controllers/FinancialTransactionCategoryController.php app/Http/Requests/UpdateFinancialTransactionCategoryRequest.php routes/web.php tests/Feature/FinancialTransactionCategoryUpdateTest.php
+
+      - name: Run frontend typecheck
+        if: always()
+        run: npm run types:check
+
+      - name: Format working tree for scoped diagnostics
+        if: always()
+        run: npm run check:fix
+
+      - name: Show scoped frontend formatting diff
+        if: always()
+        run: git diff -- resources/js/pages/transactions/index.tsx resources/js/components/transactions/category-picker.tsx
+
       - name: Run CI Checks
         run: composer ci:check

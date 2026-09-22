@@ -8,9 +8,11 @@ use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
 use App\Models\AccountMovement;
+use App\Models\Category;
 use App\Models\FinancialTransaction;
 use App\Models\Workspace;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class FinancialEntryService
 {
@@ -120,6 +122,86 @@ class FinancialEntryService
 
             return $entry->refresh();
         });
+    }
+
+
+    public function updateCategory(
+        FinancialTransaction $entry,
+        ?Category $category,
+    ): FinancialTransaction {
+        return DB::transaction(function () use ($entry, $category): FinancialTransaction {
+            $this->ensureCategoryCanBeAssigned($entry, $category);
+
+            $entry->update([
+                'category_id' => $category?->id,
+            ]);
+
+            return $entry->refresh();
+        });
+    }
+
+    /**
+     * @param  array<int, int|string>  $entryIds
+     */
+    public function updateCategoryInBulk(
+        Workspace $workspace,
+        array $entryIds,
+        ?Category $category,
+    ): int {
+        $ids = collect($entryIds)
+            ->map(static fn (int|string $id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        abort_if($ids->isEmpty(), 422, 'Selecione pelo menos um lançamento.');
+
+        if ($category !== null) {
+            abort_if((int) $category->workspace_id !== (int) $workspace->id, 404);
+        }
+
+        return DB::transaction(function () use ($workspace, $ids, $category): int {
+            $entries = $workspace->financialTransactions()
+                ->whereIn('id', $ids)
+                ->lockForUpdate()
+                ->get();
+
+            abort_if($entries->count() !== $ids->count(), 404);
+
+            foreach ($entries as $entry) {
+                $this->ensureCategoryCanBeAssigned($entry, $category);
+            }
+
+            foreach ($entries as $entry) {
+                $entry->update([
+                    'category_id' => $category?->id,
+                ]);
+            }
+
+            return $entries->count();
+        });
+    }
+
+    private function ensureCategoryCanBeAssigned(
+        FinancialTransaction $entry,
+        ?Category $category,
+    ): void {
+        if ($entry->type === FinancialTransactionType::Transfer) {
+            throw ValidationException::withMessages([
+                'category_id' => 'Transferências não utilizam categoria de receita ou despesa.',
+            ]);
+        }
+
+        if ($category === null) {
+            return;
+        }
+
+        abort_if((int) $category->workspace_id !== (int) $entry->workspace_id, 404);
+
+        if ($category->type->value !== $entry->type->value) {
+            throw ValidationException::withMessages([
+                'category_id' => 'A categoria selecionada não é compatível com o tipo do lançamento.',
+            ]);
+        }
     }
 
     /**

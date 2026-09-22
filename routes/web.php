@@ -13,6 +13,7 @@ use App\Http\Controllers\FamilyMemberController;
 use App\Http\Controllers\FinancialAccountController;
 use App\Http\Controllers\FinancialImportController;
 use App\Http\Controllers\FinancialRecurrenceController;
+use App\Http\Controllers\FinancialTransactionCategoryController;
 use App\Http\Controllers\FinancialTransactionController;
 use App\Http\Controllers\OfxImportController;
 use App\Http\Controllers\TransferController;
@@ -173,6 +174,11 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->name('transactions.create-transfer');
     Route::post('lancamentos', [FinancialTransactionController::class, 'store'])
         ->name('transactions.store');
+    Route::patch('lancamentos/categoria', [FinancialTransactionCategoryController::class, 'bulkUpdate'])
+        ->name('transactions.bulk-update-category');
+    Route::patch('lancamentos/{entry}/categoria', [FinancialTransactionCategoryController::class, 'update'])
+        ->whereNumber('entry')
+        ->name('transactions.update-category');
     Route::get('lancamentos/{entry}/editar', [FinancialTransactionController::class, 'edit'])
         ->whereNumber('entry')
         ->name('transactions.edit');
