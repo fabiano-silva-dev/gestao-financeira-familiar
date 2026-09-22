@@ -150,11 +150,29 @@ final class ExpenseRefundService
                 $statementCents = $this->moneyToCents(
                     (string) $invoice->statement_amount,
                 );
-                $invoice->update([
-                    'statement_amount' => $this->centsToMoney(
-                        max(0, $statementCents - $amountCents),
-                    ),
-                ]);
+                $newRefundCents = $this->invoiceService->refundCents($invoice);
+                $previousRefundCents = max(0, $newRefundCents - $amountCents);
+                $includedCreditCents = $this->statementCreditCents($invoice);
+                $previousUnreflected = max(
+                    0,
+                    $previousRefundCents - $includedCreditCents,
+                );
+                $newUnreflected = max(
+                    0,
+                    $newRefundCents - $includedCreditCents,
+                );
+                $adjustmentCents = max(
+                    0,
+                    $newUnreflected - $previousUnreflected,
+                );
+
+                if ($adjustmentCents > 0) {
+                    $invoice->update([
+                        'statement_amount' => $this->centsToMoney(
+                            max(0, $statementCents - $adjustmentCents),
+                        ),
+                    ]);
+                }
             }
 
             return $refund->refresh();
@@ -293,6 +311,18 @@ final class ExpenseRefundService
                 'entry' => 'Uma despesa cancelada não pode receber reembolso.',
             ]);
         }
+    }
+
+    private function statementCreditCents(CreditCardInvoice $invoice): int
+    {
+        return $invoice->statementEntries()
+            ->where('amount', '<', 0)
+            ->pluck('amount')
+            ->reduce(
+                fn (int $total, mixed $amount): int =>
+                    $total + abs($this->moneyToCents((string) $amount)),
+                0,
+            );
     }
 
     private function invoiceRefundableCents(CreditCardInvoice $invoice): int
