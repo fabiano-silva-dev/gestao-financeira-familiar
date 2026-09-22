@@ -27,18 +27,40 @@ final class ImportedMovementInterpreter
         return $this->moneyToCents($amount) < 0;
     }
 
-    public function isInvoicePayment(string $description): bool
+    /**
+     * @param  array<int, string>  $cardTokens
+     */
+    public function isInvoicePayment(string $description, array $cardTokens = []): bool
     {
         $normalized = $this->normalize($description);
 
-        return $normalized === 'pagamento recebido'
+        if (
+            $normalized === 'pagamento recebido'
             || str_contains($normalized, 'pagamento recebido')
             || str_contains($normalized, 'pagamento da fatura')
             || str_contains($normalized, 'pagamento de fatura')
             || str_contains($normalized, 'payment received')
             || str_contains($normalized, 'fatura nubank')
             || str_contains($normalized, 'pagamento fatura')
-            || str_contains($normalized, 'pagamento cartao de credito');
+            || str_contains($normalized, 'pagamento cartao de credito')
+            || str_contains($normalized, 'pagamento nubank')
+        ) {
+            return true;
+        }
+
+        if (! str_contains($normalized, 'pagamento')) {
+            return false;
+        }
+
+        foreach ($cardTokens as $token) {
+            $card = $this->normalize($token);
+
+            if ($card !== '' && mb_strlen($card) >= 4 && str_contains($normalized, $card)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function isLikelyTransfer(string $description, ?string $movementType = null): bool

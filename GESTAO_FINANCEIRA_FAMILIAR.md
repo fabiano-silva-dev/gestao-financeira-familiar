@@ -364,9 +364,17 @@ Situações possíveis:
 
 O pagamento da fatura não é uma nova despesa.
 
+**Compra gera despesa. Fatura consolida a obrigação. Pagamento liquida a obrigação. Movimento bancário comprova/concilia o pagamento.**
+
 Fluxo:
 
 **Compra → Parcela → Fatura → Pagamento → Movimento bancário**
+
+A conciliação preserva esta separação:
+
+**movimento bancário → conciliação → pagamento → fatura**
+
+O movimento importado é evidência externa. O pagamento é o evento financeiro interno. A fatura é a obrigação liquidada.
 
 Exemplo:
 
@@ -376,13 +384,13 @@ Quando aparecer no extrato:
 
 Pagamento Nubank — R$ 4.000,00
 
-O sistema deve vincular esse movimento à fatura.
+O sistema deve sugerir o vínculo com a fatura compatível e, ao confirmar, criar ou reutilizar o pagamento interno. Não deve criar uma nova despesa nem uma transferência entre contas próprias.
 
 Resultado:
 
-- despesas continuam classificadas individualmente;
-- fatura fica paga;
-- saída financeira fica registrada;
+- despesas continuam classificadas individualmente nas compras/parcelas;
+- fatura fica paga ou parcialmente paga, conforme o valor liquidado;
+- saída financeira fica registrada na conta pagadora;
 - nenhuma despesa é duplicada.
 
 ---
@@ -1780,6 +1788,8 @@ Para a primeira versão:
 - cada movimento financeiro só pode ser vinculado a uma linha bancária;
 - saída e entrada de uma transferência são conciliadas separadamente, cada uma na sua conta;
 - pagamentos de despesas, recebimentos de receitas, pagamentos de fatura e as duas pontas de transferências usam o mesmo fluxo de conciliação;
+- pagamento de fatura não é transferência entre contas próprias: a saída da conta pagadora liquida a fatura, sem gerar receita, despesa ou contrapartida em outra conta do workspace;
+- quando o movimento bancário corresponder a um pagamento de fatura, a conciliação cria ou reutiliza o pagamento interno e vincula movimento bancário → pagamento → fatura;
 - a conciliação registra usuário e horário e pode ser desfeita;
 - conta, data, valor e tipo de um movimento conciliado não podem ser alterados até que o vínculo seja desfeito.
 

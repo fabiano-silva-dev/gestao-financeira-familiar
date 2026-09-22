@@ -164,6 +164,75 @@ export function ReconciliationDetailsSheet({ entry, onClose }: Props) {
                                 </dl>
                             </section>
 
+                            {(entry.is_likely_invoice_payment ||
+                                entry.is_invoice_payment) && (
+                                <section className="space-y-2">
+                                    <h3 className="text-sm font-medium">
+                                        Pagamento de fatura
+                                    </h3>
+                                    <dl className="text-muted-foreground grid gap-1 text-sm">
+                                        <div>
+                                            Cartão:{' '}
+                                            <span className="text-foreground">
+                                                {entry.card_name ?? '—'}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            Fatura:{' '}
+                                            <span className="text-foreground">
+                                                {entry.invoice_label ?? '—'}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            Vencimento:{' '}
+                                            <span className="text-foreground">
+                                                {entry.invoice_due_date
+                                                    ? formatReconciliationDate(
+                                                          entry.invoice_due_date,
+                                                      )
+                                                    : '—'}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            Total:{' '}
+                                            <span className="text-foreground tabular-nums">
+                                                {entry.invoice_total_amount
+                                                    ? currency.format(
+                                                          Number(
+                                                              entry.invoice_total_amount,
+                                                          ),
+                                                      )
+                                                    : '—'}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            Já pago:{' '}
+                                            <span className="text-foreground tabular-nums">
+                                                {entry.invoice_paid_amount
+                                                    ? currency.format(
+                                                          Number(
+                                                              entry.invoice_paid_amount,
+                                                          ),
+                                                      )
+                                                    : '—'}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            Saldo em aberto:{' '}
+                                            <span className="text-foreground tabular-nums">
+                                                {entry.invoice_outstanding_amount
+                                                    ? currency.format(
+                                                          Number(
+                                                              entry.invoice_outstanding_amount,
+                                                          ),
+                                                      )
+                                                    : '—'}
+                                            </span>
+                                        </div>
+                                    </dl>
+                                </section>
+                            )}
+
                             {entry.candidates.length > 0 && (
                                 <section className="space-y-2">
                                     <h3 className="text-sm font-medium">
@@ -172,7 +241,7 @@ export function ReconciliationDetailsSheet({ entry, onClose }: Props) {
                                     <ul className="space-y-2">
                                         {entry.candidates.map((candidate) => (
                                             <li
-                                                key={`${candidate.movement_id ?? candidate.installment_id}`}
+                                                key={`${candidate.movement_id ?? candidate.invoice_id ?? candidate.installment_id}`}
                                                 className="rounded-lg border px-3 py-2 text-sm"
                                             >
                                                 <p className="font-medium">

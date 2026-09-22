@@ -250,6 +250,9 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::post('conciliacao/{entry}/transferencia', [BankReconciliationController::class, 'transfer'])
         ->whereNumber('entry')
         ->name('reconciliation.transfer');
+    Route::post('conciliacao/{entry}/pagamento-fatura', [BankReconciliationController::class, 'invoicePayment'])
+        ->whereNumber('entry')
+        ->name('reconciliation.invoice-payment');
 
     Route::post('workspaces/{workspace}/activate', ActiveWorkspaceController::class)
         ->name('workspaces.activate');

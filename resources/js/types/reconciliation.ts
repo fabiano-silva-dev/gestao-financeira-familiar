@@ -10,8 +10,10 @@ export type ReconciliationView =
     | 'reconciled';
 
 export type ReconciliationCandidate = {
-    movement_id?: number;
+    movement_id?: number | null;
     installment_id?: number;
+    invoice_id?: number | null;
+    invoice_payment_id?: number | null;
     occurred_on: string;
     description: string;
     amount: string;
@@ -22,6 +24,16 @@ export type ReconciliationCandidate = {
     confidence_label: string;
     date_distance: number;
     is_suggestion: boolean;
+    is_invoice_payment?: boolean;
+    card_name?: string | null;
+    card_last_four?: string | null;
+    invoice_label?: string | null;
+    invoice_due_date?: string | null;
+    invoice_total_amount?: string | null;
+    invoice_paid_amount?: string | null;
+    invoice_outstanding_amount?: string | null;
+    invoice_status?: string | null;
+    invoice_status_label?: string | null;
     related_transaction_id?: number | null;
     related_description?: string | null;
     related_type?: string | null;
@@ -52,6 +64,15 @@ export type ReconciliationPendingEntry = {
     import_filename: string | null;
     invoice_id: number | null;
     invoice_label: string | null;
+    invoice_payment_id: number | null;
+    card_last_four: string | null;
+    invoice_due_date: string | null;
+    invoice_total_amount: string | null;
+    invoice_paid_amount: string | null;
+    invoice_outstanding_amount: string | null;
+    invoice_status: string | null;
+    invoice_status_label: string | null;
+    is_invoice_payment: boolean;
     occurred_on: string;
     amount: string;
     description: string;

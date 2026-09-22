@@ -201,6 +201,49 @@ class CreditCardInvoiceTest extends TestCase
         );
     }
 
+    public function test_second_payment_completes_a_partially_paid_invoice(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $card = CreditCard::factory()->for($workspace)->create([
+            'payment_account_id' => $account->id,
+            'invoice_payment_method' => PaymentMethod::Pix->value,
+        ]);
+        $purchase = $this->createCardPurchase($user, $workspace, $card, '400.00');
+        $invoice = $purchase->installments()->sole()->invoice;
+        $this->closeInvoice($user, $workspace, $invoice);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('credit-card-invoices.pay', $invoice), [
+            'financial_account_id' => $account->id,
+            'paid_on' => '2026-10-10',
+            'amount' => '150.00',
+            'payment_method' => PaymentMethod::Pix->value,
+            'notes' => null,
+        ])->assertSessionHasNoErrors();
+
+        $request->post(route('credit-card-invoices.pay', $invoice), [
+            'financial_account_id' => $account->id,
+            'paid_on' => '2026-10-12',
+            'amount' => '250.00',
+            'payment_method' => PaymentMethod::Pix->value,
+            'notes' => null,
+        ])->assertSessionHasNoErrors();
+
+        $invoice->refresh();
+
+        $this->assertSame(CreditCardInvoiceStatus::Paid, $invoice->status);
+        $this->assertSame('400.00', $invoice->paid_amount);
+        $this->assertSame('2026-10-12', $invoice->paid_at?->toDateString());
+        $this->assertDatabaseCount('credit_card_invoice_payments', 2);
+        $this->assertDatabaseCount('financial_transactions', 1);
+        $this->assertSame(
+            TransactionInstallmentStatus::Paid,
+            $purchase->installments()->sole()->fresh()->status,
+        );
+    }
+
     public function test_invoice_from_another_workspace_cannot_be_viewed_or_paid(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();

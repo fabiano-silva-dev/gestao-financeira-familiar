@@ -6,6 +6,7 @@ use App\Enums\AccountMovementType;
 use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\TransactionInstallmentStatus;
 use App\Models\CreditCardInvoice;
+use App\Models\CreditCardInvoicePayment;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -32,9 +33,12 @@ class CreditCardInvoiceService
     /**
      * @param  array<string, mixed>  $data
      */
-    public function pay(CreditCardInvoice $invoice, array $data): CreditCardInvoice
-    {
-        return DB::transaction(function () use ($invoice, $data): CreditCardInvoice {
+    public function pay(
+        CreditCardInvoice $invoice,
+        array $data,
+        bool $allowOpen = false,
+    ): CreditCardInvoice {
+        return DB::transaction(function () use ($invoice, $data, $allowOpen): CreditCardInvoice {
             $locked = CreditCardInvoice::query()
                 ->where('workspace_id', $invoice->workspace_id)
                 ->whereKey($invoice->id)
@@ -42,9 +46,16 @@ class CreditCardInvoiceService
                 ->firstOrFail();
 
             if ($locked->status === CreditCardInvoiceStatus::Open) {
-                throw ValidationException::withMessages([
-                    'amount' => 'Feche a fatura antes de registrar o pagamento.',
+                if (! $allowOpen) {
+                    throw ValidationException::withMessages([
+                        'amount' => 'Feche a fatura antes de registrar o pagamento.',
+                    ]);
+                }
+
+                $locked->update([
+                    'status' => CreditCardInvoiceStatus::Closed,
                 ]);
+                $locked->refresh();
             }
 
             $totalCents = $this->moneyToCents(
@@ -105,12 +116,47 @@ class CreditCardInvoiceService
 
     public function outstandingAmount(CreditCardInvoice $invoice): string
     {
-        $total = $this->moneyToCents(
-            (string) ($invoice->statement_amount ?? $invoice->calculated_amount),
-        );
+        return $this->centsToMoney($this->outstandingCents($invoice));
+    }
+
+    public function totalAmount(CreditCardInvoice $invoice): string
+    {
+        return (string) ($invoice->statement_amount ?? $invoice->calculated_amount);
+    }
+
+    public function findCompatibleUnreconciledPayment(
+        CreditCardInvoice $invoice,
+        int $accountId,
+        string $amount,
+        string $paidOn,
+    ): ?CreditCardInvoicePayment {
+        $targetCents = $this->moneyToCents($amount);
+        $paidOnDate = $paidOn;
+
+        return $invoice->payments()
+            ->with('movement')
+            ->where('financial_account_id', $accountId)
+            ->get()
+            ->filter(function (CreditCardInvoicePayment $payment) use ($targetCents): bool {
+                $movement = $payment->movement;
+
+                return $movement !== null
+                    && ! $movement->is_reconciled
+                    && $movement->bankStatementEntry()->doesntExist()
+                    && $this->moneyToCents((string) $payment->amount) === $targetCents;
+            })
+            ->sortBy(fn (CreditCardInvoicePayment $payment): int => (int) abs(
+                $payment->paid_on->diffInDays($paidOnDate, false),
+            ))
+            ->first();
+    }
+
+    public function outstandingCents(CreditCardInvoice $invoice): int
+    {
+        $total = $this->moneyToCents($this->totalAmount($invoice));
         $paid = $this->moneyToCents((string) $invoice->paid_amount);
 
-        return $this->centsToMoney(max(0, $total - $paid));
+        return max(0, $total - $paid);
     }
 
     private function moneyToCents(string $amount): int

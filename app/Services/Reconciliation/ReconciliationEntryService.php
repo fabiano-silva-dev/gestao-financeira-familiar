@@ -13,15 +13,18 @@ use App\Models\AccountMovement;
 use App\Models\BankStatementEntry;
 use App\Models\CardStatementEntry;
 use App\Models\Category;
+use App\Models\CreditCardInvoice;
 use App\Models\FinancialAccount;
 use App\Models\FinancialTransaction;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Finance\CardStatementMaterializationService;
 use App\Services\Finance\ClassificationRuleMatcher;
+use App\Services\Finance\CreditCardInvoiceService;
 use App\Services\Finance\ExpenseCategoryMatcher;
 use App\Services\Finance\FinancialEntryService;
 use App\Services\Finance\TransferService;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -37,6 +40,7 @@ final class ReconciliationEntryService
         private readonly CardStatementReconciliationSuggestionService $cardSuggestions,
         private readonly ExpenseCategoryMatcher $categoryMatcher,
         private readonly ClassificationRuleMatcher $ruleMatcher,
+        private readonly CreditCardInvoiceService $invoiceService,
     ) {}
 
     public function ignoreBankEntry(
@@ -126,7 +130,7 @@ final class ReconciliationEntryService
     ): BankStatementEntry {
         $this->guardPendingBankEntry($entry);
 
-        if ($this->interpreter->isInvoicePayment($entry->description)) {
+        if ($this->interpreter->isInvoicePayment($entry->description, $this->workspaceCardTokens($workspace))) {
             throw ValidationException::withMessages([
                 'entry' => 'Pagamento de fatura não é uma nova despesa. Concilie com a liquidação da fatura.',
             ]);
@@ -237,6 +241,97 @@ final class ReconciliationEntryService
         });
     }
 
+    public function reconcileInvoicePayment(
+        Workspace $workspace,
+        BankStatementEntry $entry,
+        CreditCardInvoice $invoice,
+        User $user,
+    ): BankStatementEntry {
+        $this->assertSameWorkspace($workspace, $entry->workspace_id);
+        $this->assertSameWorkspace($workspace, $invoice->workspace_id);
+        $this->guardPendingBankEntry($entry);
+
+        if (! $this->interpreter->isOutflow($entry->amount)) {
+            throw ValidationException::withMessages([
+                'credit_card_invoice_id' => 'Somente saídas bancárias podem liquidar uma fatura de cartão.',
+            ]);
+        }
+
+        $amount = $this->interpreter->unsignedAmount($entry->amount);
+        $paymentCents = abs($this->interpreter->moneyToCents($entry->amount));
+
+        return DB::transaction(function () use (
+            $workspace,
+            $entry,
+            $invoice,
+            $user,
+            $amount,
+            $paymentCents,
+        ): BankStatementEntry {
+            $lockedInvoice = CreditCardInvoice::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereKey($invoice->id)
+                ->with('creditCard')
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $existing = $this->invoiceService->findCompatibleUnreconciledPayment(
+                $lockedInvoice,
+                $entry->financial_account_id,
+                $amount,
+                $entry->occurred_on->toDateString(),
+            );
+
+            if ($existing !== null) {
+                $movement = $existing->movement()->firstOrFail();
+
+                $this->bankReconciliation->reconcile(
+                    $workspace,
+                    $entry->refresh(),
+                    $movement,
+                    $user,
+                );
+
+                return $entry->refresh();
+            }
+
+            $outstandingCents = $this->invoiceService->outstandingCents($lockedInvoice);
+
+            if ($paymentCents <= 0 || $paymentCents > $outstandingCents) {
+                throw ValidationException::withMessages([
+                    'credit_card_invoice_id' => 'Não há saldo em aberto compatível com este movimento bancário.',
+                ]);
+            }
+
+            $this->invoiceService->pay(
+                $lockedInvoice,
+                [
+                    'financial_account_id' => $entry->financial_account_id,
+                    'paid_on' => $entry->occurred_on->toDateString(),
+                    'amount' => $amount,
+                    'payment_method' => $lockedInvoice->creditCard->invoice_payment_method->value,
+                    'notes' => 'Pagamento conciliado com o movimento bancário importado.',
+                ],
+                allowOpen: true,
+            );
+
+            $movement = $lockedInvoice->payments()
+                ->latest('id')
+                ->firstOrFail()
+                ->movement()
+                ->firstOrFail();
+
+            $this->bankReconciliation->reconcile(
+                $workspace,
+                $entry->refresh(),
+                $movement,
+                $user,
+            );
+
+            return $entry->refresh();
+        });
+    }
+
     public function createBankTransfer(
         Workspace $workspace,
         BankStatementEntry $entry,
@@ -244,6 +339,12 @@ final class ReconciliationEntryService
         int $counterpartAccountId,
     ): BankStatementEntry {
         $this->guardPendingBankEntry($entry);
+
+        if ($this->interpreter->isInvoicePayment($entry->description, $this->workspaceCardTokens($workspace))) {
+            throw ValidationException::withMessages([
+                'entry' => 'Pagamento de fatura não é uma transferência entre contas próprias. Concilie com a liquidação da fatura.',
+            ]);
+        }
 
         $counterpart = $workspace->financialAccounts()->find($counterpartAccountId);
 
@@ -496,7 +597,7 @@ final class ReconciliationEntryService
     /**
      * @return Collection<int, AccountMovement>
      */
-    private function unmatchedMovements(Workspace $workspace, int $accountId)
+    private function unmatchedMovements(Workspace $workspace, int $accountId): Collection
     {
         return $workspace->accountMovements()
             ->where('financial_account_id', $accountId)
@@ -533,5 +634,21 @@ final class ReconciliationEntryService
         $name = is_string($name) ? trim($name) : '';
 
         return $name === '' ? null : mb_substr($name, 0, 160);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function workspaceCardTokens(Workspace $workspace): array
+    {
+        return $workspace->creditCards()
+            ->get(['name', 'institution', 'last_four'])
+            ->flatMap(fn ($card): array => array_filter([
+                $card->name,
+                $card->institution,
+                $card->last_four,
+            ], fn (?string $token): bool => is_string($token) && trim($token) !== ''))
+            ->values()
+            ->all();
     }
 }

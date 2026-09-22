@@ -58,7 +58,15 @@ export function candidateMatchId(
     candidate: ReconciliationCandidate,
 ): string {
     if (entry.kind === 'statement') {
-        return String(candidate.movement_id ?? '');
+        if (candidate.movement_id) {
+            return String(candidate.movement_id);
+        }
+
+        if (candidate.invoice_id) {
+            return `invoice:${candidate.invoice_id}`;
+        }
+
+        return '';
     }
 
     return String(candidate.installment_id ?? '');
@@ -225,6 +233,34 @@ export function ReconciliationRow({
     const competence =
         selectedCandidate?.related_competence_date ??
         entry.related_competence_date;
+    const selectedInvoice =
+        selectedCandidate?.is_invoice_payment || entry.is_invoice_payment
+            ? {
+                  cardName:
+                      selectedCandidate?.card_name ?? entry.card_name ?? null,
+                  invoiceLabel:
+                      selectedCandidate?.invoice_label ??
+                      entry.invoice_label ??
+                      null,
+                  dueDate:
+                      selectedCandidate?.invoice_due_date ??
+                      entry.invoice_due_date,
+                  total:
+                      selectedCandidate?.invoice_total_amount ??
+                      entry.invoice_total_amount,
+                  paid:
+                      selectedCandidate?.invoice_paid_amount ??
+                      entry.invoice_paid_amount,
+                  outstanding:
+                      selectedCandidate?.invoice_outstanding_amount ??
+                      entry.invoice_outstanding_amount,
+                  statusLabel:
+                      selectedCandidate?.invoice_status_label ??
+                      entry.invoice_status_label,
+              }
+            : null;
+    const showInvoicePayment =
+        entry.is_likely_invoice_payment || selectedInvoice !== null;
     const canCreate =
         !entry.is_reconciled &&
         !entry.has_suggestion &&
@@ -290,7 +326,7 @@ export function ReconciliationRow({
     };
 
     const askCreateRuleIfNeeded = () => {
-        if (entry.matcher_rule_id != null) {
+        if (entry.matcher_rule_id != null || showInvoicePayment) {
             return;
         }
 
@@ -304,6 +340,21 @@ export function ReconciliationRow({
 
     const conciliate = () => {
         if (entry.kind === 'statement') {
+            if (matchId.startsWith('invoice:')) {
+                router.post(
+                    listingUrl(
+                        BankReconciliationController.invoicePayment.url(
+                            entry.id,
+                        ),
+                        query,
+                    ),
+                    { credit_card_invoice_id: Number(matchId.slice(8)) },
+                    completeOptions(),
+                );
+
+                return;
+            }
+
             router.post(
                 listingUrl(
                     BankReconciliationController.store.url(entry.id),
@@ -499,9 +550,10 @@ export function ReconciliationRow({
                             <Sparkles className="mt-0.5 size-3 shrink-0" />
                             <span>
                                 {entry.suggestion_description
-                                    ? `Correspondência: ${entry.suggestion_description}`
+                                    ? entry.suggestion_description
                                     : 'Sugestão de classificação'}
-                                {entry.matcher_category_name
+                                {!showInvoicePayment &&
+                                entry.matcher_category_name
                                     ? ` · ${entry.matcher_category_name}${
                                           entry.matcher_subcategory_name
                                               ? ` / ${entry.matcher_subcategory_name}`
@@ -518,27 +570,114 @@ export function ReconciliationRow({
                         </p>
                     )}
 
+                {showInvoicePayment ? (
+                    <dl className="bg-muted/50 grid gap-2 rounded-lg border px-3 py-2 text-sm sm:grid-cols-2">
+                        <div>
+                            <dt className="text-muted-foreground text-[11px] tracking-wide uppercase">
+                                Conta bancária
+                            </dt>
+                            <dd>{entry.account_name}</dd>
+                        </div>
+                        <div>
+                            <dt className="text-muted-foreground text-[11px] tracking-wide uppercase">
+                                Cartão
+                            </dt>
+                            <dd>
+                                {selectedInvoice?.cardName ??
+                                    entry.card_name ??
+                                    '—'}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt className="text-muted-foreground text-[11px] tracking-wide uppercase">
+                                Fatura
+                            </dt>
+                            <dd>{selectedInvoice?.invoiceLabel ?? '—'}</dd>
+                        </div>
+                        <div>
+                            <dt className="text-muted-foreground text-[11px] tracking-wide uppercase">
+                                Vencimento
+                            </dt>
+                            <dd>
+                                {selectedInvoice?.dueDate
+                                    ? formatReconciliationDate(
+                                          selectedInvoice.dueDate,
+                                      )
+                                    : '—'}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt className="text-muted-foreground text-[11px] tracking-wide uppercase">
+                                Total da fatura
+                            </dt>
+                            <dd className="tabular-nums">
+                                {selectedInvoice?.total
+                                    ? currency.format(
+                                          Number(selectedInvoice.total),
+                                      )
+                                    : '—'}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt className="text-muted-foreground text-[11px] tracking-wide uppercase">
+                                Já pago
+                            </dt>
+                            <dd className="tabular-nums">
+                                {selectedInvoice?.paid
+                                    ? currency.format(
+                                          Number(selectedInvoice.paid),
+                                      )
+                                    : '—'}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt className="text-muted-foreground text-[11px] tracking-wide uppercase">
+                                Saldo em aberto
+                            </dt>
+                            <dd className="tabular-nums">
+                                {selectedInvoice?.outstanding
+                                    ? currency.format(
+                                          Number(selectedInvoice.outstanding),
+                                      )
+                                    : '—'}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt className="text-muted-foreground text-[11px] tracking-wide uppercase">
+                                Situação
+                            </dt>
+                            <dd>{selectedInvoice?.statusLabel ?? '—'}</dd>
+                        </div>
+                    </dl>
+                ) : null}
+
                 <div className="grid gap-2 sm:grid-cols-2">
-                    <label className="grid gap-1">
-                        <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
-                            Empresa
-                        </span>
-                        <Input
-                            value={payee}
-                            disabled={entry.is_reconciled}
-                            onChange={(event) => setPayee(event.target.value)}
-                            onBlur={() => {
-                                if (payee !== displayedPayee) {
-                                    classify(payee, leafCategoryId);
+                    {!showInvoicePayment && (
+                        <label className="grid gap-1">
+                            <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
+                                Empresa
+                            </span>
+                            <Input
+                                value={payee}
+                                disabled={entry.is_reconciled}
+                                onChange={(event) =>
+                                    setPayee(event.target.value)
                                 }
-                            }}
-                            placeholder="Beneficiário"
-                            className="h-8"
-                        />
-                    </label>
+                                onBlur={() => {
+                                    if (payee !== displayedPayee) {
+                                        classify(payee, leafCategoryId);
+                                    }
+                                }}
+                                placeholder="Beneficiário"
+                                className="h-8"
+                            />
+                        </label>
+                    )}
                     <label className="grid gap-1">
                         <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
-                            Lançamento relacionado
+                            {showInvoicePayment
+                                ? 'Fatura correspondente'
+                                : 'Lançamento relacionado'}
                         </span>
                         <Select
                             value={matchId === '' ? 'none' : matchId}
@@ -575,85 +714,102 @@ export function ReconciliationRow({
                             </SelectContent>
                         </Select>
                     </label>
-                    <label className="grid gap-1">
-                        <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
-                            Categoria
-                        </span>
-                        <Select
-                            value={
-                                selectedParentId === ''
-                                    ? 'none'
-                                    : selectedParentId
-                            }
-                            disabled={entry.is_reconciled}
-                            onValueChange={(value) => {
-                                const next = value === 'none' ? '' : value;
-                                setSelectedParentId(next);
-                                setSelectedSubId('');
-                                classify(
-                                    payee,
-                                    next === '' ? null : Number(next),
-                                );
-                            }}
-                        >
-                            <SelectTrigger size="sm" className="w-full">
-                                <SelectValue placeholder="Categoria" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="none">
-                                    Sem categoria
-                                </SelectItem>
-                                {parents.map((category) => (
-                                    <SelectItem
-                                        key={category.id}
-                                        value={String(category.id)}
+                    {!showInvoicePayment && (
+                        <>
+                            <label className="grid gap-1">
+                                <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
+                                    Categoria
+                                </span>
+                                <Select
+                                    value={
+                                        selectedParentId === ''
+                                            ? 'none'
+                                            : selectedParentId
+                                    }
+                                    disabled={entry.is_reconciled}
+                                    onValueChange={(value) => {
+                                        const next =
+                                            value === 'none' ? '' : value;
+                                        setSelectedParentId(next);
+                                        setSelectedSubId('');
+                                        classify(
+                                            payee,
+                                            next === '' ? null : Number(next),
+                                        );
+                                    }}
+                                >
+                                    <SelectTrigger
+                                        size="sm"
+                                        className="w-full"
                                     >
-                                        {category.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </label>
-                    <label className="grid gap-1">
-                        <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
-                            Subcategoria
-                        </span>
-                        <Select
-                            value={
-                                selectedSubId === '' ? 'none' : selectedSubId
-                            }
-                            disabled={
-                                entry.is_reconciled || children.length === 0
-                            }
-                            onValueChange={(value) => {
-                                const next = value === 'none' ? '' : value;
-                                setSelectedSubId(next);
-                                classify(
-                                    payee,
-                                    next === ''
-                                        ? selectedParentId === ''
-                                            ? null
-                                            : Number(selectedParentId)
-                                        : Number(next),
-                                );
-                            }}
-                        >
-                            <SelectTrigger size="sm" className="w-full">
-                                <SelectValue placeholder="Subcategoria" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="none">Nenhuma</SelectItem>
-                                {children.map((category) => (
-                                    <SelectItem
-                                        key={category.id}
-                                        value={String(category.id)}
+                                        <SelectValue placeholder="Categoria" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="none">
+                                            Sem categoria
+                                        </SelectItem>
+                                        {parents.map((category) => (
+                                            <SelectItem
+                                                key={category.id}
+                                                value={String(category.id)}
+                                            >
+                                                {category.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </label>
+                            <label className="grid gap-1">
+                                <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
+                                    Subcategoria
+                                </span>
+                                <Select
+                                    value={
+                                        selectedSubId === ''
+                                            ? 'none'
+                                            : selectedSubId
+                                    }
+                                    disabled={
+                                        entry.is_reconciled ||
+                                        children.length === 0
+                                    }
+                                    onValueChange={(value) => {
+                                        const next =
+                                            value === 'none' ? '' : value;
+                                        setSelectedSubId(next);
+                                        classify(
+                                            payee,
+                                            next === ''
+                                                ? selectedParentId === ''
+                                                    ? null
+                                                    : Number(selectedParentId)
+                                                : Number(next),
+                                        );
+                                    }}
+                                >
+                                    <SelectTrigger
+                                        size="sm"
+                                        className="w-full"
                                     >
-                                        {category.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </label>
+                                        <SelectValue placeholder="Subcategoria" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="none">
+                                            Nenhuma
+                                        </SelectItem>
+                                        {children.map((category) => (
+                                            <SelectItem
+                                                key={category.id}
+                                                value={String(category.id)}
+                                            >
+                                                {category.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </label>
+                        </>
+                    )}
                 </div>
 
                 <p className="text-muted-foreground text-xs">
@@ -684,7 +840,8 @@ export function ReconciliationRow({
                             <RotateCcw />
                             Desfazer
                         </Button>
-                        {entry.matcher_rule_id == null && (
+                        {entry.matcher_rule_id == null &&
+                            !entry.is_likely_invoice_payment && (
                             <Button variant="outline" size="sm" asChild>
                                 <Link
                                     href={`${createRule.url()}${classificationRuleCreateQuery(rulePrompt())}`}
@@ -717,6 +874,7 @@ export function ReconciliationRow({
                             Criar lançamento
                         </Button>
                         {entry.kind === 'statement' &&
+                            !showInvoicePayment &&
                             counterpartOptions.length > 0 &&
                             (showTransfer ? (
                                 <div className="flex flex-col gap-2">

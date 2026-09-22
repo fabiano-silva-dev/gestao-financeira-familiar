@@ -4,17 +4,20 @@ namespace App\Http\Controllers;
 
 use App\Enums\AccountMovementType;
 use App\Enums\CategoryType;
+use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\FinancialImportStatus;
 use App\Enums\FinancialImportType;
 use App\Enums\FinancialTransactionType;
 use App\Http\Requests\ClassifyReconciliationEntryRequest;
 use App\Http\Requests\StoreBankReconciliationRequest;
+use App\Http\Requests\StoreReconciliationInvoicePaymentRequest;
 use App\Http\Requests\StoreReconciliationTransferRequest;
 use App\Models\AccountMovement;
 use App\Models\BankStatementEntry;
 use App\Models\CardStatementEntry;
 use App\Models\Category;
 use App\Models\CreditCard;
+use App\Models\CreditCardInvoice;
 use App\Models\FinancialAccount;
 use App\Models\FinancialImport;
 use App\Models\FinancialTransaction;
@@ -28,6 +31,7 @@ use App\Services\Reconciliation\BankReconciliationSuggestionService;
 use App\Services\Reconciliation\CardStatementReconciliationSuggestionService;
 use App\Services\Reconciliation\ImportedMovementInterpreter;
 use App\Services\Reconciliation\ImportReconciliationReprocessor;
+use App\Services\Reconciliation\InvoicePaymentSuggestionService;
 use App\Services\Reconciliation\ReconciliationEntryService;
 use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
@@ -44,6 +48,7 @@ class BankReconciliationController extends Controller
         private readonly CurrentWorkspace $currentWorkspace,
         private readonly BankReconciliationService $reconciliationService,
         private readonly BankReconciliationSuggestionService $suggestionService,
+        private readonly InvoicePaymentSuggestionService $invoicePaymentSuggestion,
         private readonly CardStatementReconciliationSuggestionService $cardSuggestionService,
         private readonly ReconciliationEntryService $entryActions,
         private readonly ImportReconciliationReprocessor $importReprocessor,
@@ -71,6 +76,7 @@ class BankReconciliationController extends Controller
                 ->whereDoesntHave('bankStatementEntry')
                 ->with([
                     'account:id,name',
+                    'invoicePayment.invoice.creditCard:id,name,institution,last_four,payment_account_id',
                     'transaction:id,description,type,payee_name,category_id,competence_date,financial_account_id,credit_card_id,source_account_id,destination_account_id',
                     'transaction.category:id,name,parent_id',
                     'transaction.category.parent:id,name',
@@ -78,6 +84,16 @@ class BankReconciliationController extends Controller
                 ->orderByDesc('occurred_on')
                 ->orderByDesc('id')
                 ->limit(1000)
+                ->get();
+        $invoices = $unreconciledBank->isEmpty()
+            ? collect()
+            : $workspace->creditCardInvoices()
+                ->with('creditCard:id,name,institution,last_four,payment_account_id,invoice_payment_method')
+                ->whereIn('status', [
+                    CreditCardInvoiceStatus::Open->value,
+                    CreditCardInvoiceStatus::Closed->value,
+                    CreditCardInvoiceStatus::Partial->value,
+                ])
                 ->get();
         $invoiceIds = $cardEntries
             ->where('is_reconciled', false)
@@ -100,7 +116,7 @@ class BankReconciliationController extends Controller
             $bankEntries
                 ->map(fn (BankStatementEntry $entry): array => $entry->is_reconciled
                     ? $this->bankHistoryData($entry)
-                    : $this->pendingBankEntryData($entry, $movements))
+                    : $this->pendingBankEntryData($entry, $movements, $invoices))
                 ->concat($cardEntries->map(
                     fn (CardStatementEntry $entry): array => $entry->is_reconciled
                         ? $this->cardHistoryData($entry)
@@ -216,6 +232,32 @@ class BankReconciliationController extends Controller
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => 'Movimento conciliado sem criar um novo lançamento.',
+        ]);
+
+        return to_route('reconciliation.index', $this->filterQuery($request));
+    }
+
+    public function invoicePayment(
+        StoreReconciliationInvoicePaymentRequest $request,
+        int $entry,
+    ): RedirectResponse {
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $workspace = $this->workspace();
+        $statementEntry = $this->findEntry($workspace, $entry);
+        $invoice = $workspace->creditCardInvoices()
+            ->findOrFail($request->integer('credit_card_invoice_id'));
+
+        $this->entryActions->reconcileInvoicePayment(
+            $workspace,
+            $statementEntry,
+            $invoice,
+            $user,
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Pagamento da fatura conciliado sem criar uma nova despesa.',
         ]);
 
         return to_route('reconciliation.index', $this->filterQuery($request));
@@ -475,6 +517,7 @@ class BankReconciliationController extends Controller
             'suggestedCategory:id,name,parent_id',
             'suggestedCategory.parent:id,name',
             'accountMovement.account:id,name',
+            'accountMovement.invoicePayment.invoice.creditCard:id,name,institution,last_four,payment_account_id',
             'accountMovement.transaction:id,description,type,payee_name,category_id,competence_date,financial_account_id,credit_card_id,source_account_id,destination_account_id',
             'accountMovement.transaction.category:id,name,parent_id',
             'accountMovement.transaction.category.parent:id,name',
@@ -549,13 +592,15 @@ class BankReconciliationController extends Controller
 
     /**
      * @param  Collection<int, AccountMovement>  $movements
+     * @param  Collection<int, CreditCardInvoice>  $invoices
      * @return array<string, mixed>
      */
     private function pendingBankEntryData(
         BankStatementEntry $entry,
         Collection $movements,
+        Collection $invoices,
     ): array {
-        $candidates = $this->bankCandidates($entry, $movements);
+        $candidates = $this->bankCandidates($entry, $movements, $invoices);
         $suggestion = collect($candidates)->firstWhere('is_suggestion', true);
         $matcher = $this->matcherSuggestion(
             $entry->description,
@@ -610,7 +655,13 @@ class BankReconciliationController extends Controller
     {
         $movement = $entry->accountMovement;
         $transaction = $movement?->transaction;
-        $related = $this->internalFromTransaction($transaction, $movement);
+        $invoiceFields = $this->invoicePaymentSuggestion->fromMovement($movement);
+        $related = $invoiceFields['is_invoice_payment']
+            ? [
+                ...$this->internalFromTransaction($transaction, $movement),
+                ...$invoiceFields,
+            ]
+            : $this->internalFromTransaction($transaction, $movement);
         $matcher = $this->matcherSuggestion(
             $entry->description,
             $this->interpreter->isOutflow($entry->amount)
@@ -680,6 +731,15 @@ class BankReconciliationController extends Controller
             'import_filename' => $entry->financialImport?->source_filename,
             'invoice_id' => null,
             'invoice_label' => null,
+            'invoice_payment_id' => null,
+            'card_last_four' => null,
+            'invoice_due_date' => null,
+            'invoice_total_amount' => null,
+            'invoice_paid_amount' => null,
+            'invoice_outstanding_amount' => null,
+            'invoice_status' => null,
+            'invoice_status_label' => null,
+            'is_invoice_payment' => false,
             'occurred_on' => $entry->occurred_on->toDateString(),
             'amount' => $entry->amount,
             'description' => $entry->description,
@@ -715,6 +775,15 @@ class BankReconciliationController extends Controller
             'import_filename' => $entry->financialImport?->source_filename,
             'invoice_id' => $entry->credit_card_invoice_id,
             'invoice_label' => $invoiceLabel,
+            'invoice_payment_id' => null,
+            'card_last_four' => $entry->creditCard->last_four,
+            'invoice_due_date' => null,
+            'invoice_total_amount' => null,
+            'invoice_paid_amount' => null,
+            'invoice_outstanding_amount' => null,
+            'invoice_status' => null,
+            'invoice_status_label' => null,
+            'is_invoice_payment' => false,
             'occurred_on' => $entry->purchased_on->toDateString(),
             'amount' => $entry->amount,
             'description' => $entry->description,
@@ -727,19 +796,41 @@ class BankReconciliationController extends Controller
 
     /**
      * @param  Collection<int, AccountMovement>  $movements
-     * @return list<array<string, mixed>>
+     * @param  Collection<int, CreditCardInvoice>  $invoices
+     * @return array<int, array<string, mixed>>
      */
-    private function bankCandidates(BankStatementEntry $entry, Collection $movements): array
-    {
-        return collect($this->suggestionService->candidates($entry, $movements))
+    private function bankCandidates(
+        BankStatementEntry $entry,
+        Collection $movements,
+        Collection $invoices,
+    ): array {
+        $movementCandidates = collect($this->suggestionService->candidates($entry, $movements))
             ->map(function (array $candidate) use ($movements): array {
                 $movement = $movements->firstWhere('id', $candidate['movement_id']);
+                $invoiceFields = $this->invoicePaymentSuggestion->fromMovement($movement);
 
                 return [
                     ...$candidate,
                     ...$this->internalFromTransaction($movement?->transaction, $movement),
+                    ...$invoiceFields,
                 ];
+            });
+        $claimedInvoiceIds = $movementCandidates
+            ->pluck('invoice_id')
+            ->filter()
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+        $invoiceCandidates = collect(
+            $this->invoicePaymentSuggestion->candidates($entry, $invoices, $claimedInvoiceIds),
+        );
+
+        return $movementCandidates
+            ->concat($invoiceCandidates)
+            ->sort(function (array $left, array $right): int {
+                return [$right['score'], $left['date_distance'], $right['invoice_id'] ?? $right['movement_id'] ?? 0]
+                    <=> [$left['score'], $right['date_distance'], $left['invoice_id'] ?? $left['movement_id'] ?? 0];
             })
+            ->values()
             ->all();
     }
 
@@ -851,6 +942,42 @@ class BankReconciliationController extends Controller
             'related_subcategory_id' => $candidate['related_subcategory_id'] ?? null,
             'related_subcategory_name' => $candidate['related_subcategory_name'] ?? null,
             'related_is_transfer' => (bool) ($candidate['related_is_transfer'] ?? false),
+            ...$this->invoiceFieldsFrom($candidate),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $candidate
+     * @return array<string, mixed>
+     */
+    private function invoiceFieldsFrom(array $candidate): array
+    {
+        if (! ($candidate['is_invoice_payment'] ?? false)) {
+            return [
+                'invoice_payment_id' => null,
+                'invoice_due_date' => null,
+                'invoice_total_amount' => null,
+                'invoice_paid_amount' => null,
+                'invoice_outstanding_amount' => null,
+                'invoice_status' => null,
+                'invoice_status_label' => null,
+                'is_invoice_payment' => false,
+            ];
+        }
+
+        return [
+            'invoice_id' => $candidate['invoice_id'] ?? null,
+            'invoice_payment_id' => $candidate['invoice_payment_id'] ?? null,
+            'card_name' => $candidate['card_name'] ?? null,
+            'card_last_four' => $candidate['card_last_four'] ?? null,
+            'invoice_label' => $candidate['invoice_label'] ?? null,
+            'invoice_due_date' => $candidate['invoice_due_date'] ?? null,
+            'invoice_total_amount' => $candidate['invoice_total_amount'] ?? null,
+            'invoice_paid_amount' => $candidate['invoice_paid_amount'] ?? null,
+            'invoice_outstanding_amount' => $candidate['invoice_outstanding_amount'] ?? null,
+            'invoice_status' => $candidate['invoice_status'] ?? null,
+            'invoice_status_label' => $candidate['invoice_status_label'] ?? null,
+            'is_invoice_payment' => true,
         ];
     }
 
@@ -1029,7 +1156,17 @@ class BankReconciliationController extends Controller
         ], true)) {
             $isTransfer = (bool) ($entry['related_is_transfer'] ?? false);
         }
-        $isInvoicePayment = $this->interpreter->isInvoicePayment($entry['description']);
+        $isInvoicePayment = (bool) ($entry['is_invoice_payment'] ?? false)
+            || $this->interpreter->isInvoicePayment($entry['description'], $this->workspaceCardTokens())
+            || collect($candidates)->contains(
+                fn (array $candidate): bool => (bool) ($candidate['is_invoice_payment'] ?? false)
+                    && (bool) ($candidate['is_suggestion'] ?? false),
+            );
+
+        if ($isInvoicePayment) {
+            $isTransfer = false;
+        }
+
         $hasCategory = $entry['category_id'] !== null
             || $entry['related_category_id'] !== null;
 
@@ -1113,7 +1250,7 @@ class BankReconciliationController extends Controller
             )->values(),
             'duplicates' => $entries->filter(fn (array $entry): bool => $entry['is_possible_duplicate'])->values(),
             'uncategorized' => $entries->filter(
-                fn (array $entry): bool => $entry['is_uncategorized'] && ! $entry['is_reconciled'],
+                fn (array $entry): bool => $entry['is_uncategorized'],
             )->values(),
             'transfers' => $entries->filter(
                 fn (array $entry): bool => $entry['is_likely_transfer'] && ! $entry['is_reconciled'],
@@ -1147,7 +1284,6 @@ class BankReconciliationController extends Controller
             'duplicates' => $scoped->where('is_possible_duplicate', true)->count(),
             'uncategorized' => $scoped
                 ->where('is_uncategorized', true)
-                ->where('is_reconciled', false)
                 ->count(),
             'transfers' => $scoped
                 ->where('is_likely_transfer', true)
@@ -1313,5 +1449,22 @@ class BankReconciliationController extends Controller
         $date = CarbonImmutable::createFromFormat('Y-m-d', $value);
 
         return $date instanceof CarbonImmutable ? $date->toDateString() : null;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function workspaceCardTokens(): array
+    {
+        return $this->workspace()
+            ->creditCards()
+            ->get(['name', 'institution', 'last_four'])
+            ->flatMap(fn (CreditCard $card): array => array_values(array_filter([
+                $card->name,
+                $card->institution,
+                $card->last_four,
+            ], fn (?string $token): bool => is_string($token) && trim($token) !== '')))
+            ->values()
+            ->all();
     }
 }

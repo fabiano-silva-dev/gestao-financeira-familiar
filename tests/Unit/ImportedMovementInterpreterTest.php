@@ -42,6 +42,11 @@ class ImportedMovementInterpreterTest extends TestCase
 
         $this->assertTrue($interpreter->isInvoicePayment('Pagamento Cartão de crédito'));
         $this->assertTrue($interpreter->isInvoicePayment('Pagamento de fatura Cartão de crédito'));
+        $this->assertTrue($interpreter->isInvoicePayment('PAGAMENTO NUBANK'));
+        $this->assertTrue($interpreter->isInvoicePayment(
+            'Pagamento Visa Platinum',
+            ['Visa Platinum'],
+        ));
         $this->assertFalse($interpreter->isInvoicePayment('Pagamento com QR Pix TELEFONICA BRASIL S.A.'));
     }
 }
