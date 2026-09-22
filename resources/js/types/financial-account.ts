@@ -2,6 +2,8 @@ export type FinancialAccount = {
     id: number;
     name: string;
     institution: string | null;
+    agency: string | null;
+    account_number: string | null;
     type: string;
     type_label: string;
     opening_balance: string;

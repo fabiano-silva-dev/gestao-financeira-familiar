@@ -81,6 +81,51 @@ function formatDate(value: string) {
     return date.format(new Date(`${value}T00:00:00Z`));
 }
 
+function accountOptionLabel(account: FinancialImportAccountOption) {
+    const details = [
+        account.institution,
+        account.agency ? `Ag. ${account.agency}` : null,
+        account.account_number ? `Conta ${account.account_number}` : null,
+    ].filter(Boolean);
+
+    return details.length > 0
+        ? `${account.name} · ${details.join(' · ')}`
+        : account.name;
+}
+
+function cardOptionLabel(card: CardStatementCardOption) {
+    const details = [
+        card.institution,
+        `final ${card.last_four}`,
+        card.holder_name ? `Titular: ${card.holder_name}` : null,
+        card.payment_account_name
+            ? `Pagamento: ${card.payment_account_name}`
+            : null,
+    ].filter(Boolean);
+
+    return `${card.name} · ${details.join(' · ')}`;
+}
+
+function detectedDocumentLabel(item: UnifiedImportHistoryItem) {
+    const detection = item.autodetection;
+
+    if (!detection) {
+        return null;
+    }
+
+    const identifier =
+        detection.identifier_value && detection.identifier_type
+            ? detection.identifier_type === 'card_last_four'
+                ? `final ${detection.identifier_value}`
+                : `identificador ${detection.identifier_value}`
+            : null;
+    const reference = detection.reference_month
+        ? `referência ${detection.reference_month}`
+        : null;
+
+    return [identifier, reference].filter(Boolean).join(' · ') || null;
+}
+
 function PendingImportResolver({
     item,
     accountOptions,
@@ -109,6 +154,7 @@ function PendingImportResolver({
         ? item.autodetection.institution.replaceAll('_', ' ')
         : 'não identificada';
     const detectedReference = item.autodetection?.reference_month;
+    const detectedDetails = detectedDocumentLabel(item);
 
     return (
         <div className="rounded-lg border p-4">
@@ -117,6 +163,11 @@ function PendingImportResolver({
                 <p className="text-muted-foreground text-sm">
                     Instituição: {institution} · confiança {confidence}%
                 </p>
+                {detectedDetails && (
+                    <p className="text-muted-foreground text-xs">
+                        Identificado no arquivo: {detectedDetails}
+                    </p>
+                )}
             </div>
 
             {parserMissing && !needsTypeChoice && (
@@ -188,10 +239,7 @@ function PendingImportResolver({
                                                 key={account.id}
                                                 value={String(account.id)}
                                             >
-                                                {account.name}
-                                                {account.institution
-                                                    ? ` · ${account.institution}`
-                                                    : ''}
+                                                {accountOptionLabel(account)}
                                             </SelectItem>
                                         ))}
                                     </SelectContent>
@@ -214,7 +262,7 @@ function PendingImportResolver({
                                                     key={card.id}
                                                     value={String(card.id)}
                                                 >
-                                                    {card.name} · final {card.last_four}
+                                                    {cardOptionLabel(card)}
                                                 </SelectItem>
                                             ))}
                                         </SelectContent>

@@ -136,8 +136,18 @@ export default function AccountShow() {
                                 </Badge>
                             </div>
                             <p className="text-muted-foreground mt-1 text-sm">
-                                {account.institution || 'Sem instituição'} ·{' '}
-                                {account.type_label}
+                                {[
+                                    account.institution || 'Sem instituição',
+                                    account.agency
+                                        ? `Ag. ${account.agency}`
+                                        : null,
+                                    account.account_number
+                                        ? `Conta ${account.account_number}`
+                                        : null,
+                                    account.type_label,
+                                ]
+                                    .filter(Boolean)
+                                    .join(' · ')}
                             </p>
                         </div>
                     </div>

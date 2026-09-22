@@ -20,6 +20,8 @@ use Illuminate\Support\Carbon;
 #[Fillable([
     'name',
     'institution',
+    'agency',
+    'account_number',
     'type',
     'opening_balance',
     'opening_balance_date',

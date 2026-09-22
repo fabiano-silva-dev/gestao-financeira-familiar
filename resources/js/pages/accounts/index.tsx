@@ -124,7 +124,7 @@ export default function AccountsIndex() {
                         <ListingToolbar
                             url={listUrl}
                             query={filters}
-                            searchPlaceholder="Buscar conta ou instituição…"
+                            searchPlaceholder="Buscar conta, instituição, agência ou número…"
                             selects={[
                                 {
                                     key: 'type',
@@ -203,8 +203,18 @@ export default function AccountsIndex() {
                                                         {account.name}
                                                     </p>
                                                     <p className="text-muted-foreground mt-0.5 truncate text-xs">
-                                                        {account.institution ||
-                                                            'Sem instituição'}
+                                                        {[
+                                                            account.institution ||
+                                                                'Sem instituição',
+                                                            account.agency
+                                                                ? `Ag. ${account.agency}`
+                                                                : null,
+                                                            account.account_number
+                                                                ? `Conta ${account.account_number}`
+                                                                : null,
+                                                        ]
+                                                            .filter(Boolean)
+                                                            .join(' · ')}
                                                     </p>
                                                 </div>
                                                 <ArrowRight className="text-muted-foreground mt-1 hidden size-4 shrink-0 transition-transform group-hover:translate-x-0.5 md:block" />

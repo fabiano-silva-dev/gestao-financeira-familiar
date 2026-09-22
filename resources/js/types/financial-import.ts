@@ -2,6 +2,8 @@ export type FinancialImportAccountOption = {
     id: number;
     name: string;
     institution: string | null;
+    agency: string | null;
+    account_number: string | null;
     is_active: boolean;
 };
 
@@ -37,6 +39,11 @@ export type CardStatementCardOption = {
     name: string;
     institution: string | null;
     last_four: string;
+    holder_name: string | null;
+    payment_account_name: string | null;
+    payment_account_institution: string | null;
+    payment_account_agency: string | null;
+    payment_account_number: string | null;
     is_active: boolean;
 };
 

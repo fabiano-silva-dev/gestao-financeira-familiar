@@ -27,6 +27,41 @@ final class ImportTargetResolver
             ->where('is_active', true)
             ->get();
 
+        if (
+            in_array($detection->identifierType, ['account_id', 'account_number'], true)
+            && $detection->identifierValue !== null
+        ) {
+            $identifier = $this->normalizeAccountIdentifier($detection->identifierValue);
+            $identifierMatches = $accounts
+                ->filter(function (FinancialAccount $account) use ($identifier, $detection): bool {
+                    if ($account->account_number === null) {
+                        return false;
+                    }
+
+                    if (
+                        $this->normalizeAccountIdentifier($account->account_number)
+                        !== $identifier
+                    ) {
+                        return false;
+                    }
+
+                    return $detection->institution === null
+                        || $this->institutions->matches(
+                            $detection->institution,
+                            $account->institution,
+                        );
+                })
+                ->values();
+
+            if ($identifierMatches->count() === 1) {
+                return $identifierMatches->first();
+            }
+
+            if ($identifierMatches->count() > 1) {
+                return null;
+            }
+        }
+
         if ($detection->institution !== null) {
             $matches = $accounts
                 ->filter(fn (FinancialAccount $account): bool => $this->institutions->matches(
@@ -170,6 +205,13 @@ final class ImportTargetResolver
             'identifier_type' => (string) $detection->identifierType,
             'identifier_value' => (string) $detection->identifierValue,
         ];
+    }
+
+    private function normalizeAccountIdentifier(string $value): string
+    {
+        $normalized = preg_replace('/[^a-z0-9]/i', '', $value);
+
+        return mb_strtolower($normalized ?? $value);
     }
 
     private function canLearn(FinancialDocumentDetection $detection): bool

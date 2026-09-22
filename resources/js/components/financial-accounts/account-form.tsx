@@ -59,6 +59,34 @@ export default function AccountForm({ account, accountTypes }: Props) {
                         <InputError message={errors.institution} />
                     </div>
 
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="grid gap-2">
+                            <Label htmlFor="agency">Agência</Label>
+                            <Input
+                                id="agency"
+                                name="agency"
+                                defaultValue={account?.agency ?? ''}
+                                placeholder="Ex.: 1234"
+                                maxLength={40}
+                            />
+                            <InputError message={errors.agency} />
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="account_number">
+                                Número da conta
+                            </Label>
+                            <Input
+                                id="account_number"
+                                name="account_number"
+                                defaultValue={account?.account_number ?? ''}
+                                placeholder="Ex.: 98765-4"
+                                maxLength={60}
+                            />
+                            <InputError message={errors.account_number} />
+                        </div>
+                    </div>
+
                     <div className="grid gap-2">
                         <Label htmlFor="type">Tipo</Label>
                         <Select

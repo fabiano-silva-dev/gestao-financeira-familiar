@@ -139,23 +139,42 @@ class FinancialImportController extends Controller
             'accountOptions' => $workspace->financialAccounts()
                 ->orderByDesc('is_active')
                 ->orderBy('name')
-                ->get(['id', 'name', 'institution', 'is_active'])
+                ->get(['id', 'name', 'institution', 'agency', 'account_number', 'is_active'])
                 ->map(fn (FinancialAccount $account): array => [
                     'id' => $account->id,
                     'name' => $account->name,
                     'institution' => $account->institution,
+                    'agency' => $account->agency,
+                    'account_number' => $account->account_number,
                     'is_active' => $account->is_active,
                 ])
                 ->all(),
             'cardOptions' => $workspace->creditCards()
+                ->with([
+                    'holder:id,name',
+                    'paymentAccount:id,name,institution,agency,account_number',
+                ])
                 ->orderByDesc('is_active')
                 ->orderBy('name')
-                ->get(['id', 'name', 'institution', 'last_four', 'is_active'])
+                ->get([
+                    'id',
+                    'name',
+                    'institution',
+                    'last_four',
+                    'holder_id',
+                    'payment_account_id',
+                    'is_active',
+                ])
                 ->map(fn (CreditCard $card): array => [
                     'id' => $card->id,
                     'name' => $card->name,
                     'institution' => $card->institution,
                     'last_four' => $card->last_four,
+                    'holder_name' => $card->holder?->name,
+                    'payment_account_name' => $card->paymentAccount?->name,
+                    'payment_account_institution' => $card->paymentAccount?->institution,
+                    'payment_account_agency' => $card->paymentAccount?->agency,
+                    'payment_account_number' => $card->paymentAccount?->account_number,
                     'is_active' => $card->is_active,
                 ])
                 ->all(),

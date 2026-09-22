@@ -36,7 +36,7 @@ class FinancialAccountController extends Controller
             ['type', 'status'],
         );
         $query = $this->accountsWithCurrentBalance($workspace);
-        $listing->applySearch($query, ['name', 'institution']);
+        $listing->applySearch($query, ['name', 'institution', 'agency', 'account_number']);
 
         $type = $listing->filter('type');
 
@@ -336,6 +336,8 @@ class FinancialAccountController extends Controller
      *     id: int,
      *     name: string,
      *     institution: string|null,
+     *     agency: string|null,
+     *     account_number: string|null,
      *     type: string,
      *     type_label: string,
      *     opening_balance: string,
@@ -350,6 +352,8 @@ class FinancialAccountController extends Controller
             'id' => $account->id,
             'name' => $account->name,
             'institution' => $account->institution,
+            'agency' => $account->agency,
+            'account_number' => $account->account_number,
             'type' => $account->type->value,
             'type_label' => $account->type->label(),
             'opening_balance' => $account->opening_balance,

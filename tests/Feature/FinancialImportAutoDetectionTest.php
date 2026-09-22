@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\FinancialImportStatus;
 use App\Enums\FinancialImportType;
 use App\Models\CreditCard;
+use App\Models\FamilyMember;
 use App\Models\FinancialAccount;
 use App\Models\FinancialImport;
 use App\Models\ImportSourceBinding;
@@ -14,6 +15,7 @@ use App\Support\Workspaces\CurrentWorkspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class FinancialImportAutoDetectionTest extends TestCase
@@ -139,6 +141,78 @@ class FinancialImportAutoDetectionTest extends TestCase
         $this->assertSame($first->id, $final->credit_card_id);
         $this->assertTrue((bool) data_get($final->metadata, 'autodetection.confirmed_by_user'));
         $this->assertDatabaseCount('financial_transactions', 1);
+    }
+
+    public function test_import_confirmation_options_include_account_and_card_identification_details(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $holder = FamilyMember::factory()->for($workspace)->create([
+            'name' => 'Fabiano',
+        ]);
+        $paymentAccount = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Nubank Fabiano',
+            'institution' => 'Nubank',
+            'agency' => '0001',
+            'account_number' => '12345678-9',
+        ]);
+        $card = CreditCard::factory()->for($workspace)->create([
+            'name' => 'Nubank Fabiano',
+            'institution' => 'Nubank',
+            'last_four' => '4321',
+            'holder_id' => $holder->id,
+            'payment_account_id' => $paymentAccount->id,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('imports.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('accountOptions.0.id', $paymentAccount->id)
+                ->where('accountOptions.0.agency', '0001')
+                ->where('accountOptions.0.account_number', '12345678-9')
+                ->where('cardOptions.0.id', $card->id)
+                ->where('cardOptions.0.holder_name', 'Fabiano')
+                ->where('cardOptions.0.payment_account_name', 'Nubank Fabiano')
+                ->where('cardOptions.0.payment_account_agency', '0001')
+                ->where('cardOptions.0.payment_account_number', '12345678-9')
+            );
+    }
+
+    public function test_account_number_resolves_ambiguous_banrisul_accounts_without_confirmation(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $matching = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Banrisul principal',
+            'institution' => 'Banrisul',
+            'agency' => '060',
+            'account_number' => '06.006855.0-9',
+        ]);
+        FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Banrisul secundária',
+            'institution' => 'Banrisul',
+            'agency' => '060',
+            'account_number' => '99.999999.9-9',
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.store'), [
+                'files' => [
+                    UploadedFile::fake()->createWithContent(
+                        'banrisul-identificado.pdf',
+                        $this->banrisulPdf('03', '354,00-'),
+                    ),
+                ],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $import = FinancialImport::query()->sole();
+
+        $this->assertSame(FinancialImportStatus::Completed, $import->status);
+        $this->assertSame($matching->id, $import->financial_account_id);
+        $this->assertDatabaseCount('import_source_bindings', 1);
     }
 
     public function test_confirmed_banrisul_account_identifier_is_learned_for_next_import(): void

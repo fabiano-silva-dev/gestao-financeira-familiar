@@ -57,6 +57,8 @@ class FinancialAccountTest extends TestCase
             ->post(route('accounts.store'), [
                 'name' => 'Sicredi principal',
                 'institution' => 'Sicredi',
+                'agency' => '1234',
+                'account_number' => '98765-4',
                 'type' => FinancialAccountType::Checking->value,
                 'opening_balance' => '1250.45',
                 'opening_balance_date' => '2026-09-01',
@@ -68,6 +70,8 @@ class FinancialAccountTest extends TestCase
 
         $this->assertSame($workspace->id, $account->workspace_id);
         $this->assertSame('Sicredi principal', $account->name);
+        $this->assertSame('1234', $account->agency);
+        $this->assertSame('98765-4', $account->account_number);
         $this->assertSame('1250.45', $account->opening_balance);
         $this->assertSame('2026-09-01', $account->opening_balance_date?->toDateString());
         $this->assertTrue($account->is_active);
@@ -107,6 +111,8 @@ class FinancialAccountTest extends TestCase
             ->put(route('accounts.update', $account), [
                 'name' => 'Nubank pessoal',
                 'institution' => 'Nubank',
+                'agency' => '0001',
+                'account_number' => '12345678-9',
                 'type' => FinancialAccountType::Digital->value,
                 'opening_balance' => '-25.50',
                 'opening_balance_date' => '2026-09-10',
@@ -117,6 +123,8 @@ class FinancialAccountTest extends TestCase
         $account->refresh();
 
         $this->assertSame('Nubank pessoal', $account->name);
+        $this->assertSame('0001', $account->agency);
+        $this->assertSame('12345678-9', $account->account_number);
         $this->assertSame(FinancialAccountType::Digital, $account->type);
         $this->assertSame('-25.50', $account->opening_balance);
         $this->assertSame('2026-09-10', $account->opening_balance_date?->toDateString());
