@@ -25,11 +25,21 @@ final class CardStatementAiEnrichmentService
         }
 
         $entries = $financialImport->cardStatementEntries()
-            ->where('is_reconciled', true)
+            ->where('is_ignored', false)
             ->with('transactionInstallment.transaction')
             ->orderBy('id')
             ->get()
             ->filter(function (CardStatementEntry $entry): bool {
+                if ($this->moneyToCents($entry->amount) <= 0) {
+                    return false;
+                }
+
+                if (! $entry->is_reconciled) {
+                    return $entry->suggested_category_id === null
+                        || ! is_string($entry->suggested_payee_name)
+                        || trim($entry->suggested_payee_name) === '';
+                }
+
                 $transaction = $entry->transactionInstallment?->transaction;
 
                 if (
@@ -88,17 +98,8 @@ final class CardStatementAiEnrichmentService
                     continue;
                 }
 
-                $transaction = $entry->transactionInstallment?->transaction;
-
-                if (
-                    ! $transaction instanceof FinancialTransaction
-                    || $transaction->origin !== FinancialTransactionOrigin::CardImport
-                    || $transaction->workspace_id !== $workspace->id
-                ) {
-                    continue;
-                }
-
-                $updates = [];
+                $entryUpdates = [];
+                $transactionUpdates = [];
                 $merchantName = $suggestion['merchant_name'];
 
                 if (
@@ -109,35 +110,80 @@ final class CardStatementAiEnrichmentService
                         0.70,
                     )
                 ) {
-                    $currentPayee = $transaction->getAttribute('payee_name');
+                    if (! $entry->is_reconciled) {
+                        $currentPayee = $entry->suggested_payee_name;
 
-                    if (
-                        ! is_string($currentPayee)
-                        || trim($currentPayee) === ''
-                        || trim($currentPayee) === trim($entry->description)
-                    ) {
-                        $updates['payee_name'] = $merchantName;
-                        $merchantUpdates++;
+                        if (
+                            ! is_string($currentPayee)
+                            || trim($currentPayee) === ''
+                            || trim($currentPayee) === trim($entry->description)
+                        ) {
+                            $entryUpdates['suggested_payee_name'] = $merchantName;
+                            $merchantUpdates++;
+                        }
+                    } else {
+                        $transaction = $entry->transactionInstallment?->transaction;
+
+                        if (
+                            $transaction instanceof FinancialTransaction
+                            && $transaction->origin === FinancialTransactionOrigin::CardImport
+                        ) {
+                            $currentPayee = $transaction->getAttribute('payee_name');
+
+                            if (
+                                ! is_string($currentPayee)
+                                || trim($currentPayee) === ''
+                                || trim($currentPayee) === trim($entry->description)
+                            ) {
+                                $transactionUpdates['payee_name'] = $merchantName;
+                                $merchantUpdates++;
+                            }
+                        }
                     }
                 }
 
                 $categoryId = $suggestion['category_id'];
 
                 if (
-                    $transaction->getAttribute('category_id') === null
-                    && is_int($categoryId)
+                    is_int($categoryId)
                     && isset($validCategoryLookup[$categoryId])
                     && $suggestion['category_confidence'] >= (float) config(
                         'financial_ai.category_min_confidence',
                         0.80,
                     )
                 ) {
-                    $updates['category_id'] = $categoryId;
-                    $categoryUpdates++;
+                    if (! $entry->is_reconciled) {
+                        if ($entry->suggested_category_id === null) {
+                            $entryUpdates['suggested_category_id'] = $categoryId;
+                            $categoryUpdates++;
+                        }
+                    } else {
+                        $transaction = $entry->transactionInstallment?->transaction;
+
+                        if (
+                            $transaction instanceof FinancialTransaction
+                            && $transaction->origin === FinancialTransactionOrigin::CardImport
+                            && $transaction->getAttribute('category_id') === null
+                        ) {
+                            $transactionUpdates['category_id'] = $categoryId;
+                            $categoryUpdates++;
+                        }
+                    }
                 }
 
-                if ($updates !== []) {
-                    $transaction->update($updates);
+                if ($entryUpdates !== []) {
+                    $entry->update($entryUpdates);
+                }
+
+                if ($transactionUpdates !== []) {
+                    $transaction = $entry->transactionInstallment?->transaction;
+
+                    if ($transaction instanceof FinancialTransaction) {
+                        $transaction->update($transactionUpdates);
+                    }
+                }
+
+                if ($entryUpdates !== [] || $transactionUpdates !== []) {
                     $classified++;
                 }
             }
@@ -158,5 +204,16 @@ final class CardStatementAiEnrichmentService
         ];
 
         $financialImport->update(['metadata' => $metadata]);
+    }
+
+    private function moneyToCents(string $amount): int
+    {
+        $negative = str_starts_with($amount, '-');
+        $amount = ltrim($amount, '-');
+        [$whole, $decimal] = array_pad(explode('.', $amount, 2), 2, '0');
+        $cents = ((int) $whole * 100)
+            + (int) str_pad(substr($decimal, 0, 2), 2, '0');
+
+        return $negative ? -$cents : $cents;
     }
 }

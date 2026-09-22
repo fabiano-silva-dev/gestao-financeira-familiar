@@ -222,9 +222,30 @@ final class CardStatementImportService
             ]);
         }
 
-        $this->processor->process($workspace, $financialImport->refresh(), $user);
+        $initialSummary = $this->processor->process(
+            $workspace,
+            $financialImport->refresh(),
+            $user,
+        );
         $this->enrichWithAiSafely($workspace, $financialImport);
-        $this->processor->refreshSummary($workspace, $financialImport->refresh());
+
+        if ($this->hasCategorizedPendingEntries($financialImport)) {
+            $secondSummary = $this->processor->process(
+                $workspace,
+                $financialImport->refresh(),
+                $user,
+            );
+            $this->processor->refreshSummary(
+                $workspace,
+                $financialImport->refresh(),
+                $this->combineActionCounters($initialSummary, $secondSummary),
+            );
+        } else {
+            $this->processor->refreshSummary(
+                $workspace,
+                $financialImport->refresh(),
+            );
+        }
 
         return new CardStatementImportResult($financialImport->refresh(), false);
     }
@@ -252,6 +273,39 @@ final class CardStatementImportService
         throw ValidationException::withMessages([
             'file' => 'Este arquivo já foi importado. Envie um arquivo diferente.',
         ]);
+    }
+
+    private function hasCategorizedPendingEntries(
+        FinancialImport $financialImport,
+    ): bool {
+        return $financialImport->cardStatementEntries()
+            ->where('is_reconciled', false)
+            ->where('is_ignored', false)
+            ->whereNotNull('suggested_category_id')
+            ->exists();
+    }
+
+    /**
+     * @param array<string, int|string> $first
+     * @param array<string, int|string> $second
+     * @return array<string, int>
+     */
+    private function combineActionCounters(array $first, array $second): array
+    {
+        $keys = [
+            'matched_existing',
+            'new_transactions_created',
+            'transfers_identified',
+            'invoice_payments_identified',
+        ];
+        $combined = [];
+
+        foreach ($keys as $key) {
+            $combined[$key] = (int) ($first[$key] ?? 0)
+                + (int) ($second[$key] ?? 0);
+        }
+
+        return $combined;
     }
 
     private function enrichWithAiSafely(

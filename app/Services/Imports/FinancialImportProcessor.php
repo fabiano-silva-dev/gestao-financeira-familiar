@@ -251,7 +251,7 @@ final class FinancialImportProcessor
                 $invoice,
                 $entry,
                 $user,
-                requireClassification: false,
+                requireClassification: true,
             );
 
             $entry->refresh();

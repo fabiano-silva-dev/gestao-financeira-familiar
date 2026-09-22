@@ -42,6 +42,11 @@ class CardStatementImportTest extends TestCase
             'closing_day' => 5,
             'due_day' => 12,
         ]);
+        $category = Category::factory()->for($workspace)->create([
+            'name' => 'Esporte',
+            'type' => CategoryType::Expense,
+            'is_active' => true,
+        ]);
 
         $this->actingAs($user)
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
@@ -100,6 +105,7 @@ class CardStatementImportTest extends TestCase
             'credit_card_id' => $card->id,
             'description' => 'Vôlei Lidiane',
             'amount' => '899.00',
+            'category_id' => $category->id,
             'origin' => FinancialTransactionOrigin::CardImport->value,
         ]);
         $this->assertDatabaseCount('transaction_installments', 9);
@@ -118,7 +124,7 @@ class CardStatementImportTest extends TestCase
         $this->assertDatabaseCount('account_movements', 0);
         $this->assertSame(1, $summary['automatically_reconciled']);
         $this->assertSame(1, $summary['new_transactions_created']);
-        $this->assertSame(1, $summary['pending_categorization']);
+        $this->assertSame(0, $summary['pending_categorization']);
         $this->assertSame(1, $summary['pending_confirmation']);
 
         $this->actingAs($user)
@@ -142,6 +148,42 @@ class CardStatementImportTest extends TestCase
                 ->where('invoice.statement_entries.0.is_reconciled', false)
                 ->where('invoice.statement_entries.1.is_reconciled', true)
             );
+    }
+
+    public function test_uncategorized_card_purchase_stays_pending_and_is_not_reconciled(): void
+    {
+        Storage::fake('local');
+        config()->set('financial_ai.enabled', false);
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.card-statements.store'), [
+                'credit_card_id' => $card->id,
+                'reference_month' => '2026-10',
+                'amount_sign' => 'positive',
+                'file' => UploadedFile::fake()->createWithContent(
+                    'fatura-sem-categoria.csv',
+                    "Data;Estabelecimento;Valor;Identificador\n10/09/2026;LOJA SEM CLASSIFICACAO;50,00;sem-cat-001\n",
+                ),
+            ])
+            ->assertRedirect(route('imports.index'))
+            ->assertSessionHasNoErrors();
+
+        $entry = CardStatementEntry::query()->sole();
+        $summary = data_get(
+            FinancialImport::query()->sole()->metadata,
+            'processing_summary',
+        );
+
+        $this->assertFalse($entry->is_reconciled);
+        $this->assertNull($entry->transaction_installment_id);
+        $this->assertNull($entry->suggested_category_id);
+        $this->assertDatabaseCount('financial_transactions', 0);
+        $this->assertSame(0, $summary['automatically_reconciled']);
+        $this->assertSame(0, $summary['new_transactions_created']);
+        $this->assertSame(1, $summary['pending_confirmation']);
     }
 
     public function test_reimporting_same_file_is_rejected(): void

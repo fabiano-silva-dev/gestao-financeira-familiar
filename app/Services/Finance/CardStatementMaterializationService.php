@@ -68,6 +68,11 @@ final class CardStatementMaterializationService
                     ! $requireClassification
                     || $this->isClassifiedForAutoLink($workspace, $entry, $installment)
                 ) {
+                    $this->applyEntryClassificationToTransaction(
+                        $workspace,
+                        $entry,
+                        $installment,
+                    );
                     $this->reconciliationService->reconcile(
                         $workspace,
                         $invoice,
@@ -191,9 +196,74 @@ final class CardStatementMaterializationService
 
         $rule = $this->ruleMatcher->match($workspace, $entry->description);
 
-        return is_array($rule)
+        if (
+            is_array($rule)
             && $rule['action_type'] !== FinancialTransactionType::Transfer->value
-            && $rule['category_id'] !== null;
+            && $rule['category_id'] !== null
+        ) {
+            return true;
+        }
+
+        return $this->categoryMatcher->match(
+            $workspace,
+            $entry->description,
+            $this->sourceCategory($entry),
+        ) !== null;
+    }
+
+    private function applyEntryClassificationToTransaction(
+        Workspace $workspace,
+        CardStatementEntry $entry,
+        TransactionInstallment $installment,
+    ): void {
+        $transaction = $installment->transaction;
+
+        if (! $transaction instanceof FinancialTransaction) {
+            return;
+        }
+
+        $rule = $this->ruleMatcher->match($workspace, $entry->description);
+        $ruleCategoryId = is_array($rule)
+            && $rule['action_type'] !== FinancialTransactionType::Transfer->value
+                ? $rule['category_id']
+                : null;
+        $categoryId = $entry->suggested_category_id
+            ?? $ruleCategoryId
+            ?? $this->categoryMatcher->match(
+                $workspace,
+                $entry->description,
+                $this->sourceCategory($entry),
+            );
+        $updates = [];
+
+        if ($transaction->category_id === null && $categoryId !== null) {
+            $updates['category_id'] = $categoryId;
+        }
+
+        $suggestedPayee = is_string($entry->suggested_payee_name)
+            && trim($entry->suggested_payee_name) !== ''
+                ? trim($entry->suggested_payee_name)
+                : null;
+        $rulePayee = is_array($rule) && is_string($rule['payee_name'] ?? null)
+            ? trim($rule['payee_name'])
+            : null;
+        $payee = $suggestedPayee ?? ($rulePayee !== '' ? $rulePayee : null);
+        $currentPayee = $transaction->payee_name;
+
+        if (
+            $payee !== null
+            && (
+                ! is_string($currentPayee)
+                || trim($currentPayee) === ''
+                || trim($currentPayee) === trim($entry->description)
+            )
+        ) {
+            $updates['payee_name'] = $payee;
+        }
+
+        if ($updates !== []) {
+            $transaction->update($updates);
+        }
     }
 
     /**
@@ -243,15 +313,22 @@ final class CardStatementMaterializationService
             ? $rule['category_id']
             : null;
         $resolvedCategoryId = $categoryId
+            ?? $entry->suggested_category_id
             ?? $ruleCategoryId
             ?? $this->categoryMatcher->match(
                 $workspace,
                 $entry->description,
                 $this->sourceCategory($entry),
             );
+        $suggestedPayee = is_string($entry->suggested_payee_name)
+            && trim($entry->suggested_payee_name) !== ''
+                ? trim($entry->suggested_payee_name)
+                : null;
         $resolvedPayee = is_string($payeeName) && trim($payeeName) !== ''
             ? trim($payeeName)
-            : ((is_array($rule) ? $rule['payee_name'] : null) ?? $entry->description);
+            : ($suggestedPayee
+                ?? (is_array($rule) ? $rule['payee_name'] : null)
+                ?? $entry->description);
 
         return $workspace->financialTransactions()->create([
             'type' => FinancialTransactionType::Expense,
