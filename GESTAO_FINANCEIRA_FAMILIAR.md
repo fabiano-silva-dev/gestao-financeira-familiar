@@ -137,3 +137,21 @@ A inteligência artificial será uma camada de apoio, e não a fonte de verdade 
 Possíveis usos:
 
 - interpretar mensagens em linguagem natural;
+
+---
+
+## 36. Dashboard de Pagamentos e Fluxo Mensal
+
+O Dashboard de Pagamentos é uma visão operacional de caixa e compromissos do mês, separada do dashboard geral de análise financeira.
+
+Regras desta visão:
+
+- **Pago** e **Recebido** usam a data efetiva de pagamento ou recebimento para representar o fluxo de caixa realizado.
+- **A pagar** e **A receber** representam compromissos ainda pendentes no período, usando vencimento ou data prevista quando disponível.
+- Compras individuais de cartão não aparecem como obrigações separadas no **A pagar**. A obrigação exibida é a fatura, e as compras ficam disponíveis apenas no detalhamento expansível.
+- O pagamento da fatura movimenta o caixa, mas não cria uma nova despesa.
+- Parcelas vinculadas a uma fatura não podem ser somadas novamente à obrigação da fatura.
+- O **saldo projetado do mês** é calculado como entradas realizadas e previstas menos saídas realizadas e previstas do próprio período. Ele não substitui o saldo patrimonial ou o saldo atual das contas mostrado em outras visões.
+- Recorrências materializadas, parcelas, crediários e faturas futuras já conhecidas devem alimentar a projeção sem duplicar compra, parcela, fatura e pagamento.
+- Todas as consultas permanecem isoladas pelo workspace ativo.
+

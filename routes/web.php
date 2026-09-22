@@ -15,6 +15,7 @@ use App\Http\Controllers\FinancialImportController;
 use App\Http\Controllers\FinancialRecurrenceController;
 use App\Http\Controllers\FinancialTransactionController;
 use App\Http\Controllers\OfxImportController;
+use App\Http\Controllers\PaymentDashboardController;
 use App\Http\Controllers\TransferController;
 use Illuminate\Support\Facades\Route;
 
@@ -22,6 +23,7 @@ Route::inertia('/', 'welcome')->name('home');
 
 Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
+    Route::get('pagamentos', PaymentDashboardController::class)->name('payments');
 
     Route::get('contas', [FinancialAccountController::class, 'index'])
         ->name('accounts.index');

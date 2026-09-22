@@ -4,6 +4,7 @@ export type * from './classification-rule';
 export type * from './credit-card';
 export type * from './credit-card-invoice';
 export type * from './dashboard';
+export type * from './payment-dashboard';
 export type * from './family-member';
 export type * from './financial-account';
 export type * from './financial-entry';

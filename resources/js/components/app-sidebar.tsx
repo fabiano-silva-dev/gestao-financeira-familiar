@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react';
 import {
     Repeat2,
+    Clock3,
     CreditCard,
     Landmark,
     LayoutGrid,
@@ -24,7 +25,7 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard } from '@/routes';
+import { dashboard, payments } from '@/routes';
 import { index as accountsIndex } from '@/routes/accounts';
 import { index as categoriesIndex } from '@/routes/categories';
 import { index as classificationRulesIndex } from '@/routes/classification-rules';
@@ -42,6 +43,11 @@ const mainNavItems: NavItem[] = [
         title: 'Visão geral',
         href: dashboard(),
         icon: LayoutGrid,
+    },
+    {
+        title: 'Pagamentos',
+        href: payments(),
+        icon: Clock3,
     },
     {
         title: 'Lançamentos',
