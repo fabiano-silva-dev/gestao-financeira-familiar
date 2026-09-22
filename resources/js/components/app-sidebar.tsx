@@ -1,5 +1,7 @@
 import { Link } from '@inertiajs/react';
 import {
+    CalendarCheck2,
+    History,
     Repeat2,
     Clock3,
     CreditCard,
@@ -80,9 +82,19 @@ const mainNavItems: NavItem[] = [
         icon: Upload,
     },
     {
+        title: 'Fechamento mensal',
+        href: '/importacoes/fechamento-mensal',
+        icon: CalendarCheck2,
+    },
+    {
         title: 'Conciliação',
         href: reconciliationIndex(),
         icon: ListChecks,
+    },
+    {
+        title: 'Histórico de arquivos',
+        href: '/importacoes/historico',
+        icon: History,
     },
     {
         title: 'Regras',

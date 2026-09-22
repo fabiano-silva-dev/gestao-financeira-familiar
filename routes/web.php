@@ -12,8 +12,10 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FamilyMemberController;
 use App\Http\Controllers\FinancialAccountController;
 use App\Http\Controllers\FinancialImportController;
+use App\Http\Controllers\FinancialImportHistoryController;
 use App\Http\Controllers\FinancialRecurrenceController;
 use App\Http\Controllers\FinancialTransactionController;
+use App\Http\Controllers\MonthlyImportClosingController;
 use App\Http\Controllers\OfxImportController;
 use App\Http\Controllers\PaymentDashboardController;
 use App\Http\Controllers\TransferController;
@@ -229,6 +231,31 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->name('imports.index');
     Route::post('importacoes', [FinancialImportController::class, 'store'])
         ->name('imports.store');
+    Route::get('importacoes/fechamento-mensal', [MonthlyImportClosingController::class, 'index'])
+        ->name('imports.monthly-closing.index');
+    Route::post(
+        'importacoes/fechamento-mensal/{sourceType}/{source}/fechar',
+        [MonthlyImportClosingController::class, 'close'],
+    )
+        ->whereIn('sourceType', ['account', 'card'])
+        ->whereNumber('source')
+        ->name('imports.monthly-closing.close');
+    Route::post(
+        'importacoes/fechamento-mensal/{sourceType}/{source}/sem-movimento',
+        [MonthlyImportClosingController::class, 'noMovement'],
+    )
+        ->whereIn('sourceType', ['account', 'card'])
+        ->whereNumber('source')
+        ->name('imports.monthly-closing.no-movement');
+    Route::delete(
+        'importacoes/fechamento-mensal/{sourceType}/{source}/reabrir',
+        [MonthlyImportClosingController::class, 'reopen'],
+    )
+        ->whereIn('sourceType', ['account', 'card'])
+        ->whereNumber('source')
+        ->name('imports.monthly-closing.reopen');
+    Route::get('importacoes/historico', FinancialImportHistoryController::class)
+        ->name('imports.history');
     Route::post('importacoes/{import}/resolver', [FinancialImportController::class, 'resolve'])
         ->whereNumber('import')
         ->name('imports.resolve');

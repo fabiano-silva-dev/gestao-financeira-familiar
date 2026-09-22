@@ -155,3 +155,24 @@ Regras desta visão:
 - Recorrências materializadas, parcelas, crediários e faturas futuras já conhecidas devem alimentar a projeção sem duplicar compra, parcela, fatura e pagamento.
 - Todas as consultas permanecem isoladas pelo workspace ativo.
 
+
+---
+
+## 37. Fechamento Mensal de Importações
+
+O fechamento mensal de importações é um checklist operacional por **workspace + origem financeira + período**, construído a partir das contas financeiras e cartões de crédito ativos, e não a partir da existência de arquivos.
+
+Regras:
+
+- toda conta ou cartão ativo deve aparecer no checklist mesmo quando nenhuma entrada tiver sido recebida;
+- os estados operacionais de importação e conciliação são calculados a partir da cobertura e dos movimentos normalizados da origem;
+- uma origem totalmente conciliada não é fechada automaticamente;
+- **Fechado** representa confirmação explícita do usuário para aquele período;
+- **Sem movimento** também é uma confirmação explícita do período, distinta de ausência de importação;
+- contas devem considerar a cobertura temporal combinada de múltiplas entradas, sem assumir que a existência de um arquivo significa mês completo;
+- cartões devem ser conferidos pelo ciclo/referência da fatura, e não pela data de upload;
+- múltiplas importações podem participar da mesma origem e período;
+- fechamento e eventual reabertura devem registrar usuário e data;
+- todos os vínculos e consultas permanecem isolados pelo `workspace_id`.
+
+A persistência do fechamento é independente do formato da entrada. PDF, CSV, OFX, Open Finance, Gmail, APIs ou outras fontes futuras devem alimentar a mesma camada normalizada de importação/conciliação antes de participar do checklist.
