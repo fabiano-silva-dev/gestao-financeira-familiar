@@ -9,7 +9,7 @@ export type FinancialImportHistoryItem = {
     id: number;
     source_filename: string;
     account_name: string;
-    status: 'processing' | 'completed' | 'failed';
+    status: 'processing' | 'needs_confirmation' | 'completed' | 'failed';
     status_label: string;
     total_records: number;
     imported_records: number;
@@ -60,7 +60,25 @@ export type CardStatementImportHistoryItem = {
     created_at: string | null;
 };
 
-export type UnifiedImportKind = 'statement' | 'invoice';
+export type UnifiedImportKind = 'statement' | 'invoice' | 'document';
+
+export type FinancialDocumentDetection = {
+    document_type:
+        | 'bank_statement'
+        | 'payment_account_statement'
+        | 'credit_card_statement'
+        | 'proof'
+        | 'unknown';
+    institution: string | null;
+    confidence: number;
+    format: string;
+    parser_key: string | null;
+    identifier_type: string | null;
+    identifier_value: string | null;
+    reference_month: string | null;
+    metadata: Record<string, unknown>;
+    confirmed_by_user?: boolean;
+};
 
 export type PdfLayoutOption = {
     value: string;
@@ -90,7 +108,7 @@ export type UnifiedImportHistoryItem = {
     kind_label: string;
     source_filename: string;
     target_name: string | null;
-    status: 'processing' | 'completed' | 'failed';
+    status: 'processing' | 'needs_confirmation' | 'completed' | 'failed';
     status_label: string;
     total_records: number;
     imported_records: number;
@@ -102,6 +120,8 @@ export type UnifiedImportHistoryItem = {
     reference_month: string | null;
     source_format: string | null;
     processing_summary: FinancialImportProcessingSummary | null;
+    autodetection: FinancialDocumentDetection | null;
+    missing_fields: string[];
     error_message: string | null;
     created_at: string | null;
 };

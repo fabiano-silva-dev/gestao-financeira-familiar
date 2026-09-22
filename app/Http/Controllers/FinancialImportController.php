@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\FinancialImportStatus;
 use App\Enums\FinancialImportType;
+use App\Http\Requests\ResolveFinancialImportRequest;
 use App\Http\Requests\StoreFinancialImportRequest;
 use App\Models\BankStatementEntry;
 use App\Models\CardStatementEntry;
@@ -12,8 +13,7 @@ use App\Models\FinancialAccount;
 use App\Models\FinancialImport;
 use App\Models\User;
 use App\Models\Workspace;
-use App\Services\Imports\CardStatementImportService;
-use App\Services\Imports\OfxImportService;
+use App\Services\Imports\FinancialDocumentImportService;
 use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
 use Illuminate\Http\RedirectResponse;
@@ -25,8 +25,7 @@ class FinancialImportController extends Controller
 {
     public function __construct(
         private readonly CurrentWorkspace $currentWorkspace,
-        private readonly OfxImportService $ofxImportService,
-        private readonly CardStatementImportService $cardStatementImportService,
+        private readonly FinancialDocumentImportService $documentImportService,
     ) {}
 
     public function index(Request $request): Response
@@ -52,6 +51,8 @@ class FinancialImportController extends Controller
             $importQuery->where('type', FinancialImportType::Ofx);
         } elseif ($kind === 'invoice') {
             $importQuery->where('type', FinancialImportType::CardStatement);
+        } elseif ($kind === 'document') {
+            $importQuery->where('type', FinancialImportType::Document);
         }
 
         $importStatus = $listing->filter('status');
@@ -91,6 +92,9 @@ class FinancialImportController extends Controller
             $bankQuery->whereRaw('1 = 0');
         } elseif ($kind === 'statement') {
             $cardQuery->whereRaw('1 = 0');
+        } elseif ($kind === 'document') {
+            $bankQuery->whereRaw('1 = 0');
+            $cardQuery->whereRaw('1 = 0');
         }
 
         $entryStatus = $listing->filter('status');
@@ -101,7 +105,7 @@ class FinancialImportController extends Controller
         } elseif ($entryStatus === 'processing') {
             $bankQuery->where('is_reconciled', false);
             $cardQuery->where('is_reconciled', false);
-        } elseif ($entryStatus === 'failed') {
+        } elseif (in_array($entryStatus, ['failed', 'needs_confirmation'], true)) {
             $bankQuery->whereRaw('1 = 0');
             $cardQuery->whereRaw('1 = 0');
         }
@@ -174,6 +178,9 @@ class FinancialImportController extends Controller
                 ->count()
                 + $workspace->cardStatementEntries()
                     ->where('is_reconciled', false)
+                    ->count()
+                + $workspace->financialImports()
+                    ->where('status', FinancialImportStatus::NeedsConfirmation->value)
                     ->count(),
             'defaultReferenceMonth' => now()->format('Y-m'),
             'filters' => $listing->toArray(),
@@ -183,6 +190,7 @@ class FinancialImportController extends Controller
             'kindOptions' => [
                 ['value' => 'statement', 'label' => 'Extrato'],
                 ['value' => 'invoice', 'label' => 'Fatura'],
+                ['value' => 'document', 'label' => 'Documento pendente'],
             ],
             'statusOptions' => FinancialImportStatus::options(),
         ]);
@@ -193,43 +201,57 @@ class FinancialImportController extends Controller
         $workspace = $this->workspace();
         $user = $request->user();
         abort_unless($user instanceof User, 403);
+        $files = $request->file('files', []);
+        $processed = 0;
+        $pending = 0;
+        $duplicates = 0;
 
-        if ($request->string('kind')->toString() === 'invoice') {
-            $card = $workspace->creditCards()
-                ->findOrFail($request->integer('credit_card_id'));
-            $result = $this->cardStatementImportService->import(
-                $workspace,
-                $card,
-                $user,
-                $request->file('file'),
-                $request->string('reference_month')->toString(),
-                $request->string('amount_sign')->toString(),
-                $this->optionalPdfLayout($request->input('pdf_layout')),
-            );
-            $message = sprintf(
-                'Fatura processada: %d nova(s) e %d duplicada(s) ignorada(s).',
-                $result->import->imported_records,
-                $result->import->duplicate_records,
-            );
-        } else {
-            $account = $workspace->financialAccounts()
-                ->findOrFail($request->integer('financial_account_id'));
-            $result = $this->ofxImportService->import(
-                $workspace,
-                $account,
-                $user,
-                $request->file('file'),
-            );
-            $message = sprintf(
-                'Extrato processado: %d novo(s) e %d duplicado(s) ignorado(s).',
-                $result->import->imported_records,
-                $result->import->duplicate_records,
-            );
+        foreach (is_array($files) ? $files : [$files] as $file) {
+            if (! $file instanceof \Illuminate\Http\UploadedFile) {
+                continue;
+            }
+
+            $outcome = $this->documentImportService->import($workspace, $user, $file);
+
+            match ($outcome['status']) {
+                'processed' => $processed++,
+                'duplicate' => $duplicates++,
+                default => $pending++,
+            };
         }
 
         Inertia::flash('toast', [
+            'type' => $pending > 0 ? 'warning' : 'success',
+            'message' => sprintf(
+                '%d arquivo(s) processado(s), %d aguardando confirmação e %d duplicado(s) ignorado(s).',
+                $processed,
+                $pending,
+                $duplicates,
+            ),
+        ]);
+
+        return to_route('imports.index');
+    }
+
+    public function resolve(
+        ResolveFinancialImportRequest $request,
+        int $import,
+    ): RedirectResponse {
+        $workspace = $this->workspace();
+        $pending = $workspace->financialImports()->findOrFail($import);
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+
+        $this->documentImportService->resolvePending(
+            $workspace,
+            $pending,
+            $user,
+            $request->validated(),
+        );
+
+        Inertia::flash('toast', [
             'type' => 'success',
-            'message' => $message,
+            'message' => 'Documento identificado, importado e processado.',
         ]);
 
         return to_route('imports.index');
@@ -243,25 +265,26 @@ class FinancialImportController extends Controller
         return $workspace;
     }
 
-    private function optionalPdfLayout(mixed $value): ?string
-    {
-        return is_string($value) && $value !== '' ? $value : null;
-    }
-
     /** @return array<string, mixed> */
     private function importData(FinancialImport $import): array
     {
         $isInvoice = $import->type === FinancialImportType::CardStatement;
+        $isDocument = $import->type === FinancialImportType::Document;
         $metadata = $import->metadata ?? [];
+        $detection = is_array($metadata['autodetection'] ?? null)
+            ? $metadata['autodetection']
+            : null;
 
         return [
             'id' => $import->id,
-            'kind' => $isInvoice ? 'invoice' : 'statement',
+            'kind' => $isDocument ? 'document' : ($isInvoice ? 'invoice' : 'statement'),
             'kind_label' => $import->type->label(),
             'source_filename' => $import->source_filename,
-            'target_name' => $isInvoice
-                ? "{$import->creditCard?->name} · final {$import->creditCard?->last_four}"
-                : $import->financialAccount?->name,
+            'target_name' => $isDocument
+                ? $this->detectionTargetName($detection)
+                : ($isInvoice
+                    ? "{$import->creditCard?->name} · final {$import->creditCard?->last_four}"
+                    : $import->financialAccount?->name),
             'status' => $import->status->value,
             'status_label' => $import->status->label(),
             'total_records' => $import->total_records,
@@ -276,9 +299,34 @@ class FinancialImportController extends Controller
             'processing_summary' => is_array($metadata['processing_summary'] ?? null)
                 ? $metadata['processing_summary']
                 : null,
+            'autodetection' => $detection,
+            'missing_fields' => is_array($metadata['missing_fields'] ?? null)
+                ? $metadata['missing_fields']
+                : [],
             'error_message' => $import->error_message,
             'created_at' => $import->created_at?->toIso8601String(),
         ];
+    }
+
+    /** @param array<string, mixed>|null $detection */
+    private function detectionTargetName(?array $detection): string
+    {
+        if ($detection === null) {
+            return 'Identificação pendente';
+        }
+
+        $institution = is_string($detection['institution'] ?? null)
+            ? str_replace('_', ' ', $detection['institution'])
+            : 'instituição não identificada';
+        $type = match ($detection['document_type'] ?? null) {
+            'bank_statement' => 'extrato bancário',
+            'payment_account_statement' => 'extrato de conta de pagamento',
+            'credit_card_statement' => 'fatura de cartão',
+            'proof' => 'comprovante',
+            default => 'tipo não identificado',
+        };
+
+        return ucfirst($institution).' · '.$type;
     }
 
     /** @return array<string, mixed> */

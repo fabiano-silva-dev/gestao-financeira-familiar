@@ -1,0 +1,151 @@
+<?php
+
+namespace App\Services\Imports\Detection;
+
+use App\Services\Imports\BankStatementParseException;
+use App\Services\Imports\PdfTextExtractor;
+use DateTimeImmutable;
+
+final class PdfDocumentDetector implements FinancialDocumentDetector
+{
+    public function __construct(
+        private readonly PdfTextExtractor $textExtractor,
+        private readonly InstitutionMatcher $institutions,
+    ) {}
+
+    public function supports(string $extension, ?string $mimeType): bool
+    {
+        return $extension === 'pdf' || $mimeType === 'application/pdf';
+    }
+
+    public function detect(
+        string $contents,
+        string $filename,
+        string $extension,
+        ?string $mimeType,
+    ): ?FinancialDocumentDetection {
+        try {
+            $text = $this->textExtractor->extract($contents);
+        } catch (BankStatementParseException) {
+            return new FinancialDocumentDetection(
+                documentType: 'unknown',
+                institution: $this->institutions->detect($filename),
+                confidence: 0.2,
+                format: 'pdf',
+            );
+        }
+
+        $normalized = mb_strtoupper($this->ascii($text));
+        $institution = $this->institutions->detect($text.' '.$filename);
+
+        if (
+            str_contains($normalized, 'BANRISUL')
+            && str_contains($normalized, 'MOVIMENTOS DA CONTA CORRENTE')
+        ) {
+            $account = null;
+
+            if (preg_match('/CONTA\.{2,}:\s*([\d.\-]+)/i', $text, $match) === 1) {
+                $account = preg_replace('/\D/', '', $match[1]) ?: null;
+            }
+
+            return new FinancialDocumentDetection(
+                documentType: 'bank_statement',
+                institution: 'banrisul',
+                confidence: 0.99,
+                format: 'pdf',
+                parserKey: 'banrisul_current_account',
+                identifierType: $account !== null ? 'account_number' : null,
+                identifierValue: $account,
+            );
+        }
+
+        if (
+            str_contains($normalized, 'MERCADO PAGO')
+            && (
+                str_contains($normalized, 'DETALHES DE CONSUMO')
+                || str_contains($normalized, 'MOVIMENTACOES NA FATURA')
+            )
+        ) {
+            $lastFour = null;
+
+            if (preg_match('/\[\*+(\d{4})\]/u', $text, $match) === 1) {
+                $lastFour = $match[1];
+            }
+
+            return new FinancialDocumentDetection(
+                documentType: 'credit_card_statement',
+                institution: 'mercado_pago',
+                confidence: 0.99,
+                format: 'pdf',
+                parserKey: 'mercado_pago_credit_card',
+                identifierType: $lastFour !== null ? 'card_last_four' : null,
+                identifierValue: $lastFour,
+                referenceMonth: $this->referenceMonth($text),
+            );
+        }
+
+        if (str_contains($normalized, 'COMPROVANTE')) {
+            return new FinancialDocumentDetection(
+                documentType: 'proof',
+                institution: $institution,
+                confidence: $institution !== null ? 0.88 : 0.72,
+                format: 'pdf',
+            );
+        }
+
+        if (str_contains($normalized, 'FATURA')) {
+            return new FinancialDocumentDetection(
+                documentType: 'credit_card_statement',
+                institution: $institution,
+                confidence: 0.68,
+                format: 'pdf',
+            );
+        }
+
+        if (
+            str_contains($normalized, 'EXTRATO')
+            || str_contains($normalized, 'MOVIMENTOS DA CONTA')
+        ) {
+            return new FinancialDocumentDetection(
+                documentType: 'bank_statement',
+                institution: $institution,
+                confidence: 0.68,
+                format: 'pdf',
+            );
+        }
+
+        return new FinancialDocumentDetection(
+            documentType: 'unknown',
+            institution: $institution,
+            confidence: $institution !== null ? 0.55 : 0.2,
+            format: 'pdf',
+        );
+    }
+
+    private function referenceMonth(string $text): ?string
+    {
+        foreach ([
+            '/Vencimento:\s*(\d{2}\/\d{2}\/\d{4})/i',
+            '/Vence em\s+(\d{2}\/\d{2}\/\d{4})/i',
+        ] as $pattern) {
+            if (preg_match($pattern, $text, $match) !== 1) {
+                continue;
+            }
+
+            $date = DateTimeImmutable::createFromFormat('!d/m/Y', $match[1]);
+
+            if ($date instanceof DateTimeImmutable) {
+                return $date->format('Y-m');
+            }
+        }
+
+        return null;
+    }
+
+    private function ascii(string $value): string
+    {
+        $converted = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
+
+        return is_string($converted) ? $converted : $value;
+    }
+}

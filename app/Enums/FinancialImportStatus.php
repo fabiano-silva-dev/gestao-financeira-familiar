@@ -5,6 +5,7 @@ namespace App\Enums;
 enum FinancialImportStatus: string
 {
     case Processing = 'processing';
+    case NeedsConfirmation = 'needs_confirmation';
     case Completed = 'completed';
     case Failed = 'failed';
 
@@ -12,6 +13,7 @@ enum FinancialImportStatus: string
     {
         return match ($this) {
             self::Processing => 'Processando',
+            self::NeedsConfirmation => 'Aguardando confirmação',
             self::Completed => 'Concluída',
             self::Failed => 'Falhou',
         };

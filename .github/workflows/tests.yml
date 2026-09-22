@@ -61,6 +61,7 @@ jobs:
 
       - name: Run financial feature tests
         run: |
+          php artisan test tests/Feature/FinancialImportAutoDetectionTest.php
           php artisan test tests/Feature/OfxImportTest.php
           php artisan test tests/Feature/CardStatementImportTest.php
           php artisan test tests/Feature/CreditCardInvoicePaymentReconciliationTest.php
@@ -68,6 +69,9 @@ jobs:
           php artisan test tests/Feature/CreditCardInvoiceTest.php
           php artisan test tests/Feature/FinancialRecurrenceTest.php
           php artisan test tests/Feature/DashboardTest.php
+
+      - name: Run frontend type check
+        run: npm run types:check
 
       - name: Run CI Checks
         run: composer ci:check

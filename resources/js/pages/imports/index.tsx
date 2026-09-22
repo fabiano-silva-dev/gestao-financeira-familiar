@@ -2,15 +2,13 @@ import { Form, Head, Link } from '@inertiajs/react';
 import {
     ArrowDownCircle,
     ArrowUpCircle,
-    CreditCard,
     FileUp,
     History,
-    Landmark,
     ListChecks,
     ShieldCheck,
     Upload,
 } from 'lucide-react';
-import { useState, type ChangeEvent } from 'react';
+import { useMemo, useState, type ChangeEvent } from 'react';
 import InputError from '@/components/input-error';
 import { ListingEmpty } from '@/components/listing/listing-empty';
 import { ListingToolbar } from '@/components/listing/listing-toolbar';
@@ -35,17 +33,13 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { sortListing } from '@/lib/listing';
-import { create as createAccount } from '@/routes/accounts';
-import { create as createCard } from '@/routes/credit-cards';
 import { index, store } from '@/routes/imports';
 import { index as reconciliationIndex } from '@/routes/reconciliation';
 import type {
     CardStatementCardOption,
     FinancialImportAccountOption,
-    PdfLayoutOption,
     UnifiedImportEntry,
     UnifiedImportHistoryItem,
-    UnifiedImportKind,
     ListingFilterOption,
     ListingQueryState,
 } from '@/types';
@@ -53,7 +47,6 @@ import type {
 type Props = {
     accountOptions: FinancialImportAccountOption[];
     cardOptions: CardStatementCardOption[];
-    pdfLayouts: PdfLayoutOption[];
     imports: UnifiedImportHistoryItem[];
     entries: UnifiedImportEntry[];
     pendingEntriesCount: number;
@@ -88,49 +81,186 @@ function formatDate(value: string) {
     return date.format(new Date(`${value}T00:00:00Z`));
 }
 
-function formatLabel(extension: string) {
-    if (['ofx', 'qfx'].includes(extension)) {
-        return 'OFX';
-    }
+function PendingImportResolver({
+    item,
+    accountOptions,
+    cardOptions,
+    defaultReferenceMonth,
+}: {
+    item: UnifiedImportHistoryItem;
+    accountOptions: FinancialImportAccountOption[];
+    cardOptions: CardStatementCardOption[];
+    defaultReferenceMonth: string;
+}) {
+    const detectedType = item.autodetection?.document_type;
+    const initialType =
+        detectedType === 'bank_statement' ||
+        detectedType === 'payment_account_statement'
+            ? 'bank_statement'
+            : detectedType === 'credit_card_statement'
+              ? 'credit_card_statement'
+              : '';
+    const [documentType, setDocumentType] = useState(initialType);
+    const needsTypeChoice = initialType === '';
+    const isInvoice = documentType === 'credit_card_statement';
+    const parserMissing = item.missing_fields.includes('parser');
+    const confidence = Math.round((item.autodetection?.confidence ?? 0) * 100);
+    const institution = item.autodetection?.institution
+        ? item.autodetection.institution.replaceAll('_', ' ')
+        : 'não identificada';
+    const detectedReference = item.autodetection?.reference_month;
 
-    if (extension === 'csv') {
-        return 'CSV';
-    }
+    return (
+        <div className="rounded-lg border p-4">
+            <div className="mb-4 flex flex-col gap-1">
+                <p className="font-medium">{item.source_filename}</p>
+                <p className="text-muted-foreground text-sm">
+                    Instituição: {institution} · confiança {confidence}%
+                </p>
+            </div>
 
-    if (extension === 'pdf') {
-        return 'PDF';
-    }
+            {parserMissing && !needsTypeChoice && (
+                <Alert className="mb-4">
+                    <ShieldCheck />
+                    <AlertTitle>Layout preservado para revisão</AlertTitle>
+                    <AlertDescription>
+                        O tipo foi identificado, mas ainda não existe parser
+                        determinístico seguro para este layout.
+                    </AlertDescription>
+                </Alert>
+            )}
 
-    if (['xls', 'xlsx'].includes(extension)) {
-        return 'Planilha';
-    }
+            <Form
+                action={`/importacoes/${item.id}/resolver`}
+                method="post"
+                options={{ preserveScroll: true }}
+                className="grid gap-4 md:grid-cols-2"
+            >
+                {({ processing, errors }) => (
+                    <>
+                        {needsTypeChoice ? (
+                            <div className="grid gap-2 md:col-span-2">
+                                <Label>Tipo do documento</Label>
+                                <Select
+                                    value={documentType}
+                                    onValueChange={setDocumentType}
+                                >
+                                    <SelectTrigger className="w-full">
+                                        <SelectValue placeholder="Selecione o tipo" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="bank_statement">
+                                            Extrato bancário
+                                        </SelectItem>
+                                        <SelectItem value="credit_card_statement">
+                                            Fatura de cartão
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <InputError message={errors.document_type} />
+                            </div>
+                        ) : (
+                            <input
+                                type="hidden"
+                                name="document_type"
+                                value={documentType}
+                            />
+                        )}
 
-    return extension.toUpperCase();
-}
+                        {needsTypeChoice && documentType !== '' && (
+                            <input
+                                type="hidden"
+                                name="document_type"
+                                value={documentType}
+                            />
+                        )}
 
-function inferKind(extension: string): UnifiedImportKind | '' {
-    if (['ofx', 'qfx'].includes(extension)) {
-        return 'statement';
-    }
+                        {documentType !== '' && !isInvoice && (
+                            <div className="grid gap-2 md:col-span-2">
+                                <Label>Conta deste extrato</Label>
+                                <Select name="financial_account_id" required>
+                                    <SelectTrigger className="w-full">
+                                        <SelectValue placeholder="Selecione a conta" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {accountOptions.map((account) => (
+                                            <SelectItem
+                                                key={account.id}
+                                                value={String(account.id)}
+                                            >
+                                                {account.name}
+                                                {account.institution
+                                                    ? ` · ${account.institution}`
+                                                    : ''}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <InputError message={errors.financial_account_id} />
+                            </div>
+                        )}
 
-    if (['xls', 'xlsx'].includes(extension)) {
-        return 'invoice';
-    }
+                        {isInvoice && (
+                            <>
+                                <div className="grid gap-2">
+                                    <Label>Cartão desta fatura</Label>
+                                    <Select name="credit_card_id" required>
+                                        <SelectTrigger className="w-full">
+                                            <SelectValue placeholder="Selecione o cartão" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {cardOptions.map((card) => (
+                                                <SelectItem
+                                                    key={card.id}
+                                                    value={String(card.id)}
+                                                >
+                                                    {card.name} · final {card.last_four}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <InputError message={errors.credit_card_id} />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label>Mês de vencimento</Label>
+                                    <Input
+                                        name="reference_month"
+                                        type="month"
+                                        defaultValue={
+                                            detectedReference ??
+                                            defaultReferenceMonth
+                                        }
+                                        required
+                                    />
+                                    <InputError message={errors.reference_month} />
+                                </div>
+                            </>
+                        )}
 
-    return '';
-}
-
-function kindFromPdfLayout(
-    layouts: PdfLayoutOption[],
-    layoutValue: string,
-): UnifiedImportKind | '' {
-    return layouts.find((layout) => layout.value === layoutValue)?.kind ?? '';
+                        <div className="md:col-span-2">
+                            <Button
+                                disabled={
+                                    processing ||
+                                    documentType === '' ||
+                                    parserMissing
+                                }
+                            >
+                                <ShieldCheck />
+                                {processing
+                                    ? 'Continuando processamento…'
+                                    : 'Confirmar e processar'}
+                            </Button>
+                        </div>
+                    </>
+                )}
+            </Form>
+        </div>
+    );
 }
 
 export default function ImportsIndex({
     accountOptions,
     cardOptions,
-    pdfLayouts,
     imports,
     entries,
     pendingEntriesCount,
@@ -148,38 +278,16 @@ export default function ImportsIndex({
             column,
             column === 'amount' || column === 'date' ? 'desc' : 'asc',
         );
-    const defaultAccount = accountOptions.find((account) => account.is_active);
-    const defaultCard = cardOptions.find((card) => card.is_active);
-    const [fileName, setFileName] = useState('');
-    const [extension, setExtension] = useState('');
-    const [kind, setKind] = useState<UnifiedImportKind | ''>('');
-    const [pdfLayout, setPdfLayout] = useState(
-        pdfLayouts[0]?.value ?? 'banrisul_current_account',
+    const [fileNames, setFileNames] = useState<string[]>([]);
+    const canSubmit = fileNames.length > 0;
+    const pendingImports = useMemo(
+        () => imports.filter((item) => item.status === 'needs_confirmation'),
+        [imports],
     );
-    const needsKindChoice = extension === 'csv';
-    const needsPdfLayout = extension === 'pdf';
-    const canSubmit = fileName !== '' && kind !== '';
 
     const onFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-
-        if (!file) {
-            setFileName('');
-            setExtension('');
-            setKind('');
-
-            return;
-        }
-
-        const nextExtension = (
-            file.name.split('.').pop() ?? ''
-        ).toLowerCase();
-        setFileName(file.name);
-        setExtension(nextExtension);
-        setKind(
-            nextExtension === 'pdf'
-                ? kindFromPdfLayout(pdfLayouts, pdfLayout)
-                : inferKind(nextExtension),
+        setFileNames(
+            Array.from(event.target.files ?? []).map((file) => file.name),
         );
     };
 
@@ -197,16 +305,16 @@ export default function ImportsIndex({
                             Importações
                         </h1>
                         <p className="text-muted-foreground mt-1 text-sm">
-                            Envie o arquivo primeiro. O formato sai da
-                            extensão; o PDF pede o layout da instituição.
-                            Depois, tudo segue para a conciliação.
+                            Arraste os arquivos. O sistema identifica formato,
+                            instituição e tipo do documento, resolve a conta ou
+                            cartão e processa automaticamente o que for seguro.
                         </p>
                     </div>
 
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                         <div className="rounded-lg border px-4 py-3">
                             <p className="text-muted-foreground text-xs uppercase">
-                                Aguardando conciliação
+                                Exceções pendentes
                             </p>
                             <p className="text-xl font-semibold tabular-nums">
                                 {pendingEntriesCount}
@@ -239,18 +347,11 @@ export default function ImportsIndex({
                                 method="post"
                                 options={{ preserveScroll: true }}
                                 resetOnSuccess
-                                onSuccess={() => {
-                                    setFileName('');
-                                    setExtension('');
-                                    setKind('');
-                                }}
+                                onSuccess={() => setFileNames([])}
                                 className="space-y-6"
                             >
                                 {({ processing, errors }) => (
                                     <>
-                                        {kind !== '' && (
-                                            <input type="hidden" name="kind" value={kind} />
-                                        )}
                                         <div className="grid gap-2">
                                             <Label htmlFor="file">
                                                 Arquivo
@@ -261,8 +362,9 @@ export default function ImportsIndex({
                                             >
                                                 <Upload className="text-muted-foreground mb-2 size-6" />
                                                 <span className="font-medium">
-                                                    {fileName ||
-                                                        'Solte o arquivo ou clique para escolher'}
+                                                    {fileNames.length > 0
+                                                        ? `${fileNames.length} arquivo(s) selecionado(s)`
+                                                        : 'Solte os arquivos ou clique para escolher'}
                                                 </span>
                                                 <span className="text-muted-foreground mt-1 text-xs">
                                                     OFX, QFX, CSV, PDF, XLS ou
@@ -271,117 +373,24 @@ export default function ImportsIndex({
                                             </label>
                                             <Input
                                                 id="file"
-                                                name="file"
+                                                name="files[]"
                                                 type="file"
+                                                multiple
                                                 accept=".ofx,.qfx,.csv,.pdf,.xls,.xlsx,application/x-ofx,text/csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                                                 className="sr-only"
                                                 required
                                                 onChange={onFileChange}
                                             />
-                                            {extension !== '' && (
+                                            {fileNames.length > 0 && (
                                                 <p className="text-muted-foreground text-xs">
-                                                    Formato identificado:{' '}
-                                                    <span className="text-foreground font-medium">
-                                                        {formatLabel(
-                                                            extension,
-                                                        )}
-                                                    </span>
+                                                    {fileNames.join(' · ')}
                                                 </p>
                                             )}
-                                            <InputError message={errors.file} />
+                                            <InputError message={errors.files} />
+                                            <InputError message={errors['files.0']} />
                                         </div>
 
-                                        {needsKindChoice && (
-                                            <div className="grid gap-2">
-                                                <Label htmlFor="kind">
-                                                    O que este arquivo é?
-                                                </Label>
-                                                <Select
-                                                    value={kind}
-                                                    onValueChange={(value) =>
-                                                        setKind(
-                                                            value as UnifiedImportKind,
-                                                        )
-                                                    }
-                                                    required
-                                                >
-                                                    <SelectTrigger
-                                                        id="kind"
-                                                        className="w-full"
-                                                    >
-                                                        <SelectValue placeholder="Extrato ou fatura" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="statement">
-                                                            Extrato bancário
-                                                        </SelectItem>
-                                                        <SelectItem value="invoice">
-                                                            Fatura de cartão
-                                                        </SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                        )}
-
-                                        {needsPdfLayout && (
-                                            <div className="grid gap-2">
-                                                <Label htmlFor="pdf_layout">
-                                                    Layout do PDF
-                                                </Label>
-                                                <Select
-                                                    name="pdf_layout"
-                                                    value={pdfLayout}
-                                                    onValueChange={(value) => {
-                                                        setPdfLayout(value);
-                                                        setKind(
-                                                            kindFromPdfLayout(
-                                                                pdfLayouts,
-                                                                value,
-                                                            ),
-                                                        );
-                                                    }}
-                                                    required
-                                                >
-                                                    <SelectTrigger
-                                                        id="pdf_layout"
-                                                        className="w-full"
-                                                    >
-                                                        <SelectValue placeholder="Selecione a instituição e o layout" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {pdfLayouts.map(
-                                                            (layout) => (
-                                                                <SelectItem
-                                                                    key={
-                                                                        layout.value
-                                                                    }
-                                                                    value={
-                                                                        layout.value
-                                                                    }
-                                                                >
-                                                                    {
-                                                                        layout.label
-                                                                    }
-                                                                </SelectItem>
-                                                            ),
-                                                        )}
-                                                    </SelectContent>
-                                                </Select>
-                                                <InputError
-                                                    message={errors.pdf_layout}
-                                                />
-                                            </div>
-                                        )}
-
-                                        {kind === 'statement' &&
-                                            (accountOptions.length === 0 ? (
-                                                <div className="flex flex-col items-center gap-4 rounded-lg border border-dashed p-6 text-center">
-                                                    <Landmark className="text-muted-foreground size-8" />
-                                                    <p className="font-medium">
-                                                        Cadastre uma conta
-                                                        primeiro
-                                                    </p>
-                                                    <Button asChild>
+                                        <Button asChild>
                                                         <Link
                                                             href={createAccount()}
                                                         >
@@ -590,7 +599,7 @@ export default function ImportsIndex({
                                     estabelecimento é reconhecido e concilia
                                     com parcelas já existentes. Pagamento da
                                     fatura não vira despesa. O extrato bancário
-                                    continua pendente até a conciliação.
+                                    também é processado e conciliado automaticamente quando a correspondência for segura.
                                 </p>
                             </AlertDescription>
                         </Alert>
@@ -599,15 +608,37 @@ export default function ImportsIndex({
                             <AlertTitle>Sem pergunta extra</AlertTitle>
                             <AlertDescription>
                                 <p>
-                                    OFX e CSV já dizem o formato. No PDF,
-                                    escolha o layout: Banrisul para extrato
-                                    de conta corrente ou Mercado Pago para
-                                    fatura de cartão.
+                                    OFX, CSV, planilhas e PDFs passam primeiro
+                                    pela autodetecção. Quando houver ambiguidade,
+                                    você confirma somente a informação que faltou.
                                 </p>
                             </AlertDescription>
                         </Alert>
                     </div>
                 </div>
+
+                {pendingImports.length > 0 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Documentos para confirmar</CardTitle>
+                            <CardDescription>
+                                O arquivo já foi inspecionado. Complete somente
+                                o vínculo que não pôde ser determinado com segurança.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {pendingImports.map((item) => (
+                                <PendingImportResolver
+                                    key={item.id}
+                                    item={item}
+                                    accountOptions={accountOptions}
+                                    cardOptions={cardOptions}
+                                    defaultReferenceMonth={defaultReferenceMonth}
+                                />
+                            ))}
+                        </CardContent>
+                    </Card>
+                )}
 
                 {hasRecords && (
                     <ListingToolbar
