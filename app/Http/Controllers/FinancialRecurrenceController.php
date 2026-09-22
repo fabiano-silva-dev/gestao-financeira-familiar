@@ -13,9 +13,12 @@ use App\Models\FinancialAccount;
 use App\Models\FinancialRecurrence;
 use App\Models\Workspace;
 use App\Services\Finance\FinancialRecurrenceService;
+use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -26,10 +29,17 @@ class FinancialRecurrenceController extends Controller
         private readonly FinancialRecurrenceService $recurrenceService,
     ) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $workspace = $this->workspace();
-        $recurrences = $workspace->financialRecurrences()
+        $listing = ListingQuery::from(
+            $request,
+            ['description', 'frequency', 'next', 'category', 'amount', 'status'],
+            'status',
+            'desc',
+            ['type', 'status', 'frequency'],
+        );
+        $query = $workspace->financialRecurrences()
             ->with([
                 'account:id,name',
                 'creditCard:id,name,last_four',
@@ -38,10 +48,55 @@ class FinancialRecurrenceController extends Controller
                 'familyMember:id,name',
             ])
             ->withCount('transactions')
-            ->orderByDesc('is_active')
-            ->orderBy('description')
+            ->select('financial_recurrences.*');
+        $listing->applySearch($query, ['description', 'payee_name']);
+
+        $type = $listing->filter('type');
+
+        if ($type !== null && FinancialTransactionType::tryFrom($type) !== null) {
+            $query->where('type', $type);
+        }
+
+        $active = $listing->booleanFilter('status');
+
+        if ($active !== null) {
+            $query->where('is_active', $active);
+        }
+
+        $frequency = $listing->filter('frequency');
+
+        if ($frequency !== null && RecurrenceFrequency::tryFrom($frequency) !== null) {
+            $query->where('frequency', $frequency);
+        }
+
+        if ($listing->sort === 'status') {
+            $query->orderBy('is_active', $listing->direction)->orderBy('description');
+        } else {
+            $listing->applySort($query, [
+                'description' => 'description',
+                'frequency' => 'frequency',
+                'category' => function (Builder $query, string $direction): void {
+                    $query->leftJoin(
+                        'categories',
+                        'categories.id',
+                        '=',
+                        'financial_recurrences.category_id',
+                    )->orderBy('categories.name', $direction);
+                },
+                'amount' => 'amount',
+                'status' => 'is_active',
+            ], 'financial_recurrences.id');
+        }
+
+        $recurrences = $query
             ->get()
             ->map(fn (FinancialRecurrence $recurrence): array => $this->recurrenceData($recurrence));
+
+        if ($listing->sort === 'next') {
+            $recurrences = $listing->sortMapped($recurrences, [
+                'next' => fn (array $recurrence): string => $recurrence['next_occurrence'] ?? '',
+            ]);
+        }
 
         return Inertia::render('recurrences/index', [
             'recurrences' => $recurrences,
@@ -49,6 +104,20 @@ class FinancialRecurrenceController extends Controller
                 $workspace,
                 CarbonImmutable::today(),
             ),
+            'filters' => $listing->toArray(),
+            'hasRecords' => $workspace->financialRecurrences()->exists(),
+            'typeOptions' => [
+                [
+                    'value' => FinancialTransactionType::Expense->value,
+                    'label' => FinancialTransactionType::Expense->label(),
+                ],
+                [
+                    'value' => FinancialTransactionType::Income->value,
+                    'label' => FinancialTransactionType::Income->label(),
+                ],
+            ],
+            'statusOptions' => ListingQuery::statusOptions(),
+            'frequencyOptions' => RecurrenceFrequency::options(),
         ]);
     }
 

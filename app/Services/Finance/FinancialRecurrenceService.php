@@ -26,6 +26,7 @@ class FinancialRecurrenceService
     public function create(Workspace $workspace, array $data): FinancialRecurrence
     {
         return DB::transaction(function () use ($workspace, $data): FinancialRecurrence {
+            [$data, $alreadySettled] = $this->extractSettlementFlag($data);
             $today = CarbonImmutable::today();
             $startsOn = CarbonImmutable::parse((string) $data['starts_on']);
             $recurrence = $workspace->financialRecurrences()->create([
@@ -36,9 +37,11 @@ class FinancialRecurrenceService
                 'is_active' => true,
             ]);
 
+            $this->prepareCurrentDueGeneration($recurrence, $alreadySettled, $today);
             $this->generate(
-                $recurrence,
+                $recurrence->refresh(),
                 $today->addDays(self::GENERATION_HORIZON_DAYS),
+                $alreadySettled,
             );
 
             return $recurrence->refresh();
@@ -53,6 +56,7 @@ class FinancialRecurrenceService
         array $data,
     ): FinancialRecurrence {
         return DB::transaction(function () use ($recurrence, $data): FinancialRecurrence {
+            [$data, $alreadySettled] = $this->extractSettlementFlag($data);
             $this->clearFuturePlannedOccurrences($recurrence);
 
             $today = CarbonImmutable::today();
@@ -66,9 +70,19 @@ class FinancialRecurrenceService
             ]);
 
             if ($recurrence->is_active) {
+                $this->prepareCurrentDueGeneration(
+                    $recurrence->refresh(),
+                    $alreadySettled,
+                    $today,
+                );
                 $this->generate(
                     $recurrence->refresh(),
                     $today->addDays(self::GENERATION_HORIZON_DAYS),
+                    $alreadySettled,
+                );
+                $this->settleCurrentDueOccurrence(
+                    $recurrence->refresh(),
+                    $alreadySettled,
                 );
             }
 
@@ -126,9 +140,30 @@ class FinancialRecurrenceService
         return $generated;
     }
 
+    public function generateForWorkspace(
+        Workspace $workspace,
+        ?CarbonImmutable $through = null,
+    ): int {
+        $through ??= CarbonImmutable::today()->addDays(self::GENERATION_HORIZON_DAYS);
+        $generated = 0;
+
+        $workspace->financialRecurrences()
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->each(function (FinancialRecurrence $recurrence) use (
+                $through,
+                &$generated,
+            ): void {
+                $generated += $this->generate($recurrence, $through);
+            });
+
+        return $generated;
+    }
+
     public function generate(
         FinancialRecurrence $recurrence,
         CarbonImmutable $through,
+        bool $settleCurrentDue = false,
     ): int {
         if (! $recurrence->is_active) {
             return 0;
@@ -140,6 +175,9 @@ class FinancialRecurrenceService
         $generated = 0;
         $workspace = $recurrence->workspace()->firstOrFail();
         $today = CarbonImmutable::today();
+        $currentDue = $settleCurrentDue
+            ? $this->currentDueOccurrence($recurrence, $today)
+            : null;
 
         foreach ($this->occurrencesBetween($recurrence, $generationStart, $through) as $occurrence) {
             $occurrenceDate = $occurrence->toDateString();
@@ -157,6 +195,10 @@ class FinancialRecurrenceService
             if ($exists) {
                 continue;
             }
+
+            $shouldSettle = $currentDue !== null
+                && ! $usesCreditCard
+                && $occurrence->equalTo($currentDue);
 
             $this->entryService->create(
                 $workspace,
@@ -178,8 +220,10 @@ class FinancialRecurrenceService
                     'payee_name' => $recurrence->payee_name,
                     'payment_instructions' => $recurrence->payment_instructions,
                     'due_date' => $usesCreditCard ? null : $occurrenceDate,
-                    'settled_on' => null,
-                    'status' => $usesCreditCard
+                    'settled_on' => $shouldSettle
+                        ? $this->settledOnForOccurrence($occurrence, $today)
+                        : null,
+                    'status' => $usesCreditCard || $shouldSettle
                         ? FinancialTransactionStatus::Confirmed->value
                         : FinancialTransactionStatus::Planned->value,
                     'installment_count' => $usesCreditCard ? 1 : null,
@@ -332,6 +376,121 @@ class FinancialRecurrenceService
             ->whereDate('recurrence_occurrence_date', '>=', CarbonImmutable::today())
             ->whereDoesntHave('accountMovements')
             ->delete();
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{0: array<string, mixed>, 1: bool}
+     */
+    private function extractSettlementFlag(array $data): array
+    {
+        $raw = $data['already_settled'] ?? false;
+        unset($data['already_settled']);
+
+        return [$data, filter_var($raw, FILTER_VALIDATE_BOOLEAN)];
+    }
+
+    private function prepareCurrentDueGeneration(
+        FinancialRecurrence $recurrence,
+        bool $alreadySettled,
+        CarbonImmutable $today,
+    ): void {
+        if (! $alreadySettled || $this->usesCreditCard($recurrence)) {
+            return;
+        }
+
+        $currentDue = $this->currentDueOccurrence($recurrence, $today);
+
+        if ($currentDue === null) {
+            return;
+        }
+
+        $generationStart = CarbonImmutable::parse(
+            $recurrence->generation_started_on->toDateString(),
+        );
+
+        if ($currentDue->lessThan($generationStart)) {
+            $recurrence->update([
+                'generation_started_on' => $currentDue->toDateString(),
+            ]);
+        }
+    }
+
+    private function settleCurrentDueOccurrence(
+        FinancialRecurrence $recurrence,
+        bool $alreadySettled,
+    ): void {
+        if (! $alreadySettled || $this->usesCreditCard($recurrence)) {
+            return;
+        }
+
+        $today = CarbonImmutable::today();
+        $currentDue = $this->currentDueOccurrence($recurrence, $today);
+
+        if ($currentDue === null) {
+            return;
+        }
+
+        $entry = $recurrence->transactions()
+            ->whereDate('recurrence_occurrence_date', $currentDue->toDateString())
+            ->where('status', FinancialTransactionStatus::Planned->value)
+            ->where('recurrence_is_overridden', false)
+            ->whereNull('settled_on')
+            ->first();
+
+        if ($entry === null) {
+            return;
+        }
+
+        $this->entryService->update($entry, [
+            'type' => $entry->type->value,
+            'transaction_date' => $entry->transaction_date->toDateString(),
+            'competence_date' => $entry->competence_date?->toDateString()
+                ?? $entry->transaction_date->toDateString(),
+            'description' => $entry->description,
+            'amount' => $entry->amount,
+            'financial_account_id' => $entry->financial_account_id,
+            'credit_card_id' => $entry->credit_card_id,
+            'category_id' => $entry->category_id,
+            'family_member_id' => $entry->family_member_id,
+            'payment_method' => $entry->payment_method?->value,
+            'payee_name' => $entry->payee_name,
+            'payment_instructions' => $entry->payment_instructions,
+            'due_date' => $entry->due_date?->toDateString(),
+            'settled_on' => $this->settledOnForOccurrence($currentDue, $today),
+            'status' => FinancialTransactionStatus::Confirmed->value,
+            'notes' => $entry->notes,
+        ]);
+    }
+
+    private function currentDueOccurrence(
+        FinancialRecurrence $recurrence,
+        CarbonImmutable $today,
+    ): ?CarbonImmutable {
+        $startsOn = CarbonImmutable::parse($recurrence->starts_on->toDateString());
+
+        if ($startsOn->greaterThan($today)) {
+            return $startsOn;
+        }
+
+        $past = $this->occurrencesBetween($recurrence, $startsOn, $today);
+
+        return $past === [] ? $startsOn : $past[array_key_last($past)];
+    }
+
+    private function settledOnForOccurrence(
+        CarbonImmutable $occurrence,
+        CarbonImmutable $today,
+    ): string {
+        return $occurrence->greaterThan($today)
+            ? $today->toDateString()
+            : $occurrence->toDateString();
+    }
+
+    private function usesCreditCard(FinancialRecurrence $recurrence): bool
+    {
+        return $recurrence->type === FinancialTransactionType::Expense
+            && $recurrence->payment_method === PaymentMethod::CreditCard;
     }
 
     private function occurrenceAt(

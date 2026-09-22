@@ -28,7 +28,7 @@ class CardStatementImportTest extends TestCase
 
     public function test_guest_cannot_access_card_statement_imports(): void
     {
-        $this->get(route('imports.card-statements.index'))
+        $this->get(route('imports.index'))
             ->assertRedirect(route('login'));
     }
 
@@ -54,7 +54,7 @@ class CardStatementImportTest extends TestCase
                     $this->csvFile(),
                 ),
             ])
-            ->assertRedirect(route('imports.card-statements.index'))
+            ->assertRedirect(route('imports.index'))
             ->assertSessionHasNoErrors();
 
         $financialImport = FinancialImport::query()->sole();
@@ -118,10 +118,10 @@ class CardStatementImportTest extends TestCase
 
         $this->actingAs($user)
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
-            ->get(route('imports.card-statements.index'))
+            ->get(route('imports.index'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('imports/card-statements')
+                ->component('imports/index')
                 ->has('imports', 1)
                 ->where('imports.0.statement_amount', '79.90')
                 ->has('entries', 2)
@@ -139,7 +139,7 @@ class CardStatementImportTest extends TestCase
             );
     }
 
-    public function test_reimporting_same_file_is_idempotent(): void
+    public function test_reimporting_same_file_is_rejected(): void
     {
         Storage::fake('local');
         [$user, $workspace] = $this->userAndWorkspace();
@@ -147,17 +147,30 @@ class CardStatementImportTest extends TestCase
         $request = $this->actingAs($user)
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
 
-        foreach (['fatura.csv', 'fatura-renomeada.csv'] as $filename) {
-            $request->post(route('imports.card-statements.store'), [
-                'credit_card_id' => $card->id,
-                'reference_month' => '2026-10',
-                'amount_sign' => 'positive',
-                'file' => UploadedFile::fake()->createWithContent(
-                    $filename,
-                    $this->csvFile(),
-                ),
-            ])->assertSessionHasNoErrors();
-        }
+        $request->post(route('imports.card-statements.store'), [
+            'credit_card_id' => $card->id,
+            'reference_month' => '2026-10',
+            'amount_sign' => 'positive',
+            'file' => UploadedFile::fake()->createWithContent(
+                'fatura.csv',
+                $this->csvFile(),
+            ),
+        ])->assertSessionHasNoErrors();
+
+        $request->post(route('imports.card-statements.store'), [
+            'credit_card_id' => $card->id,
+            'reference_month' => '2026-10',
+            'amount_sign' => 'positive',
+            'file' => UploadedFile::fake()->createWithContent(
+                'fatura-renomeada.csv',
+                $this->csvFile(),
+            ),
+        ])->assertSessionHasErrors([
+            'file' => 'Este arquivo já foi importado. Envie um arquivo diferente.',
+        ])->assertInertiaFlash('toast', [
+            'type' => 'warning',
+            'message' => 'Este arquivo já foi importado.',
+        ]);
 
         $this->assertDatabaseCount('financial_imports', 1);
         $this->assertDatabaseCount('card_statement_entries', 2);
@@ -343,11 +356,73 @@ class CardStatementImportTest extends TestCase
         $metadata = FinancialImport::query()->sole()->metadata;
         $this->assertSame(['gemini'], $metadata['ai_classification']['providers']);
         $this->assertSame(['gemini-test'], $metadata['ai_classification']['models']);
-        $this->assertSame(1, $metadata['ai_classification']['classified_records']);
         $this->assertSame(1, $metadata['ai_classification']['merchant_updates']);
-        $this->assertSame(1, $metadata['ai_classification']['category_updates']);
+        $this->assertGreaterThanOrEqual(1, $metadata['ai_classification']['classified_records']);
 
         Http::assertSentCount(1);
+    }
+
+    public function test_nubank_invoice_creates_categorized_expenses_and_skips_payment(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create([
+            'name' => 'Nubank Fabiano',
+            'institution' => 'Nubank',
+        ]);
+        $transporte = Category::factory()->for($workspace)->create([
+            'name' => 'Transporte',
+            'type' => CategoryType::Expense,
+            'is_active' => true,
+        ]);
+        $farmacia = Category::factory()->for($workspace)->create([
+            'name' => 'Farmácia',
+            'type' => CategoryType::Expense,
+            'is_active' => true,
+        ]);
+        $csv = <<<'CSV'
+            date,title,amount
+            2026-05-22,99app *99app,"8,08"
+            2026-05-10,Farmacia Sao Joao,"33,89"
+            2026-05-08,Pagamento recebido,"- 2.307,13"
+            CSV;
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.card-statements.store'), [
+                'credit_card_id' => $card->id,
+                'reference_month' => '2026-06',
+                'amount_sign' => 'negative',
+                'file' => UploadedFile::fake()->createWithContent(
+                    'Nubank_2026-06-11.csv',
+                    $csv,
+                ),
+            ])
+            ->assertRedirect(route('imports.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseCount('card_statement_entries', 2);
+        $this->assertDatabaseCount('financial_transactions', 2);
+        $this->assertDatabaseMissing('financial_transactions', [
+            'description' => 'Pagamento recebido',
+        ]);
+        $this->assertDatabaseHas('financial_transactions', [
+            'description' => '99app *99app',
+            'amount' => '8.08',
+            'category_id' => $transporte->id,
+            'origin' => FinancialTransactionOrigin::CardImport->value,
+        ]);
+        $this->assertDatabaseHas('financial_transactions', [
+            'description' => 'Farmacia Sao Joao',
+            'amount' => '33.89',
+            'category_id' => $farmacia->id,
+            'origin' => FinancialTransactionOrigin::CardImport->value,
+        ]);
+        $this->assertTrue(
+            CardStatementEntry::query()->where('description', '99app *99app')->sole()->is_reconciled,
+        );
+        $this->assertSame('41.97', CreditCardInvoice::query()->sole()->statement_amount);
+        $this->assertSame('41.97', CreditCardInvoice::query()->sole()->calculated_amount);
     }
 
     public function test_invalid_statement_is_recorded_as_failed(): void

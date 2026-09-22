@@ -94,6 +94,45 @@ class CardStatementParserTest extends TestCase
         $this->assertSame('245.67', $statement->rows[0]->amount);
     }
 
+    public function test_parses_nubank_csv_skipping_payments_and_keeping_purchases_positive(): void
+    {
+        $csv = <<<'CSV'
+            date,title,amount
+            2026-05-22,99app *99app,"8,08"
+            2026-05-15,Localiza - Parcela 1/6,"93,63"
+            2026-05-10,Farmacia Sao Joao,"33,89"
+            2026-05-08,Pagamento recebido,"- 2.307,13"
+            2026-05-07,Pagamento recebido,"- 500,00"
+            CSV;
+
+        $statement = app(CardStatementParser::class)->parse($csv, 'csv', 'negative');
+
+        $this->assertCount(3, $statement->rows);
+        $this->assertSame(2, $statement->ignoredRows);
+        $this->assertSame('8.08', $statement->rows[0]->amount);
+        $this->assertSame('93.63', $statement->rows[1]->amount);
+        $this->assertSame(1, $statement->rows[1]->installmentNumber);
+        $this->assertSame(6, $statement->rows[1]->totalInstallments);
+        $this->assertSame('33.89', $statement->rows[2]->amount);
+    }
+
+    public function test_maps_category_column_and_auto_detects_negative_purchases(): void
+    {
+        $csv = <<<'CSV'
+            date,category,title,amount
+            2026-05-10,transporte,Uber UberX,-18.90
+            2026-05-11,supermercado,Mercado da Família,-45.00
+            CSV;
+
+        $statement = app(CardStatementParser::class)->parse($csv, 'csv', 'auto');
+
+        $this->assertCount(2, $statement->rows);
+        $this->assertSame('18.90', $statement->rows[0]->amount);
+        $this->assertSame('transporte', $statement->rows[0]->sourceCategory);
+        $this->assertSame('45.00', $statement->rows[1]->amount);
+        $this->assertSame('supermercado', $statement->rows[1]->sourceCategory);
+    }
+
     public function test_rejects_files_without_required_headers(): void
     {
         $this->expectException(CardStatementParseException::class);

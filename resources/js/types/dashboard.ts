@@ -14,6 +14,7 @@ export type CashFlowPoint = {
 };
 
 export type CategoryExpense = {
+    id: number | null;
     name: string;
     amount: string;
     percentage: number;
@@ -21,12 +22,14 @@ export type CategoryExpense = {
 
 export type DashboardEntry = {
     id: number;
+    source: 'transaction' | 'invoice';
     type: 'income' | 'expense' | 'transfer';
     description: string;
     amount: string;
     date: string;
-    status: 'planned' | 'confirmed';
+    status: string;
     status_label: string;
+    is_overdue?: boolean;
     category: string;
     context: string | null;
 };

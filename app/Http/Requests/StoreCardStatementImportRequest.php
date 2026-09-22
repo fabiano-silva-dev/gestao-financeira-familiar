@@ -34,7 +34,7 @@ class StoreCardStatementImportRequest extends FormRequest
                         ->where('workspace_id', $workspace->id)),
             ],
             'reference_month' => ['required', 'date_format:Y-m'],
-            'amount_sign' => ['required', Rule::in(['positive', 'negative'])],
+            'amount_sign' => ['required', Rule::in(['positive', 'negative', 'auto'])],
             'file' => ['required', 'file', 'max:10240', new CardStatementFile],
         ];
     }

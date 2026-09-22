@@ -7,8 +7,10 @@ use App\Http\Requests\StoreCategoryRequest;
 use App\Http\Requests\UpdateCategoryRequest;
 use App\Models\Category;
 use App\Models\Workspace;
+use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -18,22 +20,110 @@ class CategoryController extends Controller
         private readonly CurrentWorkspace $currentWorkspace,
     ) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
-        $categories = $this->workspace()
-            ->categories()
-            ->whereNull('parent_id')
-            ->with(['children' => fn ($query) => $query
+        $workspace = $this->workspace();
+        $listing = ListingQuery::from(
+            $request,
+            ['name', 'type', 'status'],
+            'type',
+            'asc',
+            ['type', 'status'],
+        );
+        $query = $workspace->categories()->getQuery()->whereNull('parent_id');
+
+        if ($listing->search !== '') {
+            $term = $listing->searchTerm();
+            $query->where(function ($inner) use ($term): void {
+                $inner->where('name', 'ilike', $term)
+                    ->orWhereHas(
+                        'children',
+                        fn ($children) => $children->where('name', 'ilike', $term),
+                    );
+            });
+        }
+
+        $type = $listing->filter('type');
+
+        if ($type !== null && CategoryType::tryFrom($type) !== null) {
+            $query->where('type', $type);
+        }
+
+        $active = $listing->booleanFilter('status');
+
+        if ($active !== null) {
+            $query->where(function ($statusQuery) use ($active): void {
+                $statusQuery
+                    ->where('is_active', $active)
+                    ->orWhereHas(
+                        'children',
+                        fn ($children) => $children->where('is_active', $active),
+                    );
+            });
+        }
+
+        $orderChildren = function ($children) use ($listing): void {
+            if ($listing->sort === 'name') {
+                $children->orderBy('name', $listing->direction);
+            } elseif ($listing->sort === 'status') {
+                $children->orderBy('is_active', $listing->direction)->orderBy('name');
+            } else {
+                $children->orderByDesc('is_active')->orderBy('name');
+            }
+        };
+
+        $query->with(['children' => $orderChildren]);
+
+        if ($listing->sort === 'name') {
+            $query->orderBy('name', $listing->direction);
+        } elseif ($listing->sort === 'status') {
+            $query->orderBy('is_active', $listing->direction)->orderBy('name');
+        } else {
+            $query->orderBy('type', $listing->direction)
                 ->orderByDesc('is_active')
-                ->orderBy('name')])
-            ->orderBy('type')
-            ->orderByDesc('is_active')
-            ->orderBy('name')
+                ->orderBy('name');
+        }
+
+        $categories = $query
             ->get()
-            ->map(fn (Category $category): array => $this->categoryData($category));
+            ->map(function (Category $category) use ($listing): ?array {
+                $data = $this->categoryData($category);
+
+                if ($listing->search !== '') {
+                    $needle = mb_strtolower($listing->search);
+                    $parentMatches = str_contains(mb_strtolower($category->name), $needle);
+                    $data['children'] = array_values(array_filter(
+                        $data['children'],
+                        fn (array $child): bool => $parentMatches
+                            || str_contains(mb_strtolower($child['name']), $needle),
+                    ));
+                }
+
+                $active = $listing->booleanFilter('status');
+
+                if ($active !== null) {
+                    $parentMatches = $category->is_active === $active;
+                    $data['children'] = array_values(array_filter(
+                        $data['children'],
+                        fn (array $child): bool => $child['is_active'] === $active,
+                    ));
+
+                    if (! $parentMatches && $data['children'] === []) {
+                        return null;
+                    }
+                }
+
+                return $data;
+            })
+            ->filter()
+            ->values();
 
         return Inertia::render('categories/index', [
             'categories' => $categories,
+            'filters' => $listing->toArray(),
+            'hasRecords' => $workspace->categories()->whereNull('parent_id')->exists(),
+            'typeOptions' => CategoryType::options(),
+            'statusOptions' => ListingQuery::statusOptions(),
         ]);
     }
 

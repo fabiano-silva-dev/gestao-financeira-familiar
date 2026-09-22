@@ -10,9 +10,12 @@ use App\Http\Requests\UpdateFinancialAccountRequest;
 use App\Models\AccountMovement;
 use App\Models\FinancialAccount;
 use App\Models\Workspace;
+use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -22,13 +25,44 @@ class FinancialAccountController extends Controller
         private readonly CurrentWorkspace $currentWorkspace,
     ) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $workspace = $this->workspace();
+        $listing = ListingQuery::from(
+            $request,
+            ['name', 'type', 'institution', 'balance', 'status'],
+            'status',
+            'desc',
+            ['type', 'status'],
+        );
+        $query = $this->accountsWithCurrentBalance($workspace);
+        $listing->applySearch($query, ['name', 'institution']);
 
-        $accounts = $this->accountsWithCurrentBalance($workspace)
-            ->orderByDesc('is_active')
-            ->orderBy('name')
+        $type = $listing->filter('type');
+
+        if ($type !== null && FinancialAccountType::tryFrom($type) !== null) {
+            $query->where('type', $type);
+        }
+
+        $active = $listing->booleanFilter('status');
+
+        if ($active !== null) {
+            $query->where('is_active', $active);
+        }
+
+        if ($listing->sort === 'status') {
+            $query->orderBy('is_active', $listing->direction)->orderBy('name');
+        } else {
+            $listing->applySort($query, [
+                'name' => 'name',
+                'type' => 'type',
+                'institution' => 'institution',
+                'balance' => 'current_balance',
+                'status' => 'is_active',
+            ]);
+        }
+
+        $accounts = $query
             ->get()
             ->map(fn (FinancialAccount $account): array => $this->accountData($account));
 
@@ -43,18 +77,34 @@ class FinancialAccountController extends Controller
                 'total_balance' => $this->centsToMoney($totalBalanceCents),
                 'active_accounts' => $activeAccounts->count(),
             ],
+            'filters' => $listing->toArray(),
+            'hasRecords' => $workspace->financialAccounts()->exists(),
+            'typeOptions' => FinancialAccountType::options(),
+            'statusOptions' => ListingQuery::statusOptions(),
         ]);
     }
 
-    public function show(int $account): Response
+    public function show(Request $request, int $account): Response
     {
         $workspace = $this->workspace();
         $financialAccount = $this->accountsWithCurrentBalance($workspace)
             ->findOrFail($account);
+        $listing = ListingQuery::from(
+            $request,
+            ['date'],
+            'date',
+            'asc',
+            ['type'],
+        );
+        $monthStart = $this->periodStart($request);
+        $monthEnd = $monthStart->endOfMonth();
 
         $movementQuery = $this->effectiveMovementsQuery($financialAccount);
+        $periodQuery = (clone $movementQuery)
+            ->whereDate('occurred_on', '>=', $monthStart->toDateString())
+            ->whereDate('occurred_on', '<=', $monthEnd->toDateString());
 
-        $stats = (clone $movementQuery)
+        $stats = (clone $periodQuery)
             ->selectRaw(
                 <<<'SQL'
                     COUNT(*) AS movement_count,
@@ -64,28 +114,43 @@ class FinancialAccountController extends Controller
             )
             ->first();
 
-        $movements = (clone $movementQuery)
+        $listedMovements = (clone $periodQuery)
             ->with([
                 'transaction.category.parent',
                 'transaction.familyMember',
                 'transaction.sourceAccount:id,name',
                 'transaction.destinationAccount:id,name',
                 'invoicePayment.invoice.creditCard:id,name',
-            ])
-            ->orderByDesc('occurred_on')
-            ->orderByDesc('id')
-            ->limit(100)
+            ]);
+        $listing->applySearch($listedMovements, ['description']);
+
+        $type = $listing->filter('type');
+
+        if ($type !== null && AccountMovementType::tryFrom($type) !== null) {
+            $listedMovements->where('type', $type);
+        }
+
+        $movements = $listedMovements
+            ->orderBy('occurred_on')
+            ->orderBy('id')
             ->get()
             ->map(fn (AccountMovement $movement): array => $this->movementData($movement));
 
         return Inertia::render('accounts/show', [
             'account' => $this->accountData($financialAccount),
             'summary' => [
-                'inflows' => (string) ($stats?->getAttribute('inflows') ?? '0.00'),
-                'outflows' => (string) ($stats?->getAttribute('outflows') ?? '0.00'),
+                'inflows' => $this->formatMoney($stats?->getAttribute('inflows')),
+                'outflows' => $this->formatMoney($stats?->getAttribute('outflows')),
                 'movement_count' => (int) ($stats?->getAttribute('movement_count') ?? 0),
             ],
             'movements' => $movements,
+            'currentPeriod' => $monthStart->toDateString(),
+            'filters' => [
+                ...$listing->toArray(),
+                'period' => $monthStart->format('Y-m'),
+            ],
+            'hasRecords' => (clone $movementQuery)->exists(),
+            'typeOptions' => AccountMovementType::options(),
         ]);
     }
 
@@ -262,6 +327,7 @@ class FinancialAccountController extends Controller
             'family_member_name' => $transaction?->familyMember?->name,
             'counterparty_account_name' => $counterpartyAccountName,
             'credit_card_name' => $creditCardName,
+            'invoice_id' => $movement->invoicePayment?->invoice?->id,
         ];
     }
 
@@ -292,6 +358,34 @@ class FinancialAccountController extends Controller
                 ?? $account->opening_balance),
             'is_active' => $account->is_active,
         ];
+    }
+
+    private function periodStart(Request $request): CarbonImmutable
+    {
+        $today = CarbonImmutable::today();
+        $period = $request->query('period');
+
+        if (! is_string($period) || $period === '') {
+            return $today->startOfMonth();
+        }
+
+        if (preg_match('/^(\d{4})-(\d{2})(?:-\d{2})?$/', $period, $matches) !== 1) {
+            return $today->startOfMonth();
+        }
+
+        $year = (int) $matches[1];
+        $month = (int) $matches[2];
+
+        if ($year < 1990 || $year > 2100 || $month < 1 || $month > 12) {
+            return $today->startOfMonth();
+        }
+
+        return CarbonImmutable::create($year, $month, 1)->startOfMonth();
+    }
+
+    private function formatMoney(mixed $amount): string
+    {
+        return $this->centsToMoney($this->moneyToCents((string) ($amount ?? '0')));
     }
 
     private function moneyToCents(string $amount): int

@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable(['name'])]
 class Workspace extends Model
@@ -47,6 +48,14 @@ class Workspace extends Model
     public function categories(): HasMany
     {
         return $this->hasMany(Category::class);
+    }
+
+    /**
+     * @return HasMany<ClassificationRule, $this>
+     */
+    public function classificationRules(): HasMany
+    {
+        return $this->hasMany(ClassificationRule::class);
     }
 
     /**
@@ -127,5 +136,13 @@ class Workspace extends Model
     public function cardStatementEntries(): HasMany
     {
         return $this->hasMany(CardStatementEntry::class);
+    }
+
+    /**
+     * @return HasOne<WorkspaceAiSetting, $this>
+     */
+    public function aiSetting(): HasOne
+    {
+        return $this->hasOne(WorkspaceAiSetting::class);
     }
 }

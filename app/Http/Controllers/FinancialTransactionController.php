@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\FinancialTransactionOrigin;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
 use App\Http\Requests\SaveFinancialEntryRequest;
+use App\Models\BankStatementEntry;
+use App\Models\CardStatementEntry;
 use App\Models\Category;
 use App\Models\CreditCard;
 use App\Models\FamilyMember;
@@ -13,8 +16,12 @@ use App\Models\FinancialAccount;
 use App\Models\FinancialTransaction;
 use App\Models\Workspace;
 use App\Services\Finance\FinancialEntryService;
+use App\Services\Finance\TransferService;
+use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -23,15 +30,25 @@ class FinancialTransactionController extends Controller
     public function __construct(
         private readonly CurrentWorkspace $currentWorkspace,
         private readonly FinancialEntryService $entryService,
+        private readonly TransferService $transferService,
     ) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
-        $entries = $this->workspace()
+        $workspace = $this->workspace();
+        $listing = ListingQuery::from(
+            $request,
+            ['description', 'date', 'category', 'status', 'amount'],
+            'date',
+            'desc',
+            ['type', 'status', 'settlement', 'category', 'account', 'from', 'to'],
+        );
+        $query = $workspace
             ->financialTransactions()
-            ->whereIn('type', [
+            ->whereIn('financial_transactions.type', [
                 FinancialTransactionType::Income,
                 FinancialTransactionType::Expense,
+                FinancialTransactionType::Transfer,
             ])
             ->with([
                 'account:id,name',
@@ -39,15 +56,177 @@ class FinancialTransactionController extends Controller
                 'category:id,name,parent_id',
                 'category.parent:id,name',
                 'familyMember:id,name',
+                'sourceAccount:id,name',
+                'destinationAccount:id,name',
             ])
             ->withCount('installments')
-            ->orderByDesc('transaction_date')
-            ->orderByDesc('id')
-            ->get()
-            ->map(fn (FinancialTransaction $entry): array => $this->entryData($entry));
+            ->select('financial_transactions.*');
+
+        if ($listing->search !== '') {
+            $term = $listing->searchTerm();
+            $query->where(function (Builder $inner) use ($term): void {
+                $inner->where('financial_transactions.description', 'ilike', $term)
+                    ->orWhere('financial_transactions.payee_name', 'ilike', $term);
+            });
+        }
+
+        $type = $listing->filter('type');
+
+        if ($type !== null && FinancialTransactionType::tryFrom($type) !== null) {
+            $query->where('financial_transactions.type', $type);
+        }
+
+        $status = $listing->filter('status');
+
+        if ($status !== null && FinancialTransactionStatus::tryFrom($status) !== null) {
+            $query->where('financial_transactions.status', $status);
+        }
+
+        if ($listing->filter('settlement') === 'settled') {
+            $query->whereNotNull('financial_transactions.settled_on');
+        } elseif ($listing->filter('settlement') === 'pending') {
+            $query->whereNull('financial_transactions.settled_on');
+        }
+
+        $categoryFilter = $listing->filter('category');
+
+        if ($categoryFilter === 'none') {
+            $query->whereNull('financial_transactions.category_id');
+        } else {
+            $categoryId = $listing->intFilter('category');
+
+            if ($categoryId !== null) {
+                $childIds = $workspace->categories()
+                    ->where('parent_id', $categoryId)
+                    ->pluck('id');
+
+                $query->where(function (Builder $inner) use ($categoryId, $childIds): void {
+                    $inner->where('financial_transactions.category_id', $categoryId);
+
+                    if ($childIds->isNotEmpty()) {
+                        $inner->orWhereIn(
+                            'financial_transactions.category_id',
+                            $childIds,
+                        );
+                    }
+                });
+            }
+        }
+
+        $accountId = $listing->intFilter('account');
+
+        if ($accountId !== null) {
+            $query->where(function (Builder $inner) use ($accountId): void {
+                $inner->where('financial_transactions.financial_account_id', $accountId)
+                    ->orWhere('financial_transactions.source_account_id', $accountId)
+                    ->orWhere('financial_transactions.destination_account_id', $accountId);
+            });
+        }
+
+        $from = $listing->filter('from');
+        $to = $listing->filter('to');
+
+        if ($from !== null || $to !== null) {
+            $query->where(function (Builder $inner) use ($from, $to): void {
+                $inner->where(function (Builder $dates) use ($from, $to): void {
+                    if ($from !== null) {
+                        $dates->whereDate(
+                            'financial_transactions.transaction_date',
+                            '>=',
+                            $from,
+                        );
+                    }
+
+                    if ($to !== null) {
+                        $dates->whereDate(
+                            'financial_transactions.transaction_date',
+                            '<=',
+                            $to,
+                        );
+                    }
+                })->orWhere(function (Builder $dates) use ($from, $to): void {
+                    if ($from !== null) {
+                        $dates->whereDate(
+                            'financial_transactions.competence_date',
+                            '>=',
+                            $from,
+                        );
+                    }
+
+                    if ($to !== null) {
+                        $dates->whereDate(
+                            'financial_transactions.competence_date',
+                            '<=',
+                            $to,
+                        );
+                    }
+                })->orWhereHas('installments', function (Builder $installments) use ($from, $to): void {
+                    if ($from !== null) {
+                        $installments->whereDate('competence_month', '>=', $from);
+                    }
+
+                    if ($to !== null) {
+                        $installments->whereDate('competence_month', '<=', $to);
+                    }
+                });
+            });
+        }
+
+        $listing->applySort($query, [
+            'description' => 'financial_transactions.description',
+            'date' => 'financial_transactions.transaction_date',
+            'category' => function (Builder $query, string $direction): void {
+                $query->leftJoin(
+                    'categories',
+                    'categories.id',
+                    '=',
+                    'financial_transactions.category_id',
+                )->orderBy('categories.name', $direction);
+            },
+            'status' => 'financial_transactions.status',
+            'amount' => 'financial_transactions.amount',
+        ], 'financial_transactions.id');
 
         return Inertia::render('transactions/index', [
-            'entries' => $entries,
+            'entries' => $query
+                ->get()
+                ->map(fn (FinancialTransaction $entry): array => $this->entryData($entry)),
+            'filters' => $listing->toArray(),
+            'hasRecords' => $workspace->financialTransactions()
+                ->whereIn('type', [
+                    FinancialTransactionType::Income,
+                    FinancialTransactionType::Expense,
+                    FinancialTransactionType::Transfer,
+                ])
+                ->exists(),
+            'typeOptions' => FinancialTransactionType::options(),
+            'statusOptions' => FinancialTransactionStatus::options(),
+            'settlementOptions' => [
+                ['value' => 'settled', 'label' => 'Liquidado'],
+                ['value' => 'pending', 'label' => 'Pendente'],
+            ],
+            'categoryOptions' => $workspace->categories()
+                ->with('parent:id,name')
+                ->orderBy('name')
+                ->get()
+                ->map(fn (Category $category): array => [
+                    'value' => (string) $category->id,
+                    'label' => $category->parent === null
+                        ? $category->name
+                        : "{$category->parent->name} / {$category->name}",
+                ])
+                ->push([
+                    'value' => 'none',
+                    'label' => 'Sem categoria',
+                ]),
+            'accountOptions' => $workspace->financialAccounts()
+                ->orderByDesc('is_active')
+                ->orderBy('name')
+                ->get(['id', 'name'])
+                ->map(fn (FinancialAccount $account): array => [
+                    'value' => (string) $account->id,
+                    'label' => $account->name,
+                ]),
         ]);
     }
 
@@ -59,6 +238,11 @@ class FinancialTransactionController extends Controller
     public function createIncome(): Response
     {
         return $this->createResponse(FinancialTransactionType::Income);
+    }
+
+    public function createTransfer(): Response
+    {
+        return $this->createResponse(FinancialTransactionType::Transfer);
     }
 
     public function store(SaveFinancialEntryRequest $request): RedirectResponse
@@ -84,7 +268,8 @@ class FinancialTransactionController extends Controller
 
         return Inertia::render('transactions/edit', [
             'entry' => $this->entryData($financialEntry),
-            ...$this->referenceOptions($financialEntry->type),
+            'typeOptions' => FinancialTransactionType::options(),
+            ...$this->referenceOptions(),
         ]);
     }
 
@@ -92,8 +277,10 @@ class FinancialTransactionController extends Controller
         SaveFinancialEntryRequest $request,
         int $entry,
     ): RedirectResponse {
+        $financialEntry = $this->findEntry($entry);
+
         $this->entryService->update(
-            $this->findEntry($entry),
+            $financialEntry,
             $request->validated(),
         );
 
@@ -107,9 +294,10 @@ class FinancialTransactionController extends Controller
 
     public function advanceStatus(int $entry): RedirectResponse
     {
-        $financialEntry = $this->entryService->advanceStatus(
-            $this->findEntry($entry),
-        );
+        $financialEntry = $this->findEntry($entry);
+        $financialEntry = $financialEntry->type === FinancialTransactionType::Transfer
+            ? $this->transferService->advanceStatus($financialEntry)
+            : $this->entryService->advanceStatus($financialEntry);
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -125,9 +313,9 @@ class FinancialTransactionController extends Controller
 
     public function toggleSettlement(int $entry): RedirectResponse
     {
-        $financialEntry = $this->entryService->toggleSettlement(
-            $this->findEntry($entry),
-        );
+        $financialEntry = $this->findEntry($entry);
+        abort_if($financialEntry->type === FinancialTransactionType::Transfer, 404);
+        $financialEntry = $this->entryService->toggleSettlement($financialEntry);
         $isExpense = $financialEntry->type === FinancialTransactionType::Expense;
 
         Inertia::flash('toast', [
@@ -170,6 +358,7 @@ class FinancialTransactionController extends Controller
             ->whereIn('type', [
                 FinancialTransactionType::Income,
                 FinancialTransactionType::Expense,
+                FinancialTransactionType::Transfer,
             ])
             ->with([
                 'account:id,name',
@@ -177,6 +366,14 @@ class FinancialTransactionController extends Controller
                 'category:id,name,parent_id',
                 'category.parent:id,name',
                 'familyMember:id,name',
+                'sourceAccount:id,name',
+                'destinationAccount:id,name',
+                'accountMovements.bankStatementEntry.financialImport',
+                'accountMovements.bankStatementEntry.financialAccount:id,name',
+                'installments.cardStatementEntry.financialImport',
+                'installments.cardStatementEntry.creditCard:id,name,last_four',
+                'installments.cardStatementEntry.invoice:id,reference_month',
+                'installments.invoice:id,reference_month',
             ])
             ->withCount('installments')
             ->findOrFail($entry);
@@ -185,7 +382,7 @@ class FinancialTransactionController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function referenceOptions(FinancialTransactionType $categoryType): array
+    private function referenceOptions(?FinancialTransactionType $categoryType = null): array
     {
         $workspace = $this->workspace();
 
@@ -205,19 +402,7 @@ class FinancialTransactionController extends Controller
                     'label' => "{$card->name} · final {$card->last_four}",
                 ])
                 ->all(),
-            'categoryOptions' => $workspace->categories()
-                ->where('type', $categoryType->value)
-                ->with('parent:id,name')
-                ->orderBy('name')
-                ->get()
-                ->map(fn (Category $category): array => [
-                    ...$this->referenceData($category),
-                    'type' => $category->type->value,
-                    'label' => $category->parent === null
-                        ? $category->name
-                        : "{$category->parent->name} / {$category->name}",
-                ])
-                ->all(),
+            'categoryOptions' => $this->categoryOptions($workspace, $categoryType),
             'memberOptions' => $workspace->familyMembers()
                 ->orderByDesc('is_active')
                 ->orderBy('name')
@@ -226,6 +411,38 @@ class FinancialTransactionController extends Controller
                 ->all(),
             'paymentMethods' => PaymentMethod::options(),
         ];
+    }
+
+    /**
+     * @return array<int, array{id: int, name: string, is_active: bool, type: string, label: string}>
+     */
+    private function categoryOptions(
+        Workspace $workspace,
+        ?FinancialTransactionType $categoryType,
+    ): array {
+        if ($categoryType === FinancialTransactionType::Transfer) {
+            return [];
+        }
+
+        $query = $workspace->categories()
+            ->with('parent:id,name')
+            ->orderBy('name');
+
+        if ($categoryType !== null) {
+            $query->where('type', $categoryType->value);
+        }
+
+        return $query
+            ->get()
+            ->map(fn (Category $category): array => [
+                ...$this->referenceData($category),
+                'type' => $category->type->value,
+                'label' => $category->parent === null
+                    ? $category->name
+                    : "{$category->parent->name} / {$category->name}",
+            ])
+            ->values()
+            ->all();
     }
 
     /**
@@ -274,6 +491,10 @@ class FinancialTransactionController extends Controller
             'category_name' => $categoryName,
             'family_member_id' => $entry->family_member_id,
             'family_member_name' => $entry->familyMember?->name,
+            'source_account_id' => $entry->source_account_id,
+            'source_account_name' => $entry->sourceAccount?->name,
+            'destination_account_id' => $entry->destination_account_id,
+            'destination_account_name' => $entry->destinationAccount?->name,
             'payment_method' => $entry->payment_method?->value,
             'payment_method_label' => $entry->payment_method?->label(),
             'payee_name' => $entry->payee_name,
@@ -282,11 +503,165 @@ class FinancialTransactionController extends Controller
             'settled_on' => $entry->settled_on?->toDateString(),
             'is_settled' => $entry->settled_on !== null,
             'status' => $entry->status->value,
-            'status_label' => $entry->status->label(),
+            'status_label' => $this->entryStatusLabel($entry),
             'notes' => $entry->notes,
             'origin' => $entry->origin->value,
+            'origin_label' => $entry->origin->label(),
+            'origin_source' => $this->originSource($entry),
             'financial_recurrence_id' => $entry->financial_recurrence_id,
             'recurrence_is_overridden' => $entry->recurrence_is_overridden,
         ];
+    }
+
+    /**
+     * @return array{
+     *     kind: string,
+     *     label: string,
+     *     filename: string|null,
+     *     target_name: string|null,
+     *     invoice_month: string|null,
+     *     summary: string|null
+     * }
+     */
+    private function originSource(FinancialTransaction $entry): array
+    {
+        $kind = $entry->origin->sourceKind();
+        $bankEntry = $this->relatedBankStatementEntry($entry);
+        $cardEntry = $this->relatedCardStatementEntry($entry);
+        $filename = $bankEntry?->financialImport?->source_filename
+            ?? $cardEntry?->financialImport?->source_filename;
+        $targetName = $this->originTargetName($entry, $bankEntry, $cardEntry, $kind);
+        $invoiceMonth = $cardEntry?->invoice?->reference_month
+            ?? ($entry->relationLoaded('installments')
+                ? $entry->installments->first()?->invoice?->reference_month
+                : null);
+        $invoiceMonthValue = $invoiceMonth?->toDateString();
+        $summary = $this->originSummary(
+            $entry->origin,
+            $filename,
+            $targetName,
+            $invoiceMonth === null ? null : $invoiceMonth->format('m/Y'),
+        );
+
+        return [
+            'kind' => $kind,
+            'label' => $entry->origin->label(),
+            'filename' => $filename,
+            'target_name' => $targetName,
+            'invoice_month' => $invoiceMonthValue,
+            'summary' => $summary,
+        ];
+    }
+
+    private function relatedBankStatementEntry(FinancialTransaction $entry): ?BankStatementEntry
+    {
+        if (! $entry->relationLoaded('accountMovements')) {
+            return null;
+        }
+
+        foreach ($entry->accountMovements as $movement) {
+            if (! $movement->relationLoaded('bankStatementEntry')) {
+                continue;
+            }
+
+            $statement = $movement->bankStatementEntry;
+
+            if ($statement instanceof BankStatementEntry) {
+                return $statement;
+            }
+        }
+
+        return null;
+    }
+
+    private function relatedCardStatementEntry(FinancialTransaction $entry): ?CardStatementEntry
+    {
+        if (! $entry->relationLoaded('installments')) {
+            return null;
+        }
+
+        foreach ($entry->installments as $installment) {
+            if (! $installment->relationLoaded('cardStatementEntry')) {
+                continue;
+            }
+
+            $statement = $installment->cardStatementEntry;
+
+            if ($statement instanceof CardStatementEntry) {
+                return $statement;
+            }
+        }
+
+        return null;
+    }
+
+    private function originTargetName(
+        FinancialTransaction $entry,
+        ?BankStatementEntry $bankEntry,
+        ?CardStatementEntry $cardEntry,
+        string $kind,
+    ): ?string {
+        if ($bankEntry?->financialAccount !== null) {
+            return $bankEntry->financialAccount->name;
+        }
+
+        $card = $cardEntry?->creditCard ?? $entry->creditCard;
+
+        if ($kind === 'card_statement' && $card !== null) {
+            return "{$card->name} · final {$card->last_four}";
+        }
+
+        if ($kind === 'bank_statement') {
+            return $entry->account?->name
+                ?? $entry->sourceAccount?->name
+                ?? $entry->destinationAccount?->name;
+        }
+
+        return null;
+    }
+
+    private function originSummary(
+        FinancialTransactionOrigin $origin,
+        ?string $filename,
+        ?string $targetName,
+        ?string $invoiceMonth,
+    ): ?string {
+        if ($origin === FinancialTransactionOrigin::Manual && $filename !== null) {
+            return $targetName === null
+                ? "Conciliado com o arquivo {$filename}."
+                : "Conciliado com o arquivo {$filename} de {$targetName}.";
+        }
+
+        $parts = array_values(array_filter([
+            $filename === null ? null : "Arquivo {$filename}",
+            $targetName,
+            $invoiceMonth === null ? null : "Competência {$invoiceMonth}",
+        ], fn (?string $part): bool => $part !== null && $part !== ''));
+
+        return $parts === [] ? null : implode(' · ', $parts);
+    }
+
+    private function entryStatusLabel(FinancialTransaction $entry): string
+    {
+        if (
+            $entry->type !== FinancialTransactionType::Transfer
+            && $entry->credit_card_id === null
+            && $entry->settled_on !== null
+        ) {
+            return $entry->type === FinancialTransactionType::Expense
+                ? 'Pago'
+                : 'Recebido';
+        }
+
+        if (
+            $entry->status !== FinancialTransactionStatus::Cancelled
+            && $entry->settled_on === null
+            && $entry->due_date !== null
+            && $entry->due_date->lt(now()->startOfDay())
+        ) {
+            return 'Vencido';
+        }
+
+        return $entry->status->label();
     }
 }

@@ -1,6 +1,7 @@
 import { Form, Link } from '@inertiajs/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import FinancialTransactionController from '@/actions/App/Http/Controllers/FinancialTransactionController';
+import { AlreadySettledToggle } from '@/components/finance/already-settled-toggle';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,29 +42,108 @@ export default function FinancialEntryForm({
     memberOptions,
     paymentMethods,
 }: Props) {
-    const entryType = entry?.type ?? newEntryType ?? 'expense';
+    const entryType = newEntryType ?? entry?.type ?? 'expense';
     const isExpense = entryType === 'expense';
-    const [paymentMethod, setPaymentMethod] = useState(
-        entry?.payment_method ?? paymentMethods[0]?.value ?? 'pix',
+    const filteredCategoryOptions = categoryOptions.filter(
+        (category) => category.type == null || category.type === entryType,
+    );
+    const [paymentMethod, setPaymentMethod] = useState(() => {
+        const method =
+            entry?.payment_method ?? paymentMethods[0]?.value ?? 'pix';
+
+        if (!isExpense && method === 'credit_card') {
+            return (
+                paymentMethods.find((item) => item.value !== 'credit_card')
+                    ?.value ?? 'pix'
+            );
+        }
+
+        return method;
+    });
+    const [alreadySettled, setAlreadySettled] = useState(
+        entry ? entry.is_settled : true,
     );
     const [status, setStatus] = useState(entry?.status ?? 'confirmed');
     const [settlementDate, setSettlementDate] = useState(
         entry?.settled_on ?? (!entry ? (defaultDate ?? '') : ''),
     );
     const [accountSelection, setAccountSelection] = useState(
-        entry?.financial_account_id ? String(entry.financial_account_id) : '',
+        entry?.financial_account_id
+            ? String(entry.financial_account_id)
+            : entry?.source_account_id
+              ? String(entry.source_account_id)
+              : '',
     );
     const [cardSelection, setCardSelection] = useState(
         entry?.credit_card_id ? String(entry.credit_card_id) : '',
     );
-    const [categorySelection, setCategorySelection] = useState(
-        entry?.category_id ? String(entry.category_id) : 'none',
-    );
+    const [categorySelection, setCategorySelection] = useState(() => {
+        if (entry?.category_id == null) {
+            return 'none';
+        }
+
+        const selected = categoryOptions.find(
+            (category) => category.id === entry.category_id,
+        );
+
+        if (selected?.type != null && selected.type !== entryType) {
+            return 'none';
+        }
+
+        return String(entry.category_id);
+    });
     const [memberSelection, setMemberSelection] = useState(
         entry?.family_member_id ? String(entry.family_member_id) : 'none',
     );
     const usesCreditCard = isExpense && paymentMethod === 'credit_card';
-    const canSettle = !usesCreditCard && status === 'confirmed';
+    const isCancelled = status === 'cancelled';
+    const canSettle = !usesCreditCard && alreadySettled && !isCancelled;
+    const entryStatus = isCancelled
+        ? 'cancelled'
+        : alreadySettled || usesCreditCard
+          ? 'confirmed'
+          : 'planned';
+
+    useEffect(() => {
+        setCategorySelection((current) => {
+            if (current === 'none') {
+                return current;
+            }
+
+            const selected = categoryOptions.find(
+                (category) => String(category.id) === current,
+            );
+
+            if (selected?.type != null && selected.type !== entryType) {
+                return 'none';
+            }
+
+            return current;
+        });
+
+        if (entryType === 'expense') {
+            return;
+        }
+
+        setPaymentMethod((current) =>
+            current === 'credit_card'
+                ? (paymentMethods.find((item) => item.value !== 'credit_card')
+                      ?.value ?? 'pix')
+                : current,
+        );
+        setCardSelection('');
+    }, [entryType, categoryOptions, paymentMethods]);
+
+    function changeAlreadySettled(checked: boolean) {
+        setAlreadySettled(checked);
+
+        if (isCancelled) {
+            return;
+        }
+
+        setStatus(checked ? 'confirmed' : 'planned');
+        setSettlementDate(checked ? settlementDate || defaultDate || '' : '');
+    }
     const form = entry
         ? FinancialTransactionController.update.form(entry.id)
         : FinancialTransactionController.store.form();
@@ -75,6 +155,7 @@ export default function FinancialEntryForm({
             setStatus(
                 entry?.status === 'cancelled' ? 'cancelled' : 'confirmed',
             );
+            setAlreadySettled(false);
             setSettlementDate('');
         }
     }
@@ -188,8 +269,8 @@ export default function FinancialEntryForm({
                                     type="date"
                                     defaultValue={entry?.due_date ?? ''}
                                     required={
-                                        status === 'planned' ||
-                                        (status === 'confirmed' &&
+                                        entryStatus === 'planned' ||
+                                        (entryStatus === 'confirmed' &&
                                             !settlementDate)
                                     }
                                 />
@@ -224,7 +305,7 @@ export default function FinancialEntryForm({
                                     <SelectItem value="none">
                                         Sem categoria
                                     </SelectItem>
-                                    {categoryOptions.map((category) => (
+                                    {filteredCategoryOptions.map((category) => (
                                         <SelectItem
                                             key={category.id}
                                             value={String(category.id)}
@@ -472,6 +553,7 @@ export default function FinancialEntryForm({
                                         : 'confirmed'
                                 }
                             />
+                            <input type="hidden" name="settled_on" value="" />
                             <p className="font-medium">Compra confirmada</p>
                             <p className="text-muted-foreground mt-1 text-xs">
                                 Compras no cartão geram parcelas e faturas, sem
@@ -480,47 +562,24 @@ export default function FinancialEntryForm({
                             <InputError message={errors.status} />
                         </div>
                     ) : (
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="grid gap-2">
-                                <Label htmlFor="status">
-                                    Situação do lançamento
-                                </Label>
-                                <Select
-                                    name="status"
-                                    value={status}
-                                    onValueChange={(value) =>
-                                        setStatus(
-                                            value as FinancialEntry['status'],
-                                        )
-                                    }
-                                    required
-                                >
-                                    <SelectTrigger
-                                        id="status"
-                                        className="w-full"
-                                    >
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="confirmed">
-                                            Confirmado — fato financeiro real
-                                        </SelectItem>
-                                        <SelectItem value="planned">
-                                            Previsto — ainda é uma projeção
-                                        </SelectItem>
-                                        {entry?.status === 'cancelled' && (
-                                            <SelectItem value="cancelled">
-                                                Cancelado — sem efeito
-                                            </SelectItem>
-                                        )}
-                                    </SelectContent>
-                                </Select>
-                                <p className="text-muted-foreground text-xs">
-                                    Confirmar não significa que o valor já foi
-                                    pago ou recebido.
-                                </p>
-                                <InputError message={errors.status} />
-                            </div>
+                        <div className="space-y-4">
+                            <input
+                                type="hidden"
+                                name="status"
+                                value={entryStatus}
+                            />
+                            <AlreadySettledToggle
+                                checked={alreadySettled && !isCancelled}
+                                isExpense={isExpense}
+                                disabled={isCancelled}
+                                name="entry_already_settled"
+                                onCheckedChange={changeAlreadySettled}
+                                description={
+                                    alreadySettled && !isCancelled
+                                        ? `Aparece em transações recentes como ${isExpense ? 'Pago' : 'Recebido'} e altera o saldo da conta.`
+                                        : 'Não altera o saldo nem o gráfico do período. Serve para o fluxo de caixa, próximos vencimentos e atrasados.'
+                                }
+                            />
 
                             {canSettle ? (
                                 <div className="grid gap-2">
@@ -539,11 +598,8 @@ export default function FinancialEntryForm({
                                                 event.target.value,
                                             )
                                         }
+                                        required
                                     />
-                                    <p className="text-muted-foreground text-xs">
-                                        Deixe em branco se ainda não houve
-                                        movimentação no caixa.
-                                    </p>
                                     <InputError message={errors.settled_on} />
                                 </div>
                             ) : (
@@ -553,6 +609,7 @@ export default function FinancialEntryForm({
                                     value=""
                                 />
                             )}
+                            <InputError message={errors.status} />
                         </div>
                     )}
 

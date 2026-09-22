@@ -105,6 +105,7 @@ class SaveFinancialRecurrenceRequest extends FormRequest
             'interval' => ['required', 'integer', 'min:1', 'max:12'],
             'starts_on' => ['required', 'date'],
             'ends_on' => ['nullable', 'date', 'after_or_equal:starts_on'],
+            'already_settled' => ['sometimes', 'boolean'],
             'notes' => ['nullable', 'string', 'max:2000'],
         ];
     }
@@ -129,6 +130,7 @@ class SaveFinancialRecurrenceRequest extends FormRequest
             'interval' => 'intervalo',
             'starts_on' => 'início',
             'ends_on' => 'fim',
+            'already_settled' => 'já pago ou recebido',
             'notes' => 'observações',
         ];
     }

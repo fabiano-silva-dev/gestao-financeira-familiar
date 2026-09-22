@@ -3,13 +3,20 @@
 namespace Tests\Feature;
 
 use App\Enums\AccountMovementType;
+use App\Enums\CategoryType;
+use App\Enums\FinancialImportStatus;
+use App\Enums\FinancialImportType;
+use App\Enums\FinancialTransactionOrigin;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
+use App\Models\BankStatementEntry;
+use App\Models\CardStatementEntry;
 use App\Models\Category;
 use App\Models\CreditCard;
 use App\Models\FamilyMember;
 use App\Models\FinancialAccount;
+use App\Models\FinancialImport;
 use App\Models\FinancialTransaction;
 use App\Models\User;
 use App\Models\Workspace;
@@ -30,7 +37,7 @@ class FinancialEntryTest extends TestCase
             ->assertRedirect(route('login'));
     }
 
-    public function test_index_only_lists_income_and_expenses_from_current_workspace(): void
+    public function test_index_lists_income_expense_and_transfer_from_current_workspace(): void
     {
         [$user, $currentWorkspace] = $this->userAndWorkspace();
         $currentAccount = FinancialAccount::factory()->for($currentWorkspace)->create();
@@ -61,7 +68,7 @@ class FinancialEntryTest extends TestCase
             ->create();
         app(TransferService::class)->create($currentWorkspace, [
             'transaction_date' => '2026-09-20',
-            'description' => 'Transferência não listada',
+            'description' => 'Transferência visível',
             'amount' => '50.00',
             'source_account_id' => $currentAccount->id,
             'destination_account_id' => $transferDestination->id,
@@ -77,9 +84,182 @@ class FinancialEntryTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('transactions/index')
+                ->has('entries', 3)
+                ->where('entries.2.id', $expense->id)
+            );
+    }
+
+    public function test_index_filters_by_type_and_sorts_by_description(): void
+    {
+        [$user, $currentWorkspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($currentWorkspace)->create();
+        $expense = $this->createEntry(
+            $currentWorkspace,
+            $account,
+            FinancialTransactionType::Expense,
+            ['description' => 'Zebra mercado'],
+        );
+        $this->createEntry(
+            $currentWorkspace,
+            $account,
+            FinancialTransactionType::Income,
+            ['description' => 'Salário'],
+        );
+
+        $request = $this->actingAs($user)
+            ->withSession([
+                CurrentWorkspace::SESSION_KEY => $currentWorkspace->id,
+            ]);
+
+        $request->get(route('transactions.index', ['type' => 'expense']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('entries', 1)
+                ->where('entries.0.id', $expense->id)
+            );
+
+        $request->get(route('transactions.index', [
+            'sort' => 'description',
+            'direction' => 'asc',
+        ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
                 ->has('entries', 2)
-                ->where('entries.1.id', $expense->id)
-                ->where('entries.1.description', 'Despesa visível')
+                ->where('entries.0.description', 'Salário')
+                ->where('entries.1.description', 'Zebra mercado')
+            );
+    }
+
+    public function test_index_filters_by_parent_category_including_children(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $parent = Category::factory()->for($workspace)->create([
+            'name' => 'Alimentação',
+        ]);
+        $child = Category::factory()->for($workspace)->create([
+            'name' => 'Restaurante',
+            'parent_id' => $parent->id,
+        ]);
+        $other = Category::factory()->for($workspace)->create([
+            'name' => 'Transporte',
+        ]);
+        $parentEntry = $this->createEntry(
+            $workspace,
+            $account,
+            FinancialTransactionType::Expense,
+            [
+                'description' => 'Mercado',
+                'category_id' => $parent->id,
+            ],
+        );
+        $childEntry = $this->createEntry(
+            $workspace,
+            $account,
+            FinancialTransactionType::Expense,
+            [
+                'description' => 'Jantar',
+                'category_id' => $child->id,
+            ],
+        );
+        $this->createEntry(
+            $workspace,
+            $account,
+            FinancialTransactionType::Expense,
+            [
+                'description' => 'Ônibus',
+                'category_id' => $other->id,
+            ],
+        );
+
+        $this->actingAs($user)
+            ->withSession([
+                CurrentWorkspace::SESSION_KEY => $workspace->id,
+            ])
+            ->get(route('transactions.index', ['category' => $parent->id]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('transactions/index')
+                ->has('entries', 2)
+                ->where('filters.category', (string) $parent->id)
+                ->where('entries.0.id', $childEntry->id)
+                ->where('entries.1.id', $parentEntry->id)
+            );
+    }
+
+    public function test_index_filters_uncategorized_entries(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $category = Category::factory()->for($workspace)->create();
+        $uncategorized = $this->createEntry(
+            $workspace,
+            $account,
+            FinancialTransactionType::Expense,
+            ['description' => 'Sem classificação'],
+        );
+        $this->createEntry(
+            $workspace,
+            $account,
+            FinancialTransactionType::Expense,
+            [
+                'description' => 'Com categoria',
+                'category_id' => $category->id,
+            ],
+        );
+
+        $this->actingAs($user)
+            ->withSession([
+                CurrentWorkspace::SESSION_KEY => $workspace->id,
+            ])
+            ->get(route('transactions.index', ['category' => 'none']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('transactions/index')
+                ->has('entries', 1)
+                ->where('filters.category', 'none')
+                ->where('entries.0.id', $uncategorized->id)
+            );
+    }
+
+    public function test_index_filters_period_by_transaction_competence_or_installment(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $inPeriod = $this->createEntry(
+            $workspace,
+            $account,
+            FinancialTransactionType::Expense,
+            [
+                'description' => 'Competência de setembro',
+                'transaction_date' => '2026-08-20',
+                'competence_date' => '2026-09-05',
+            ],
+        );
+        $this->createEntry(
+            $workspace,
+            $account,
+            FinancialTransactionType::Expense,
+            [
+                'description' => 'Fora do período',
+                'transaction_date' => '2026-07-10',
+                'competence_date' => '2026-07-10',
+            ],
+        );
+
+        $this->actingAs($user)
+            ->withSession([
+                CurrentWorkspace::SESSION_KEY => $workspace->id,
+            ])
+            ->get(route('transactions.index', [
+                'from' => '2026-09-01',
+                'to' => '2026-09-30',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('transactions/index')
+                ->has('entries', 1)
+                ->where('entries.0.id', $inPeriod->id)
             );
     }
 
@@ -323,6 +503,314 @@ class FinancialEntryTest extends TestCase
         $this->assertSame('-245.80', $movement->amount);
     }
 
+    public function test_edit_form_allows_switching_entry_type(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $expenseCategory = Category::factory()->for($workspace)->create([
+            'name' => 'Mercado',
+            'type' => CategoryType::Expense,
+        ]);
+        $incomeCategory = Category::factory()->for($workspace)->create([
+            'name' => 'Salário',
+            'type' => CategoryType::Income,
+        ]);
+        $expense = $this->createEntry(
+            $workspace,
+            $account,
+            FinancialTransactionType::Expense,
+            ['category_id' => $expenseCategory->id],
+        );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('transactions.edit', $expense))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('transactions/edit')
+                ->has('typeOptions', 3)
+                ->where('typeOptions.0.value', 'income')
+                ->where('typeOptions.1.value', 'expense')
+                ->where('typeOptions.2.value', 'transfer')
+                ->has('categoryOptions', 2)
+                ->where('categoryOptions.0.name', 'Mercado')
+                ->where('categoryOptions.0.type', 'expense')
+                ->where('categoryOptions.1.name', 'Salário')
+                ->where('categoryOptions.1.type', 'income')
+                ->where('entry.origin', 'manual')
+                ->where('entry.origin_label', 'Lançamento manual')
+                ->where('entry.origin_source.kind', 'manual')
+                ->where('entry.origin_source.filename', null)
+            );
+    }
+
+    public function test_edit_form_shows_bank_statement_origin(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Conta principal',
+        ]);
+        $expense = app(FinancialEntryService::class)->create(
+            $workspace,
+            $this->validEntryData(FinancialTransactionType::Expense, $account),
+            FinancialTransactionOrigin::Ofx,
+        );
+        $movement = $expense->accountMovements()->sole();
+        $import = FinancialImport::query()->create([
+            'workspace_id' => $workspace->id,
+            'financial_account_id' => $account->id,
+            'type' => FinancialImportType::Ofx,
+            'status' => FinancialImportStatus::Completed,
+            'source_filename' => 'extrato-junho.ofx',
+            'file_hash' => hash('sha256', 'origin-bank-file'),
+            'deduplication_key' => hash('sha256', 'origin-bank-import'),
+            'total_records' => 1,
+            'imported_records' => 1,
+            'duplicate_records' => 0,
+            'imported_at' => now(),
+        ]);
+
+        BankStatementEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'financial_import_id' => $import->id,
+            'financial_account_id' => $account->id,
+            'account_movement_id' => $movement->id,
+            'external_id' => 'fit-origin',
+            'deduplication_key' => hash('sha256', 'origin-bank-entry'),
+            'occurred_on' => '2026-09-20',
+            'amount' => '-100.00',
+            'transaction_type' => 'DEBIT',
+            'description' => 'Despesa de teste',
+            'is_reconciled' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('transactions.edit', $expense))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('entry.origin', 'ofx')
+                ->where('entry.origin_label', 'Extrato bancário')
+                ->where('entry.origin_source.kind', 'bank_statement')
+                ->where('entry.origin_source.filename', 'extrato-junho.ofx')
+                ->where('entry.origin_source.target_name', 'Conta principal')
+                ->where(
+                    'entry.origin_source.summary',
+                    'Arquivo extrato-junho.ofx · Conta principal',
+                )
+            );
+    }
+
+    public function test_edit_form_shows_card_statement_origin(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create([
+            'name' => 'Nubank',
+            'last_four' => '1234',
+        ]);
+        $expense = app(FinancialEntryService::class)->create(
+            $workspace,
+            [
+                ...$this->validEntryData(FinancialTransactionType::Expense),
+                'payment_method' => PaymentMethod::CreditCard->value,
+                'credit_card_id' => $card->id,
+                'financial_account_id' => null,
+            ],
+            FinancialTransactionOrigin::CardImport,
+        );
+        $installment = $expense->installments()->with('invoice')->firstOrFail();
+        $import = FinancialImport::query()->create([
+            'workspace_id' => $workspace->id,
+            'credit_card_id' => $card->id,
+            'type' => FinancialImportType::CardStatement,
+            'status' => FinancialImportStatus::Completed,
+            'source_filename' => 'fatura-setembro.pdf',
+            'file_hash' => hash('sha256', 'origin-card-file'),
+            'deduplication_key' => hash('sha256', 'origin-card-import'),
+            'total_records' => 1,
+            'imported_records' => 1,
+            'duplicate_records' => 0,
+            'imported_at' => now(),
+        ]);
+
+        CardStatementEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'financial_import_id' => $import->id,
+            'credit_card_id' => $card->id,
+            'credit_card_invoice_id' => $installment->credit_card_invoice_id,
+            'transaction_installment_id' => $installment->id,
+            'purchased_on' => '2026-09-20',
+            'description' => 'Despesa de teste',
+            'amount' => '100.00',
+            'deduplication_key' => hash('sha256', 'origin-card-entry'),
+            'is_reconciled' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('transactions.edit', $expense))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('entry.origin', 'card_import')
+                ->where('entry.origin_label', 'Fatura de cartão')
+                ->where('entry.origin_source.kind', 'card_statement')
+                ->where('entry.origin_source.filename', 'fatura-setembro.pdf')
+                ->where('entry.origin_source.target_name', 'Nubank · final 1234')
+                ->where(
+                    'entry.origin_source.summary',
+                    'Arquivo fatura-setembro.pdf · Nubank · final 1234 · Competência '.$installment->invoice->reference_month->format('m/Y'),
+                )
+            );
+    }
+
+    public function test_user_can_convert_expense_into_income(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'opening_balance' => '1000.00',
+        ]);
+        $incomeCategory = Category::factory()->for($workspace)->create([
+            'type' => CategoryType::Income,
+        ]);
+        $expense = $this->createEntry(
+            $workspace,
+            $account,
+            FinancialTransactionType::Expense,
+            ['amount' => '80.00'],
+        );
+
+        $this->assertCurrentBalance($user, $workspace, '920.00');
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->put(route('transactions.update', $expense), [
+                ...$this->validEntryData(
+                    FinancialTransactionType::Income,
+                    $account,
+                ),
+                'description' => 'PIX recebido',
+                'amount' => '80.00',
+                'category_id' => $incomeCategory->id,
+            ])
+            ->assertRedirect(route('transactions.index'))
+            ->assertSessionHasNoErrors();
+
+        $expense->refresh();
+        $movement = $expense->accountMovements()->sole();
+
+        $this->assertSame(FinancialTransactionType::Income, $expense->type);
+        $this->assertSame($incomeCategory->id, $expense->category_id);
+        $this->assertNull($expense->source_account_id);
+        $this->assertNull($expense->destination_account_id);
+        $this->assertSame(AccountMovementType::IncomeReceipt, $movement->type);
+        $this->assertSame('80.00', $movement->amount);
+        $this->assertCurrentBalance($user, $workspace, '1080.00');
+    }
+
+    public function test_user_can_convert_income_into_transfer(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $source = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'A Origem',
+            'opening_balance' => '1000.00',
+        ]);
+        $destination = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'B Destino',
+            'opening_balance' => '200.00',
+        ]);
+        $income = $this->createEntry(
+            $workspace,
+            $source,
+            FinancialTransactionType::Income,
+            ['amount' => '150.00'],
+        );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->put(route('transfers.update', $income), [
+                'transaction_date' => '2026-09-20',
+                'description' => 'Movimentação entre contas',
+                'amount' => '150.00',
+                'source_account_id' => $source->id,
+                'destination_account_id' => $destination->id,
+                'status' => FinancialTransactionStatus::Confirmed->value,
+                'notes' => null,
+            ])
+            ->assertRedirect(route('transactions.index'))
+            ->assertSessionHasNoErrors();
+
+        $income->refresh()->load('accountMovements');
+
+        $this->assertSame(FinancialTransactionType::Transfer, $income->type);
+        $this->assertSame($source->id, $income->source_account_id);
+        $this->assertSame($destination->id, $income->destination_account_id);
+        $this->assertNull($income->financial_account_id);
+        $this->assertNull($income->payment_method);
+        $this->assertCount(2, $income->accountMovements);
+        $this->assertTrue(
+            $income->accountMovements->contains(
+                fn ($movement): bool => $movement->type === AccountMovementType::TransferOut,
+            ),
+        );
+        $this->assertTrue(
+            $income->accountMovements->contains(
+                fn ($movement): bool => $movement->type === AccountMovementType::TransferIn,
+            ),
+        );
+        $this->assertFalse(
+            $income->accountMovements->contains(
+                fn ($movement): bool => $movement->type === AccountMovementType::IncomeReceipt,
+            ),
+        );
+        $this->assertAccountBalances($user, $workspace, '850.00', '350.00');
+    }
+
+    public function test_user_can_convert_transfer_into_expense(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $source = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'A Origem',
+            'opening_balance' => '1000.00',
+        ]);
+        $destination = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'B Destino',
+            'opening_balance' => '200.00',
+        ]);
+        $transfer = app(TransferService::class)->create($workspace, [
+            'transaction_date' => '2026-09-20',
+            'description' => 'Transferência visível',
+            'amount' => '120.00',
+            'source_account_id' => $source->id,
+            'destination_account_id' => $destination->id,
+            'status' => FinancialTransactionStatus::Confirmed->value,
+            'notes' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->put(route('transactions.update', $transfer), [
+                ...$this->validEntryData(
+                    FinancialTransactionType::Expense,
+                    $source,
+                ),
+                'description' => 'Pagamento reclassificado',
+                'amount' => '120.00',
+            ])
+            ->assertRedirect(route('transactions.index'))
+            ->assertSessionHasNoErrors();
+
+        $transfer->refresh()->load('accountMovements');
+        $movement = $transfer->accountMovements->sole();
+
+        $this->assertSame(FinancialTransactionType::Expense, $transfer->type);
+        $this->assertSame($source->id, $transfer->financial_account_id);
+        $this->assertNull($transfer->source_account_id);
+        $this->assertNull($transfer->destination_account_id);
+        $this->assertSame(AccountMovementType::ExpensePayment, $movement->type);
+        $this->assertSame('-120.00', $movement->amount);
+        $this->assertAccountBalances($user, $workspace, '880.00', '200.00');
+    }
+
     public function test_entry_from_another_active_workspace_cannot_be_changed(): void
     {
         [$user, $currentWorkspace] = $this->userAndWorkspace();
@@ -409,6 +897,24 @@ class FinancialEntryTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('accounts.0.current_balance', $expected)
+            );
+    }
+
+    private function assertAccountBalances(
+        User $user,
+        Workspace $workspace,
+        string $sourceBalance,
+        string $destinationBalance,
+    ): void {
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('accounts.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('accounts.0.name', 'A Origem')
+                ->where('accounts.0.current_balance', $sourceBalance)
+                ->where('accounts.1.name', 'B Destino')
+                ->where('accounts.1.current_balance', $destinationBalance)
             );
     }
 

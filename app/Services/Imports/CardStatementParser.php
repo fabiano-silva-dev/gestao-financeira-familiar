@@ -79,6 +79,22 @@ final class CardStatementParser
             'transaction id',
             'external id',
         ],
+        'category' => [
+            'categoria',
+            'category',
+            'categoria nubank',
+        ],
+    ];
+
+    /** @var array<int, string> */
+    private const PAYMENT_TITLES = [
+        'pagamento recebido',
+        'pagamento da fatura',
+        'pagamento de fatura',
+        'pagamento fatura',
+        'payment received',
+        'bill payment',
+        'credit card payment',
     ];
 
     public function parse(
@@ -86,7 +102,7 @@ final class CardStatementParser
         string $extension,
         string $amountSign,
     ): CardStatement {
-        if (! in_array($amountSign, ['positive', 'negative'], true)) {
+        if (! in_array($amountSign, ['positive', 'negative', 'auto'], true)) {
             throw new CardStatementParseException(
                 'A convenção de sinal escolhida para os valores é inválida.',
             );
@@ -167,6 +183,12 @@ final class CardStatementParser
                 );
             }
 
+            if ($this->isInvoicePayment($description)) {
+                $ignoredRows++;
+
+                continue;
+            }
+
             if ($amountSign === 'negative') {
                 $amount = $this->invertMoney($amount);
             }
@@ -178,6 +200,7 @@ final class CardStatementParser
                 $displayRow,
             );
             $externalId = $this->optionalCell($cells, $columns['external_id'] ?? null);
+            $sourceCategory = $this->optionalCell($cells, $columns['category'] ?? null);
 
             $rows[] = new CardStatementRow(
                 purchasedOn: $purchasedOn,
@@ -187,6 +210,7 @@ final class CardStatementParser
                 totalInstallments: $totalInstallments,
                 externalId: $externalId !== '' ? mb_substr($externalId, 0, 255) : null,
                 rawData: $this->rawData($headers, $cells),
+                sourceCategory: $sourceCategory !== '' ? mb_substr($sourceCategory, 0, 120) : null,
             );
 
             if (count($rows) > self::MAX_ROWS) {
@@ -202,7 +226,12 @@ final class CardStatementParser
             );
         }
 
-        return new CardStatement($rows, $headers, $sourceFormat, $ignoredRows);
+        return new CardStatement(
+            $this->normalizePurchaseDirection($rows),
+            $headers,
+            $sourceFormat,
+            $ignoredRows,
+        );
     }
 
     /**
@@ -824,6 +853,59 @@ final class CardStatementParser
         $money = $whole.'.'.$decimal;
 
         return $negative && $money !== '0.00' ? '-'.$money : $money;
+    }
+
+    /**
+     * @param  array<int, CardStatementRow>  $rows
+     * @return array<int, CardStatementRow>
+     */
+    private function normalizePurchaseDirection(array $rows): array
+    {
+        $negative = 0;
+        $positive = 0;
+
+        foreach ($rows as $row) {
+            if (str_starts_with($row->amount, '-')) {
+                $negative++;
+            } elseif ($row->amount !== '0.00') {
+                $positive++;
+            }
+        }
+
+        if ($negative <= $positive) {
+            return $rows;
+        }
+
+        return array_map(
+            fn (CardStatementRow $row): CardStatementRow => new CardStatementRow(
+                purchasedOn: $row->purchasedOn,
+                description: $row->description,
+                amount: $this->invertMoney($row->amount),
+                installmentNumber: $row->installmentNumber,
+                totalInstallments: $row->totalInstallments,
+                externalId: $row->externalId,
+                rawData: $row->rawData,
+                sourceCategory: $row->sourceCategory,
+            ),
+            $rows,
+        );
+    }
+
+    private function isInvoicePayment(string $description): bool
+    {
+        $normalized = $this->normalizeHeader($description);
+
+        if (in_array($normalized, self::PAYMENT_TITLES, true)) {
+            return true;
+        }
+
+        foreach (self::PAYMENT_TITLES as $title) {
+            if (str_contains($normalized, $title)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function invertMoney(string $amount): string

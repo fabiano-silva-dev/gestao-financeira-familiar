@@ -14,10 +14,14 @@ use Illuminate\Support\Carbon;
  * @property int|null $total_installments
  * @property array<string, string|null>|null $raw_data
  * @property bool $is_reconciled
+ * @property bool $is_ignored
+ * @property Carbon|null $ignored_at
+ * @property string|null $suggested_payee_name
  * @property Carbon|null $reconciled_at
  * @property-read CreditCard $creditCard
  * @property-read CreditCardInvoice $invoice
  * @property-read TransactionInstallment|null $transactionInstallment
+ * @property-read Category|null $suggestedCategory
  * @property-read User|null $reconciler
  */
 #[Fillable([
@@ -37,6 +41,11 @@ use Illuminate\Support\Carbon;
     'reconciled_by',
     'reconciled_at',
     'is_reconciled',
+    'is_ignored',
+    'ignored_by',
+    'ignored_at',
+    'suggested_payee_name',
+    'suggested_category_id',
 ])]
 class CardStatementEntry extends Model
 {
@@ -76,6 +85,18 @@ class CardStatementEntry extends Model
         return $this->belongsTo(User::class, 'reconciled_by');
     }
 
+    /** @return BelongsTo<User, $this> */
+    public function ignoredBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'ignored_by');
+    }
+
+    /** @return BelongsTo<Category, $this> */
+    public function suggestedCategory(): BelongsTo
+    {
+        return $this->belongsTo(Category::class, 'suggested_category_id');
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
@@ -87,6 +108,8 @@ class CardStatementEntry extends Model
             'raw_data' => 'array',
             'reconciled_at' => 'datetime',
             'is_reconciled' => 'boolean',
+            'is_ignored' => 'boolean',
+            'ignored_at' => 'datetime',
         ];
     }
 }

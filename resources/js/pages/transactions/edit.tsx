@@ -1,17 +1,26 @@
-import { Head, Link } from '@inertiajs/react';
-import { Repeat2 } from 'lucide-react';
+import { Head } from '@inertiajs/react';
+import { useState } from 'react';
+import { EntryOriginBanner } from '@/components/transactions/entry-origin-banner';
+import EntryTypeSwitcher from '@/components/transactions/entry-type-switcher';
 import FinancialEntryForm from '@/components/transactions/financial-entry-form';
+import TransferForm from '@/components/transfers/transfer-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { edit as editRecurrence } from '@/routes/recurrences';
 import { index } from '@/routes/transactions';
 import type {
     FinancialEntry,
     FinancialEntryReferenceOption,
+    FinancialEntryType,
     PaymentMethodOption,
 } from '@/types';
 
+type TypeOption = {
+    value: string;
+    label: string;
+};
+
 type Props = {
     entry: FinancialEntry;
+    typeOptions: TypeOption[];
     accountOptions: FinancialEntryReferenceOption[];
     cardOptions: FinancialEntryReferenceOption[];
     categoryOptions: FinancialEntryReferenceOption[];
@@ -19,18 +28,31 @@ type Props = {
     paymentMethods: PaymentMethodOption[];
 };
 
-export default function TransactionsEdit({ entry, ...formProps }: Props) {
+export default function TransactionsEdit({
+    entry,
+    typeOptions,
+    accountOptions,
+    ...formProps
+}: Props) {
+    const [type, setType] = useState<FinancialEntryType>(entry.type);
+    const isTransfer = type === 'transfer';
+    const typeLabel =
+        typeOptions.find((option) => option.value === type)?.label ??
+        entry.type_label;
+
     return (
         <>
-            <Head title={`Editar ${entry.description}`} />
+            <Head title={`Editar ${typeLabel.toLocaleLowerCase('pt-BR')}`} />
 
             <div className="flex h-full flex-1 flex-col gap-6 p-4 md:p-6">
                 <div>
                     <h1 className="text-2xl font-semibold tracking-tight">
-                        Editar {entry.type_label.toLocaleLowerCase('pt-BR')}
+                        Editar {typeLabel.toLocaleLowerCase('pt-BR')}
                     </h1>
                     <p className="text-muted-foreground text-sm">
-                        Atualize o lançamento e seu impacto financeiro.
+                        {isTransfer
+                            ? 'Atualize a movimentação entre contas próprias.'
+                            : 'Atualize o lançamento e seu impacto financeiro.'}
                     </p>
                 </div>
 
@@ -39,28 +61,45 @@ export default function TransactionsEdit({ entry, ...formProps }: Props) {
                         <CardTitle>Dados do lançamento</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-6">
-                        {entry.financial_recurrence_id !== null && (
-                            <div className="border-primary/20 bg-primary/5 rounded-lg border p-3 text-sm">
-                                <p className="flex items-center gap-2 font-medium">
-                                    <Repeat2 className="text-primary size-4" />
-                                    Ocorrência de uma recorrência
-                                </p>
-                                <p className="text-muted-foreground mt-1 text-xs">
-                                    Alterações aqui valem somente para esta
-                                    ocorrência. Para mudar as próximas,{' '}
-                                    <Link
-                                        className="text-primary font-medium underline-offset-4 hover:underline"
-                                        href={editRecurrence(
-                                            entry.financial_recurrence_id,
-                                        )}
-                                    >
-                                        edite a recorrência
-                                    </Link>
-                                    .
-                                </p>
-                            </div>
+                        <EntryOriginBanner entry={entry} />
+                        <EntryTypeSwitcher
+                            value={type}
+                            options={typeOptions}
+                            onChange={setType}
+                        />
+                        {isTransfer ? (
+                            <TransferForm
+                                transfer={{
+                                    id: entry.id,
+                                    transaction_date: entry.transaction_date,
+                                    description: entry.description,
+                                    amount: entry.amount,
+                                    source_account_id:
+                                        entry.source_account_id ??
+                                        entry.financial_account_id ??
+                                        0,
+                                    source_account_name:
+                                        entry.source_account_name ??
+                                        entry.financial_account_name ??
+                                        '',
+                                    destination_account_id:
+                                        entry.destination_account_id ?? 0,
+                                    destination_account_name:
+                                        entry.destination_account_name ?? '',
+                                    status: entry.status,
+                                    status_label: entry.status_label,
+                                    notes: entry.notes,
+                                }}
+                                accountOptions={accountOptions}
+                            />
+                        ) : (
+                            <FinancialEntryForm
+                                entry={entry}
+                                entryType={type}
+                                accountOptions={accountOptions}
+                                {...formProps}
+                            />
                         )}
-                        <FinancialEntryForm entry={entry} {...formProps} />
                     </CardContent>
                 </Card>
             </div>

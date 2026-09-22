@@ -21,8 +21,24 @@ class OfxImportTest extends TestCase
 
     public function test_guest_cannot_access_ofx_imports(): void
     {
-        $this->get(route('imports.ofx.index'))
+        $this->get(route('imports.index'))
             ->assertRedirect(route('login'));
+    }
+
+    public function test_user_can_open_unified_imports_page(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        FinancialAccount::factory()->for($workspace)->create();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('imports.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('imports/index')
+                ->has('pdfLayouts', 1)
+                ->where('pdfLayouts.0.value', 'banrisul_current_account')
+            );
     }
 
     public function test_user_can_import_ofx_without_creating_financial_entries(): void
@@ -42,7 +58,7 @@ class OfxImportTest extends TestCase
                     $this->ofxFile(),
                 ),
             ])
-            ->assertRedirect(route('imports.ofx.index'))
+            ->assertRedirect(route('imports.index'))
             ->assertSessionHasNoErrors();
 
         $financialImport = FinancialImport::query()->sole();
@@ -76,10 +92,10 @@ class OfxImportTest extends TestCase
 
         $this->actingAs($user)
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
-            ->get(route('imports.ofx.index'))
+            ->get(route('imports.index'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('imports/ofx')
+                ->component('imports/index')
                 ->has('imports', 1)
                 ->where('imports.0.imported_records', 2)
                 ->has('entries', 2)
@@ -87,7 +103,7 @@ class OfxImportTest extends TestCase
             );
     }
 
-    public function test_reimporting_same_file_is_idempotent(): void
+    public function test_reimporting_same_file_is_rejected(): void
     {
         Storage::fake('local');
         [$user, $workspace] = $this->userAndWorkspace();
@@ -95,17 +111,30 @@ class OfxImportTest extends TestCase
         $request = $this->actingAs($user)
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
 
-        foreach (['primeiro.ofx', 'renomeado.ofx'] as $filename) {
-            $request->post(route('imports.ofx.store'), [
-                'financial_account_id' => $account->id,
-                'file' => UploadedFile::fake()->createWithContent(
-                    $filename,
-                    $this->ofxFile(),
-                ),
+        $request->post(route('imports.ofx.store'), [
+            'financial_account_id' => $account->id,
+            'file' => UploadedFile::fake()->createWithContent(
+                'primeiro.ofx',
+                $this->ofxFile(),
+            ),
+        ])
+            ->assertRedirect(route('imports.index'))
+            ->assertSessionHasNoErrors();
+
+        $request->post(route('imports.ofx.store'), [
+            'financial_account_id' => $account->id,
+            'file' => UploadedFile::fake()->createWithContent(
+                'renomeado.ofx',
+                $this->ofxFile(),
+            ),
+        ])
+            ->assertSessionHasErrors([
+                'file' => 'Este arquivo já foi importado. Envie um arquivo diferente.',
             ])
-                ->assertRedirect(route('imports.ofx.index'))
-                ->assertSessionHasNoErrors();
-        }
+            ->assertInertiaFlash('toast', [
+                'type' => 'warning',
+                'message' => 'Este arquivo já foi importado.',
+            ]);
 
         $this->assertDatabaseCount('financial_imports', 1);
         $this->assertDatabaseCount('bank_statement_entries', 2);
@@ -152,7 +181,7 @@ class OfxImportTest extends TestCase
                 ]),
             ),
         ])
-            ->assertRedirect(route('imports.ofx.index'))
+            ->assertRedirect(route('imports.index'))
             ->assertSessionHasNoErrors();
 
         $this->assertDatabaseCount('financial_imports', 2);
@@ -197,6 +226,106 @@ class OfxImportTest extends TestCase
         $secondImport = FinancialImport::query()->latest('id')->firstOrFail();
         $this->assertSame(0, $secondImport->imported_records);
         $this->assertSame(1, $secondImport->duplicate_records);
+    }
+
+    public function test_user_can_import_csv_bank_statement(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.ofx.store'), [
+                'financial_account_id' => $account->id,
+                'file' => UploadedFile::fake()->createWithContent(
+                    'extrato.csv',
+                    "Data;Histórico;Valor\n10/09/2026;PIX Enviado;-50,00\n11/09/2026;Salário;2500,00\n",
+                ),
+            ])
+            ->assertRedirect(route('imports.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseCount('bank_statement_entries', 2);
+        $this->assertDatabaseHas('bank_statement_entries', [
+            'description' => 'PIX Enviado',
+            'amount' => '-50.00',
+        ]);
+        $this->assertDatabaseCount('financial_transactions', 0);
+    }
+
+    public function test_user_can_import_mercado_pago_csv_statement(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.ofx.store'), [
+                'financial_account_id' => $account->id,
+                'file' => UploadedFile::fake()->createWithContent(
+                    'account_statement-mercado-pago.csv',
+                    <<<'CSV'
+                    INITIAL_BALANCE;CREDITS;DEBITS;FINAL_BALANCE
+                    1,52;25.441,34;-25.442,86;0,00
+
+                    RELEASE_DATE;TRANSACTION_TYPE;REFERENCE_ID;TRANSACTION_NET_AMOUNT;PARTIAL_BALANCE
+                    01-07-2026;Dinheiro reservado Despesas Mensais ;166611940878;-1,52;0,00
+                    02-07-2026;Pix recebido FABIANO CARVALHO DA SILVA;166801941210;500,00;500,00
+                    02-07-2026;Pagamento Cartão de crédito;166802160620;-500,00;0,00
+                    CSV,
+                ),
+            ])
+            ->assertRedirect(route('imports.index'))
+            ->assertSessionHasNoErrors();
+
+        $financialImport = FinancialImport::query()->sole();
+        $this->assertSame(3, $financialImport->total_records);
+        $this->assertSame(3, $financialImport->imported_records);
+        $this->assertSame('2026-07-01', $financialImport->statement_start_on?->toDateString());
+        $this->assertSame('2026-07-02', $financialImport->statement_end_on?->toDateString());
+        $this->assertDatabaseHas('bank_statement_entries', [
+            'external_id' => '166611940878',
+            'description' => 'Dinheiro reservado Despesas Mensais',
+            'amount' => '-1.52',
+            'is_reconciled' => false,
+        ]);
+        $this->assertDatabaseHas('bank_statement_entries', [
+            'external_id' => '166801941210',
+            'amount' => '500.00',
+        ]);
+        $this->assertDatabaseCount('financial_transactions', 0);
+    }
+
+    public function test_user_can_import_banrisul_pdf_statement(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.ofx.store'), [
+                'financial_account_id' => $account->id,
+                'pdf_layout' => 'banrisul_current_account',
+                'file' => UploadedFile::fake()->createWithContent(
+                    'extrato-banrisul.pdf',
+                    $this->banrisulPdf(),
+                ),
+            ])
+            ->assertRedirect(route('imports.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseCount('bank_statement_entries', 2);
+        $this->assertDatabaseHas('bank_statement_entries', [
+            'description' => 'RESGATE CDB',
+            'amount' => '10000.00',
+        ]);
+        $this->assertDatabaseHas('bank_statement_entries', [
+            'description' => 'PIX ENVIADO - VOLMIR JAQUES CECHIN',
+            'amount' => '-354.00',
+        ]);
     }
 
     public function test_invalid_ofx_is_recorded_as_failed(): void
@@ -312,6 +441,44 @@ class OfxImportTest extends TestCase
             </BANKMSGSRSV1>
             </OFX>
             OFX;
+    }
+
+    private function banrisulPdf(): string
+    {
+        $lines = [
+            'BANRISUL 04/12/2025',
+            'CONTA..: 06.006855.0-9',
+            'MOVIMENTOS DA CONTA CORRENTE',
+            '++   MOVIMENTOS NOV/2025',
+            '03   RESGATE CDB                             000006   10.000,00',
+            '     PIX ENVIADO                             065918      354,00-',
+            '      NOME: VOLMIR JAQUES CECHIN',
+        ];
+        $stream = "BT /F1 9 Tf\n";
+        $y = 750;
+
+        foreach ($lines as $line) {
+            $escaped = str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $line);
+            $stream .= sprintf("1 0 0 1 24 %d Tm (%s) Tj\n", $y, $escaped);
+            $y -= 14;
+        }
+
+        $stream .= 'ET';
+        $length = strlen($stream);
+
+        return <<<PDF
+        %PDF-1.4
+        1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+        2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj
+        3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj
+        4 0 obj<</Length {$length}>>stream
+        {$stream}
+        endstream
+        endobj
+        5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Courier>>endobj
+        trailer<</Root 1 0 R>>
+        %%EOF
+        PDF;
     }
 
     /** @return array{User, Workspace} */

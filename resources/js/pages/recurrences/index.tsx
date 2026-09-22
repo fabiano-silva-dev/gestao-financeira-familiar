@@ -1,24 +1,34 @@
-import { Form, Head, Link } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import {
-    CalendarClock,
-    Repeat2,
+    ArrowRight,
     CircleArrowDown,
     CircleArrowUp,
-    Pause,
-    Pencil,
-    Play,
     Plus,
+    Repeat2,
 } from 'lucide-react';
-import FinancialRecurrenceController from '@/actions/App/Http/Controllers/FinancialRecurrenceController';
+import { ListingEmpty } from '@/components/listing/listing-empty';
+import { ListingToolbar } from '@/components/listing/listing-toolbar';
+import { SortableColumn } from '@/components/listing/sortable-column';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { sortListing } from '@/lib/listing';
 import { create, edit, index } from '@/routes/recurrences';
-import type { FinancialRecurrence, RecurrenceProjectionPoint } from '@/types';
+import type {
+    FinancialRecurrence,
+    ListingFilterOption,
+    ListingQueryState,
+    RecurrenceProjectionPoint,
+} from '@/types';
 
 type Props = {
     recurrences: FinancialRecurrence[];
     projection: RecurrenceProjectionPoint[];
+    filters: ListingQueryState;
+    hasRecords: boolean;
+    typeOptions: ListingFilterOption[];
+    statusOptions: ListingFilterOption[];
+    frequencyOptions: ListingFilterOption[];
 };
 
 const currency = new Intl.NumberFormat('pt-BR', {
@@ -40,10 +50,26 @@ const date = new Intl.DateTimeFormat('pt-BR', {
 });
 
 function formatDate(value: string) {
-    return date.format(new Date(value + 'T00:00:00Z'));
+    return date.format(new Date(`${value}T00:00:00Z`));
 }
 
-export default function RecurrencesIndex({ recurrences, projection }: Props) {
+export default function RecurrencesIndex({
+    recurrences,
+    projection,
+    filters,
+    hasRecords,
+    typeOptions,
+    statusOptions,
+    frequencyOptions,
+}: Props) {
+    const listUrl = index.url();
+    const onSort = (column: string) =>
+        sortListing(
+            listUrl,
+            filters,
+            column,
+            column === 'amount' || column === 'next' ? 'desc' : 'asc',
+        );
     return (
         <>
             <Head title="Recorrências" />
@@ -58,8 +84,8 @@ export default function RecurrencesIndex({ recurrences, projection }: Props) {
                             Recorrências
                         </h1>
                         <p className="text-muted-foreground mt-1 text-sm">
-                            Cadastre uma vez e trabalhe apenas nos pagamentos e
-                            exceções.
+                            Lista das regras. Abra uma linha para ver e ajustar
+                            a recorrência.
                         </p>
                     </div>
 
@@ -72,64 +98,37 @@ export default function RecurrencesIndex({ recurrences, projection }: Props) {
                 </div>
 
                 <Card>
-                    <CardHeader>
-                        <CardTitle>
-                            Projeção recorrente — próximos 6 meses
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base">
+                            Próximos 6 meses
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
                             {projection.map((month) => {
                                 const net = Number(month.net);
 
                                 return (
                                     <div
                                         key={month.month}
-                                        className="rounded-lg border p-4"
+                                        className="rounded-lg border px-3 py-2"
                                     >
-                                        <p className="text-muted-foreground text-xs font-medium uppercase">
+                                        <p className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
                                             {monthYear.format(
                                                 new Date(
-                                                    month.month + 'T00:00:00Z',
+                                                    `${month.month}T00:00:00Z`,
                                                 ),
                                             )}
                                         </p>
-                                        <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                                            <div>
-                                                <p className="text-muted-foreground text-xs">
-                                                    Receitas
-                                                </p>
-                                                <p className="text-positive font-semibold tabular-nums">
-                                                    {currency.format(
-                                                        Number(month.income),
-                                                    )}
-                                                </p>
-                                            </div>
-                                            <div>
-                                                <p className="text-muted-foreground text-xs">
-                                                    Despesas
-                                                </p>
-                                                <p className="text-destructive font-semibold tabular-nums">
-                                                    {currency.format(
-                                                        Number(month.expenses),
-                                                    )}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div className="mt-3 border-t pt-3">
-                                            <p className="text-muted-foreground text-xs">
-                                                Resultado recorrente
-                                            </p>
-                                            <p
-                                                className={
-                                                    net < 0
-                                                        ? 'text-destructive font-semibold tabular-nums'
-                                                        : 'font-semibold tabular-nums'
-                                                }
-                                            >
-                                                {currency.format(net)}
-                                            </p>
-                                        </div>
+                                        <p
+                                            className={`mt-1 text-sm font-semibold tabular-nums ${
+                                                net < 0
+                                                    ? 'text-destructive'
+                                                    : ''
+                                            }`}
+                                        >
+                                            {currency.format(net)}
+                                        </p>
                                     </div>
                                 );
                             })}
@@ -137,7 +136,7 @@ export default function RecurrencesIndex({ recurrences, projection }: Props) {
                     </CardContent>
                 </Card>
 
-                {recurrences.length === 0 ? (
+                {!hasRecords ? (
                     <Card className="border-dashed">
                         <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
                             <div className="bg-muted rounded-full p-3">
@@ -160,72 +159,111 @@ export default function RecurrencesIndex({ recurrences, projection }: Props) {
                         </CardContent>
                     </Card>
                 ) : (
-                    <div className="space-y-3">
-                        {recurrences.map((recurrence) => {
-                            const isExpense = recurrence.type === 'expense';
-                            const TypeIcon = isExpense
-                                ? CircleArrowDown
-                                : CircleArrowUp;
+                    <>
+                        <ListingToolbar
+                            url={listUrl}
+                            query={filters}
+                            searchPlaceholder="Buscar recorrência…"
+                            selects={[
+                                {
+                                    key: 'type',
+                                    label: 'Tipo',
+                                    value: filters.type,
+                                    options: typeOptions,
+                                    allLabel: 'Todos',
+                                },
+                                {
+                                    key: 'status',
+                                    label: 'Situação',
+                                    value: filters.status,
+                                    options: statusOptions,
+                                    allLabel: 'Todas',
+                                },
+                                {
+                                    key: 'frequency',
+                                    label: 'Frequência',
+                                    value: filters.frequency,
+                                    options: frequencyOptions,
+                                    allLabel: 'Todas',
+                                },
+                            ]}
+                        />
 
-                            return (
-                                <Card
-                                    key={recurrence.id}
-                                    className={
-                                        recurrence.is_active
-                                            ? undefined
-                                            : 'opacity-65'
-                                    }
-                                >
-                                    <CardHeader>
-                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                            <div className="flex min-w-0 gap-3">
-                                                <div className="bg-muted mt-0.5 rounded-full p-2">
-                                                    <TypeIcon
-                                                        className={
-                                                            isExpense
-                                                                ? 'text-destructive size-5'
-                                                                : 'text-positive size-5'
-                                                        }
-                                                    />
-                                                </div>
-                                                <div className="min-w-0">
-                                                    <CardTitle className="truncate">
-                                                        {recurrence.description}
-                                                    </CardTitle>
-                                                    <p className="text-muted-foreground mt-1 text-xs">
-                                                        {
-                                                            recurrence.schedule_label
-                                                        }
-                                                        {' · '}
-                                                        inicia em{' '}
-                                                        {formatDate(
-                                                            recurrence.starts_on,
-                                                        )}
-                                                    </p>
-                                                </div>
-                                            </div>
+                        {recurrences.length === 0 ? (
+                            <ListingEmpty />
+                        ) : (
+                    <Card className="gap-0 overflow-hidden py-0">
+                        <div className="text-muted-foreground hidden grid-cols-[minmax(0,1.6fr)_minmax(7rem,0.7fr)_minmax(8rem,0.8fr)_minmax(8rem,0.8fr)_minmax(7rem,0.7fr)_1.25rem] gap-3 border-b px-4 py-3 text-xs font-medium tracking-wide uppercase md:grid">
+                            <SortableColumn
+                                column="description"
+                                label="Recorrência"
+                                sort={filters.sort}
+                                direction={filters.direction}
+                                onSort={onSort}
+                            />
+                            <SortableColumn
+                                column="frequency"
+                                label="Frequência"
+                                sort={filters.sort}
+                                direction={filters.direction}
+                                onSort={onSort}
+                            />
+                            <SortableColumn
+                                column="next"
+                                label="Próxima"
+                                sort={filters.sort}
+                                direction={filters.direction}
+                                onSort={onSort}
+                            />
+                            <SortableColumn
+                                column="category"
+                                label="Categoria"
+                                sort={filters.sort}
+                                direction={filters.direction}
+                                onSort={onSort}
+                            />
+                            <SortableColumn
+                                column="amount"
+                                label="Valor"
+                                sort={filters.sort}
+                                direction={filters.direction}
+                                onSort={onSort}
+                                align="right"
+                            />
+                            <span className="sr-only">Abrir</span>
+                        </div>
+                        <div className="divide-y">
+                            {recurrences.map((recurrence) => {
+                                const isExpense = recurrence.type === 'expense';
+                                const TypeIcon = isExpense
+                                    ? CircleArrowDown
+                                    : CircleArrowUp;
 
-                                            <div className="flex flex-wrap items-center gap-2 sm:flex-col sm:items-end">
-                                                <p
-                                                    className={
+                                return (
+                                    <Link
+                                        key={recurrence.id}
+                                        href={edit(recurrence.id)}
+                                        className={`hover:bg-muted/40 focus-visible:ring-ring group grid grid-cols-1 gap-2 px-4 py-3 transition-colors focus-visible:ring-2 focus-visible:outline-none md:grid-cols-[minmax(0,1.6fr)_minmax(7rem,0.7fr)_minmax(8rem,0.8fr)_minmax(8rem,0.8fr)_minmax(7rem,0.7fr)_1.25rem] md:items-center md:gap-3 ${
+                                            recurrence.is_active
+                                                ? ''
+                                                : 'opacity-65'
+                                        }`}
+                                    >
+                                        <div className="flex min-w-0 items-start gap-3">
+                                            <div className="bg-muted mt-0.5 rounded-full p-1.5">
+                                                <TypeIcon
+                                                    className={`size-4 ${
                                                         isExpense
-                                                            ? 'text-destructive text-lg font-semibold tabular-nums'
-                                                            : 'text-positive text-lg font-semibold tabular-nums'
-                                                    }
-                                                >
-                                                    {isExpense ? '− ' : '+ '}
-                                                    {currency.format(
-                                                        Number(
-                                                            recurrence.amount,
-                                                        ),
-                                                    )}
-                                                </p>
-                                                <div className="flex gap-2">
-                                                    <Badge variant="outline">
-                                                        {
-                                                            recurrence.payment_method_label
-                                                        }
-                                                    </Badge>
+                                                            ? 'text-destructive'
+                                                            : 'text-positive'
+                                                    }`}
+                                                />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <p className="truncate font-medium">
+                                                        {recurrence.description}
+                                                    </p>
                                                     <Badge
                                                         variant={
                                                             recurrence.is_active
@@ -238,120 +276,53 @@ export default function RecurrencesIndex({ recurrences, projection }: Props) {
                                                             : 'Pausada'}
                                                     </Badge>
                                                 </div>
-                                            </div>
-                                        </div>
-                                    </CardHeader>
-
-                                    <CardContent className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                                        <div>
-                                            <p className="text-muted-foreground text-xs uppercase">
-                                                Conta ou cartão
-                                            </p>
-                                            <p className="font-medium">
-                                                {recurrence.credit_card_name ??
-                                                    recurrence.financial_account_name ??
-                                                    'Não informado'}
-                                            </p>
-                                        </div>
-                                        <div>
-                                            <p className="text-muted-foreground text-xs uppercase">
-                                                Categoria
-                                            </p>
-                                            <p className="font-medium">
-                                                {recurrence.category_name ??
-                                                    'Sem categoria'}
-                                            </p>
-                                        </div>
-                                        <div>
-                                            <p className="text-muted-foreground text-xs uppercase">
-                                                Pessoa
-                                            </p>
-                                            <p className="font-medium">
-                                                {recurrence.family_member_name ??
-                                                    'Não informada'}
-                                            </p>
-                                        </div>
-                                        <div>
-                                            <p className="text-muted-foreground text-xs uppercase">
-                                                Próxima ocorrência
-                                            </p>
-                                            <p className="font-medium">
-                                                {recurrence.next_occurrence
-                                                    ? formatDate(
-                                                          recurrence.next_occurrence,
-                                                      )
-                                                    : 'Sem próxima data'}
-                                            </p>
-                                        </div>
-
-                                        {(recurrence.payee_name ||
-                                            recurrence.payment_instructions) && (
-                                            <div className="bg-muted/50 rounded-lg p-3 sm:col-span-2 lg:col-span-4">
-                                                <p className="font-medium">
-                                                    {recurrence.payee_name ??
-                                                        'Instruções de pagamento'}
+                                                <p className="text-muted-foreground mt-0.5 truncate text-xs">
+                                                    {recurrence.type_label}
+                                                    {' · '}
+                                                    {recurrence.credit_card_name ??
+                                                        recurrence.financial_account_name ??
+                                                        'Sem conta'}
+                                                    {recurrence.next_occurrence
+                                                        ? ` · próxima ${formatDate(recurrence.next_occurrence)}`
+                                                        : ''}
                                                 </p>
-                                                {recurrence.payment_instructions && (
-                                                    <p className="text-muted-foreground mt-1 text-xs">
-                                                        {
-                                                            recurrence.payment_instructions
-                                                        }
-                                                    </p>
-                                                )}
                                             </div>
-                                        )}
-
-                                        <div className="text-muted-foreground flex items-center gap-2 sm:col-span-2 lg:col-span-4">
-                                            <CalendarClock className="size-4" />
-                                            {
-                                                recurrence.generated_transactions_count
-                                            }{' '}
-                                            lançamento(s) já gerado(s) a partir
-                                            desta regra.
                                         </div>
-                                    </CardContent>
 
-                                    <div className="flex flex-wrap justify-end gap-2 border-t px-6 py-4">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            asChild
+                                        <p className="text-muted-foreground hidden text-sm md:block md:text-foreground">
+                                            {recurrence.schedule_label}
+                                        </p>
+                                        <p className="text-muted-foreground hidden text-sm md:block md:text-foreground">
+                                            {recurrence.next_occurrence
+                                                ? formatDate(
+                                                      recurrence.next_occurrence,
+                                                  )
+                                                : 'Sem próxima data'}
+                                        </p>
+                                        <p className="text-muted-foreground hidden truncate text-sm md:block md:text-foreground">
+                                            {recurrence.category_name ??
+                                                'Sem categoria'}
+                                        </p>
+                                        <p
+                                            className={`text-right text-sm font-semibold tabular-nums ${
+                                                isExpense
+                                                    ? 'text-destructive'
+                                                    : 'text-positive'
+                                            }`}
                                         >
-                                            <Link href={edit(recurrence.id)}>
-                                                <Pencil />
-                                                Editar
-                                            </Link>
-                                        </Button>
-                                        <Form
-                                            {...FinancialRecurrenceController.toggleStatus.form(
-                                                recurrence.id,
+                                            {isExpense ? '− ' : '+ '}
+                                            {currency.format(
+                                                Number(recurrence.amount),
                                             )}
-                                            options={{
-                                                preserveScroll: true,
-                                            }}
-                                        >
-                                            {({ processing }) => (
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    disabled={processing}
-                                                >
-                                                    {recurrence.is_active ? (
-                                                        <Pause />
-                                                    ) : (
-                                                        <Play />
-                                                    )}
-                                                    {recurrence.is_active
-                                                        ? 'Pausar'
-                                                        : 'Ativar'}
-                                                </Button>
-                                            )}
-                                        </Form>
-                                    </div>
-                                </Card>
-                            );
-                        })}
-                    </div>
+                                        </p>
+                                        <ArrowRight className="text-muted-foreground hidden size-4 shrink-0 transition-transform group-hover:translate-x-0.5 md:block" />
+                                    </Link>
+                                );
+                            })}
+                        </div>
+                    </Card>
+                        )}
+                    </>
                 )}
             </div>
         </>

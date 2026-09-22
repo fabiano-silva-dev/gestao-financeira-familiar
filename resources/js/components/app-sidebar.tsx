@@ -1,12 +1,11 @@
 import { Link } from '@inertiajs/react';
 import {
-    ArrowLeftRight,
     Repeat2,
     CreditCard,
-    FileSpreadsheet,
     Landmark,
     LayoutGrid,
     ListChecks,
+    ListFilter,
     ReceiptText,
     Tags,
     Upload,
@@ -28,15 +27,14 @@ import {
 import { dashboard } from '@/routes';
 import { index as accountsIndex } from '@/routes/accounts';
 import { index as categoriesIndex } from '@/routes/categories';
+import { index as classificationRulesIndex } from '@/routes/classification-rules';
 import { index as creditCardInvoicesIndex } from '@/routes/credit-card-invoices';
 import { index as creditCardsIndex } from '@/routes/credit-cards';
 import { index as familyMembersIndex } from '@/routes/family-members';
-import { index as ofxImportsIndex } from '@/routes/imports/ofx';
-import { index as cardStatementImportsIndex } from '@/routes/imports/card-statements';
+import { index as importsIndex } from '@/routes/imports';
 import { index as recurrencesIndex } from '@/routes/recurrences';
 import { index as reconciliationIndex } from '@/routes/reconciliation';
 import { index as transactionsIndex } from '@/routes/transactions';
-import { index as transfersIndex } from '@/routes/transfers';
 import type { NavItem } from '@/types';
 
 const mainNavItems: NavItem[] = [
@@ -71,24 +69,19 @@ const mainNavItems: NavItem[] = [
         icon: Repeat2,
     },
     {
-        title: 'Transferências',
-        href: transfersIndex(),
-        icon: ArrowLeftRight,
-    },
-    {
-        title: 'Importar OFX',
-        href: ofxImportsIndex(),
+        title: 'Importações',
+        href: importsIndex(),
         icon: Upload,
-    },
-    {
-        title: 'Importar faturas',
-        href: cardStatementImportsIndex(),
-        icon: FileSpreadsheet,
     },
     {
         title: 'Conciliação',
         href: reconciliationIndex(),
         icon: ListChecks,
+    },
+    {
+        title: 'Regras',
+        href: classificationRulesIndex(),
+        icon: ListFilter,
     },
     {
         title: 'Categorias',

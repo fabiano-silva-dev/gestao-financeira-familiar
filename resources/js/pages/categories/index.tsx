@@ -1,21 +1,30 @@
 import { Form, Head, Link, usePage } from '@inertiajs/react';
 import { FolderTree, Pencil, Plus, Power, Tags } from 'lucide-react';
 import CategoryController from '@/actions/App/Http/Controllers/CategoryController';
+import { ListingEmpty } from '@/components/listing/listing-empty';
+import { ListingToolbar } from '@/components/listing/listing-toolbar';
+import { SortableColumn } from '@/components/listing/sortable-column';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { sortListing } from '@/lib/listing';
 import { create, edit, index } from '@/routes/categories';
-import type { Category } from '@/types';
+import type {
+    Category,
+    ListingFilterOption,
+    ListingQueryState,
+} from '@/types';
 
 type Props = {
     categories: Category[];
+    filters: ListingQueryState;
+    hasRecords: boolean;
+    typeOptions: ListingFilterOption[];
+    statusOptions: ListingFilterOption[];
 };
+
+const rowGridClass =
+    'md:grid-cols-[minmax(0,1.8fr)_minmax(7rem,0.6fr)_minmax(7rem,0.6fr)_minmax(12rem,0.8fr)]';
 
 function CategoryActions({ category }: { category: Category }) {
     return (
@@ -41,8 +50,52 @@ function CategoryActions({ category }: { category: Category }) {
     );
 }
 
+function CategoryRow({
+    category,
+    nested = false,
+}: {
+    category: Category;
+    nested?: boolean;
+}) {
+    return (
+        <div
+            className={`grid grid-cols-1 gap-3 px-4 py-3 md:items-center md:gap-3 ${rowGridClass} ${
+                category.is_active ? '' : 'opacity-70'
+            }`}
+        >
+            <div className="flex min-w-0 items-center gap-3">
+                <div className="bg-muted rounded-lg p-2">
+                    <FolderTree className="size-4" />
+                </div>
+                <p className={`truncate font-medium ${nested ? 'md:pl-4' : ''}`}>
+                    {nested ? `↳ ${category.name}` : category.name}
+                </p>
+            </div>
+            <Badge variant="outline" className="w-fit">
+                {category.type_label}
+            </Badge>
+            <Badge
+                variant={category.is_active ? 'secondary' : 'outline'}
+                className="w-fit"
+            >
+                {category.is_active ? 'Ativa' : 'Inativa'}
+            </Badge>
+            <CategoryActions category={category} />
+        </div>
+    );
+}
+
 export default function CategoriesIndex() {
-    const { categories, workspace } = usePage<Props>().props;
+    const {
+        categories,
+        filters,
+        hasRecords,
+        typeOptions,
+        statusOptions,
+        workspace,
+    } = usePage<Props>().props;
+    const listUrl = index.url();
+    const onSort = (column: string) => sortListing(listUrl, filters, column);
 
     return (
         <>
@@ -71,7 +124,7 @@ export default function CategoriesIndex() {
                     </Button>
                 </div>
 
-                {categories.length === 0 ? (
+                {!hasRecords ? (
                     <Card className="border-dashed">
                         <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
                             <div className="bg-muted rounded-full p-3">
@@ -94,90 +147,76 @@ export default function CategoriesIndex() {
                         </CardContent>
                     </Card>
                 ) : (
-                    <div className="grid items-start gap-4 xl:grid-cols-2">
-                        {categories.map((category) => (
-                            <Card
-                                key={category.id}
-                                className={
-                                    category.is_active
-                                        ? undefined
-                                        : 'opacity-70'
-                                }
-                            >
-                                <CardHeader>
-                                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                                        <div className="flex min-w-0 items-center gap-3">
-                                            <div className="bg-muted rounded-lg p-2">
-                                                <FolderTree className="size-5" />
-                                            </div>
-                                            <div className="min-w-0">
-                                                <CardTitle className="truncate">
-                                                    {category.name}
-                                                </CardTitle>
-                                                <CardDescription>
-                                                    {category.children.length}{' '}
-                                                    {category.children
-                                                        .length === 1
-                                                        ? 'subcategoria'
-                                                        : 'subcategorias'}
-                                                </CardDescription>
-                                            </div>
-                                            <Badge variant="outline">
-                                                {category.type_label}
-                                            </Badge>
-                                            <Badge
-                                                variant={
-                                                    category.is_active
-                                                        ? 'secondary'
-                                                        : 'outline'
-                                                }
-                                            >
-                                                {category.is_active
-                                                    ? 'Ativa'
-                                                    : 'Inativa'}
-                                            </Badge>
-                                        </div>
-                                        <CategoryActions category={category} />
-                                    </div>
-                                </CardHeader>
+                    <>
+                        <ListingToolbar
+                            url={listUrl}
+                            query={filters}
+                            searchPlaceholder="Buscar categoria…"
+                            selects={[
+                                {
+                                    key: 'type',
+                                    label: 'Tipo',
+                                    value: filters.type,
+                                    options: typeOptions,
+                                    allLabel: 'Todos',
+                                },
+                                {
+                                    key: 'status',
+                                    label: 'Situação',
+                                    value: filters.status,
+                                    options: statusOptions,
+                                    allLabel: 'Todas',
+                                },
+                            ]}
+                        />
 
-                                {category.children.length > 0 && (
-                                    <CardContent className="space-y-2">
-                                        {category.children.map((child) => (
-                                            <div
-                                                key={child.id}
-                                                className={`flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between ${
-                                                    child.is_active
-                                                        ? ''
-                                                        : 'opacity-70'
-                                                }`}
-                                            >
-                                                <div className="flex min-w-0 items-center gap-2">
-                                                    <span className="truncate text-sm font-medium">
-                                                        {child.name}
-                                                    </span>
-                                                    <Badge
-                                                        variant={
-                                                            child.is_active
-                                                                ? 'secondary'
-                                                                : 'outline'
-                                                        }
-                                                    >
-                                                        {child.is_active
-                                                            ? 'Ativa'
-                                                            : 'Inativa'}
-                                                    </Badge>
-                                                </div>
-                                                <CategoryActions
+                        {categories.length === 0 ? (
+                            <ListingEmpty />
+                        ) : (
+                            <Card className="gap-0 overflow-hidden py-0">
+                                <div
+                                    className={`text-muted-foreground hidden gap-3 border-b px-4 py-3 text-xs font-medium tracking-wide uppercase md:grid ${rowGridClass}`}
+                                >
+                                    <SortableColumn
+                                        column="name"
+                                        label="Categoria"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <SortableColumn
+                                        column="type"
+                                        label="Tipo"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <SortableColumn
+                                        column="status"
+                                        label="Situação"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <span className="text-right">Ações</span>
+                                </div>
+                                <div className="divide-y">
+                                    {categories.map((category) => (
+                                        <div key={category.id}>
+                                            <CategoryRow category={category} />
+                                            {category.children.map((child) => (
+                                                <CategoryRow
+                                                    key={child.id}
                                                     category={child}
+                                                    nested
                                                 />
-                                            </div>
-                                        ))}
-                                    </CardContent>
-                                )}
+                                            ))}
+                                        </div>
+                                    ))}
+                                </div>
                             </Card>
-                        ))}
-                    </div>
+                        )}
+                    </>
                 )}
             </div>
         </>

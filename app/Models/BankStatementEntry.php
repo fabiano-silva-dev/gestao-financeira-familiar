@@ -11,10 +11,14 @@ use Illuminate\Support\Carbon;
  * @property Carbon $occurred_on
  * @property string $amount
  * @property bool $is_reconciled
+ * @property bool $is_ignored
+ * @property Carbon|null $ignored_at
+ * @property string|null $suggested_payee_name
  * @property Carbon|null $reconciled_at
  * @property-read FinancialAccount $financialAccount
  * @property-read FinancialImport $financialImport
  * @property-read AccountMovement|null $accountMovement
+ * @property-read Category|null $suggestedCategory
  */
 #[Fillable([
     'workspace_id',
@@ -31,6 +35,11 @@ use Illuminate\Support\Carbon;
     'reconciled_by',
     'reconciled_at',
     'is_reconciled',
+    'is_ignored',
+    'ignored_by',
+    'ignored_at',
+    'suggested_payee_name',
+    'suggested_category_id',
 ])]
 class BankStatementEntry extends Model
 {
@@ -64,6 +73,18 @@ class BankStatementEntry extends Model
         return $this->belongsTo(User::class, 'reconciled_by');
     }
 
+    /** @return BelongsTo<User, $this> */
+    public function ignoredBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'ignored_by');
+    }
+
+    /** @return BelongsTo<Category, $this> */
+    public function suggestedCategory(): BelongsTo
+    {
+        return $this->belongsTo(Category::class, 'suggested_category_id');
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
@@ -72,6 +93,8 @@ class BankStatementEntry extends Model
             'amount' => 'decimal:2',
             'reconciled_at' => 'datetime',
             'is_reconciled' => 'boolean',
+            'is_ignored' => 'boolean',
+            'ignored_at' => 'datetime',
         ];
     }
 }

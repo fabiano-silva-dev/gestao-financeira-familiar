@@ -36,6 +36,7 @@ export type FinancialAccountMovementOverview = {
     family_member_name: string | null;
     counterparty_account_name: string | null;
     credit_card_name: string | null;
+    invoice_id: number | null;
 };
 
 export type FinancialAccountTypeOption = {

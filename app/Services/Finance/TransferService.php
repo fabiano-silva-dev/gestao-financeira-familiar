@@ -13,16 +13,23 @@ use Illuminate\Support\Facades\DB;
 
 class TransferService
 {
+    public function __construct(
+        private readonly CardPurchaseService $cardPurchaseService,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $data
      */
     public function create(Workspace $workspace, array $data): FinancialTransaction
     {
         return DB::transaction(function () use ($workspace, $data): FinancialTransaction {
+            $origin = $data['origin'] ?? FinancialTransactionOrigin::Manual;
             $transfer = $workspace->financialTransactions()->create([
                 ...$this->transferData($data),
                 'type' => FinancialTransactionType::Transfer,
-                'origin' => FinancialTransactionOrigin::Manual,
+                'origin' => $origin instanceof FinancialTransactionOrigin
+                    ? $origin
+                    : FinancialTransactionOrigin::from((string) $origin),
             ]);
 
             $this->syncMovements($transfer);
@@ -37,7 +44,17 @@ class TransferService
     public function update(FinancialTransaction $transfer, array $data): FinancialTransaction
     {
         return DB::transaction(function () use ($transfer, $data): FinancialTransaction {
+            if ($transfer->type !== FinancialTransactionType::Transfer) {
+                $this->cardPurchaseService->clear($transfer);
+                $this->clearNonTransferMovements($transfer);
+            }
+
             $transfer->update($this->transferData($data));
+
+            if ($transfer->financial_recurrence_id !== null) {
+                $transfer->update(['recurrence_is_overridden' => true]);
+            }
+
             $this->syncMovements($transfer->refresh());
 
             return $transfer;
@@ -64,14 +81,36 @@ class TransferService
     private function transferData(array $data): array
     {
         return [
+            'type' => FinancialTransactionType::Transfer,
             'transaction_date' => $data['transaction_date'],
+            'competence_date' => $data['transaction_date'],
             'description' => $data['description'],
             'amount' => $data['amount'],
+            'financial_account_id' => null,
+            'credit_card_id' => null,
+            'category_id' => null,
+            'family_member_id' => null,
+            'payment_method' => null,
+            'payee_name' => null,
+            'payment_instructions' => null,
+            'due_date' => null,
+            'settled_on' => null,
             'source_account_id' => $data['source_account_id'],
             'destination_account_id' => $data['destination_account_id'],
             'status' => $data['status'],
             'notes' => $data['notes'] ?? null,
         ];
+    }
+
+    private function clearNonTransferMovements(FinancialTransaction $entry): void
+    {
+        $entry->accountMovements()
+            ->whereNotIn('type', [
+                AccountMovementType::TransferOut,
+                AccountMovementType::TransferIn,
+            ])
+            ->get()
+            ->each(fn (AccountMovement $movement) => $movement->delete());
     }
 
     private function syncMovements(FinancialTransaction $transfer): void

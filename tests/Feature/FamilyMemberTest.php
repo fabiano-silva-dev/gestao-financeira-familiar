@@ -126,6 +126,41 @@ class FamilyMemberTest extends TestCase
         $this->assertTrue($member->fresh()->is_active);
     }
 
+    public function test_index_filters_and_sorts_members(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        FamilyMember::factory()->for($workspace)->create([
+            'name' => 'Bruno',
+            'is_active' => true,
+        ]);
+        $ana = FamilyMember::factory()->for($workspace)->create([
+            'name' => 'Ana',
+            'is_active' => false,
+        ]);
+
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->get(route('family-members.index', [
+            'q' => 'Ana',
+            'sort' => 'name',
+            'direction' => 'asc',
+        ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('members', 1)
+                ->where('members.0.id', $ana->id)
+                ->where('filters.sort', 'name')
+            );
+
+        $request->get(route('family-members.index', ['status' => 'inactive']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('members', 1)
+                ->where('members.0.name', 'Ana')
+            );
+    }
+
     /**
      * @return array{User, Workspace}
      */

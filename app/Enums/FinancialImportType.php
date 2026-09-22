@@ -10,7 +10,7 @@ enum FinancialImportType: string
     public function label(): string
     {
         return match ($this) {
-            self::Ofx => 'Extrato OFX',
+            self::Ofx => 'Extrato bancário',
             self::CardStatement => 'Fatura de cartão',
         };
     }

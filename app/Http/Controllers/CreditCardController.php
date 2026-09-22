@@ -16,9 +16,11 @@ use App\Models\FinancialTransaction;
 use App\Models\TransactionInstallment;
 use App\Models\Workspace;
 use App\Services\Finance\CreditCardInvoiceService;
+use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -29,21 +31,46 @@ class CreditCardController extends Controller
         private readonly CreditCardInvoiceService $invoiceService,
     ) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $workspace = $this->workspace();
         $usedLimits = $this->usedLimitsByCard($workspace);
-
-        $cards = $workspace
+        $listing = ListingQuery::from(
+            $request,
+            ['name', 'limit', 'used', 'available', 'status'],
+            'status',
+            'desc',
+            ['status'],
+        );
+        $query = $workspace
             ->creditCards()
-            ->with(['holder:id,name', 'paymentAccount:id,name'])
-            ->orderByDesc('is_active')
-            ->orderBy('name')
+            ->with(['holder:id,name', 'paymentAccount:id,name']);
+        $listing->applySearch($query, ['name', 'institution', 'last_four']);
+
+        $active = $listing->booleanFilter('status');
+
+        if ($active !== null) {
+            $query->where('is_active', $active);
+        }
+
+        if ($listing->sort === 'status') {
+            $query->orderBy('is_active', $listing->direction)->orderBy('name');
+        } elseif (in_array($listing->sort, ['name'], true)) {
+            $listing->applySort($query, ['name' => 'name']);
+        }
+
+        $cards = $query
             ->get()
             ->map(fn (CreditCard $card): array => $this->cardData(
                 $card,
                 (string) ($usedLimits[$card->id] ?? '0.00'),
             ));
+
+        $cards = $listing->sortMapped($cards, [
+            'limit' => fn (array $card): int => ListingQuery::moneyToCents($card['credit_limit']),
+            'used' => fn (array $card): int => ListingQuery::moneyToCents($card['used_limit']),
+            'available' => fn (array $card): int => ListingQuery::moneyToCents($card['available_limit']),
+        ]);
 
         $activeCards = $cards->where('is_active', true);
         $totalLimitCents = $activeCards->sum(
@@ -62,15 +89,25 @@ class CreditCardController extends Controller
                     max(0, $totalLimitCents - $usedLimitCents),
                 ),
             ],
+            'filters' => $listing->toArray(),
+            'hasRecords' => $workspace->creditCards()->exists(),
+            'statusOptions' => ListingQuery::statusOptions('Ativos', 'Inativos'),
         ]);
     }
 
-    public function show(int $card): Response
+    public function show(Request $request, int $card): Response
     {
         $workspace = $this->workspace();
         $creditCard = $this->findCard($card);
         $usedLimits = $this->usedLimitsByCard($workspace);
         $usedLimit = (string) ($usedLimits[$creditCard->id] ?? '0.00');
+        $listing = ListingQuery::from(
+            $request,
+            ['description', 'date', 'status', 'amount'],
+            'date',
+            'desc',
+            ['status'],
+        );
 
         $openInvoices = $creditCard
             ->invoices()
@@ -79,16 +116,31 @@ class CreditCardController extends Controller
             ->orderBy('id')
             ->get();
 
-        $transactions = $creditCard
+        $transactionQuery = $creditCard
             ->transactions()
             ->with([
                 'category:id,name,parent_id',
                 'category.parent:id,name',
                 'familyMember:id,name',
                 'installments:id,financial_transaction_id,amount,due_date,status',
-            ])
-            ->orderByDesc('transaction_date')
-            ->orderByDesc('id')
+            ]);
+        $hasRecords = (clone $transactionQuery)->exists();
+        $listing->applySearch($transactionQuery, ['description']);
+
+        $status = $listing->filter('status');
+
+        if ($status !== null && FinancialTransactionStatus::tryFrom($status) !== null) {
+            $transactionQuery->where('status', $status);
+        }
+
+        $listing->applySort($transactionQuery, [
+            'description' => 'description',
+            'date' => 'transaction_date',
+            'status' => 'status',
+            'amount' => 'amount',
+        ]);
+
+        $transactions = $transactionQuery
             ->limit(100)
             ->get()
             ->map(fn (FinancialTransaction $transaction): array => $this->transactionData($transaction));
@@ -105,6 +157,9 @@ class CreditCardController extends Controller
                 ? null
                 : $this->invoiceOverviewData($nextInvoice),
             'transactions' => $transactions,
+            'filters' => $listing->toArray(),
+            'hasRecords' => $hasRecords,
+            'statusOptions' => FinancialTransactionStatus::options(),
         ]);
     }
 

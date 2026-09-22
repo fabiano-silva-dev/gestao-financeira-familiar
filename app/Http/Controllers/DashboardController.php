@@ -8,11 +8,14 @@ use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Enums\TransactionInstallmentStatus;
 use App\Models\Category;
+use App\Models\CreditCardInvoice;
 use App\Models\FinancialTransaction;
 use App\Models\TransactionInstallment;
 use App\Models\Workspace;
+use App\Services\Finance\FinancialRecurrenceService;
 use App\Support\Workspaces\CurrentWorkspace;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -20,14 +23,16 @@ class DashboardController extends Controller
 {
     public function __construct(
         private readonly CurrentWorkspace $currentWorkspace,
+        private readonly FinancialRecurrenceService $recurrenceService,
     ) {}
 
-    public function __invoke(): Response
+    public function __invoke(Request $request): Response
     {
         $workspace = $this->workspace();
         $today = CarbonImmutable::today();
-        $monthStart = $today->startOfMonth();
-        $monthEnd = $today->endOfMonth();
+        $this->recurrenceService->generateForWorkspace($workspace);
+        $monthStart = $this->periodStart($request, $today);
+        $monthEnd = $monthStart->endOfMonth();
 
         $openingBalance = $this->sumMoney(
             $workspace->financialAccounts()->pluck('opening_balance')->all(),
@@ -78,7 +83,7 @@ class DashboardController extends Controller
                     ->where('is_active', true)
                     ->count(),
             ],
-            'cashFlow' => $this->cashFlow($workspace, $today),
+            'cashFlow' => $this->cashFlow($workspace, $monthStart),
             'categoryExpenses' => $this->categoryExpenses(
                 $workspace,
                 $monthStart,
@@ -114,6 +119,7 @@ class DashboardController extends Controller
         $workspace->financialTransactions()
             ->where('status', FinancialTransactionStatus::Confirmed->value)
             ->whereNull('credit_card_id')
+            ->whereNotNull('settled_on')
             ->whereIn('type', [
                 FinancialTransactionType::Income->value,
                 FinancialTransactionType::Expense->value,
@@ -207,13 +213,35 @@ class DashboardController extends Controller
         return $total;
     }
 
+    private function periodStart(Request $request, CarbonImmutable $today): CarbonImmutable
+    {
+        $period = $request->query('period');
+
+        if (! is_string($period) || $period === '') {
+            return $today->startOfMonth();
+        }
+
+        if (preg_match('/^(\d{4})-(\d{2})(?:-\d{2})?$/', $period, $matches) !== 1) {
+            return $today->startOfMonth();
+        }
+
+        $year = (int) $matches[1];
+        $month = (int) $matches[2];
+
+        if ($year < 1990 || $year > 2100 || $month < 1 || $month > 12) {
+            return $today->startOfMonth();
+        }
+
+        return CarbonImmutable::create($year, $month, 1)->startOfMonth();
+    }
+
     /**
      * @return array<int, array{month: string, income: string, expenses: string, net: string}>
      */
-    private function cashFlow(Workspace $workspace, CarbonImmutable $today): array
+    private function cashFlow(Workspace $workspace, CarbonImmutable $referenceMonth): array
     {
-        $firstMonth = $today->startOfMonth()->subMonths(5);
-        $lastMonth = $today->endOfMonth();
+        $firstMonth = $referenceMonth->startOfMonth()->subMonths(5);
+        $lastMonth = $referenceMonth->endOfMonth();
         $months = collect();
 
         for ($index = 0; $index < 6; $index++) {
@@ -255,6 +283,42 @@ class DashboardController extends Controller
                 $months->put($key, $month);
             });
 
+        $workspace->financialTransactions()
+            ->whereIn('status', [
+                FinancialTransactionStatus::Planned->value,
+                FinancialTransactionStatus::Confirmed->value,
+            ])
+            ->whereNull('credit_card_id')
+            ->whereNull('settled_on')
+            ->whereIn('type', [
+                FinancialTransactionType::Income->value,
+                FinancialTransactionType::Expense->value,
+            ])
+            ->whereNotNull('due_date')
+            ->whereBetween('due_date', [
+                $firstMonth->toDateString(),
+                $lastMonth->toDateString(),
+            ])
+            ->get(['type', 'due_date', 'amount'])
+            ->each(function (FinancialTransaction $entry) use ($months): void {
+                $key = $entry->due_date->format('Y-m');
+                $month = $months->get($key);
+
+                if ($month === null) {
+                    return;
+                }
+
+                $amount = abs($this->moneyToCents((string) $entry->amount));
+
+                if ($entry->type === FinancialTransactionType::Income) {
+                    $month['income'] += $amount;
+                } else {
+                    $month['expenses'] += $amount;
+                }
+
+                $months->put($key, $month);
+            });
+
         return $months
             ->values()
             ->map(fn (array $month): array => [
@@ -267,20 +331,21 @@ class DashboardController extends Controller
     }
 
     /**
-     * @return array<int, array{name: string, amount: string, percentage: float}>
+     * @return array<int, array{id: int|null, name: string, amount: string, percentage: float}>
      */
     private function categoryExpenses(
         Workspace $workspace,
         CarbonImmutable $monthStart,
         CarbonImmutable $monthEnd,
     ): array {
-        /** @var array<string, int> $totals */
+        /** @var array<string, array{id: int|null, name: string, amount: int}> $totals */
         $totals = [];
 
         $workspace->financialTransactions()
             ->where('type', FinancialTransactionType::Expense->value)
             ->where('status', FinancialTransactionStatus::Confirmed->value)
             ->whereNull('credit_card_id')
+            ->whereNotNull('settled_on')
             ->whereBetween('competence_date', [
                 $monthStart->toDateString(),
                 $monthEnd->toDateString(),
@@ -288,9 +353,7 @@ class DashboardController extends Controller
             ->with(['category:id,name,parent_id', 'category.parent:id,name'])
             ->get(['id', 'category_id', 'amount'])
             ->each(function (FinancialTransaction $entry) use (&$totals): void {
-                $name = $this->categoryName($entry->category);
-                $totals[$name] = ($totals[$name] ?? 0)
-                    + $this->moneyToCents((string) $entry->amount);
+                $this->addCategoryTotal($totals, $entry->category, (string) $entry->amount);
             });
 
         TransactionInstallment::query()
@@ -310,21 +373,27 @@ class DashboardController extends Controller
             ])
             ->get(['id', 'financial_transaction_id', 'amount'])
             ->each(function (TransactionInstallment $installment) use (&$totals): void {
-                $name = $this->categoryName($installment->transaction->category);
-                $totals[$name] = ($totals[$name] ?? 0)
-                    + $this->moneyToCents((string) $installment->amount);
+                $this->addCategoryTotal(
+                    $totals,
+                    $installment->transaction->category,
+                    (string) $installment->amount,
+                );
             });
 
-        arsort($totals);
-        $grandTotal = array_sum($totals);
+        uasort(
+            $totals,
+            fn (array $left, array $right): int => $right['amount'] <=> $left['amount'],
+        );
+        $grandTotal = array_sum(array_column($totals, 'amount'));
         $items = [];
 
-        foreach (array_slice($totals, 0, 5, true) as $name => $amount) {
+        foreach (array_slice($totals, 0, 5, true) as $group) {
             $items[] = [
-                'name' => $name,
-                'amount' => $this->money($amount),
+                'id' => $group['id'],
+                'name' => $group['name'],
+                'amount' => $this->money($group['amount']),
                 'percentage' => $grandTotal > 0
-                    ? round(($amount / $grandTotal) * 100, 1)
+                    ? round(($group['amount'] / $grandTotal) * 100, 1)
                     : 0,
             ];
         }
@@ -339,6 +408,28 @@ class DashboardController extends Controller
         Workspace $workspace,
         CarbonImmutable $today,
     ): array {
+        $until = $today->addDays(30);
+
+        return collect($this->upcomingTransactions($workspace, $today, $until))
+            ->concat($this->upcomingInvoices($workspace, $today, $until))
+            ->sortBy([
+                ['date', 'asc'],
+                ['source', 'asc'],
+                ['id', 'asc'],
+            ])
+            ->values()
+            ->take(5)
+            ->all();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function upcomingTransactions(
+        Workspace $workspace,
+        CarbonImmutable $today,
+        CarbonImmutable $until,
+    ): array {
         return $workspace->financialTransactions()
             ->whereIn('status', [
                 FinancialTransactionStatus::Planned->value,
@@ -350,29 +441,87 @@ class DashboardController extends Controller
                 FinancialTransactionType::Income->value,
                 FinancialTransactionType::Expense->value,
             ])
-            ->whereBetween('due_date', [
-                $today->toDateString(),
-                $today->addDays(30)->toDateString(),
-            ])
+            ->whereNotNull('due_date')
+            ->where('due_date', '<=', $until->toDateString())
             ->with(['category:id,name,parent_id', 'category.parent:id,name'])
             ->orderBy('due_date')
             ->orderBy('id')
-            ->limit(5)
             ->get()
-            ->map(fn (FinancialTransaction $entry): array => [
-                'id' => $entry->id,
-                'type' => $entry->type->value,
-                'description' => $entry->description,
-                'amount' => $entry->amount,
-                'date' => $entry->due_date->toDateString(),
-                'status' => $entry->status->value,
-                'status_label' => $entry->status->label(),
-                'category' => $this->categoryName($entry->category),
-                'context' => collect([
-                    $entry->payment_method?->label(),
-                    $entry->payee_name,
-                ])->filter()->join(' · ') ?: null,
-            ])
+            ->map(function (FinancialTransaction $entry) use ($today): array {
+                $isOverdue = $entry->due_date->lt($today);
+
+                return [
+                    'id' => $entry->id,
+                    'source' => 'transaction',
+                    'type' => $entry->type->value,
+                    'description' => $entry->description,
+                    'amount' => $entry->amount,
+                    'date' => $entry->due_date->toDateString(),
+                    'status' => $isOverdue ? 'overdue' : $entry->status->value,
+                    'status_label' => $isOverdue
+                        ? 'Vencido'
+                        : $entry->status->label(),
+                    'is_overdue' => $isOverdue,
+                    'category' => $this->categoryName($entry->category),
+                    'context' => collect([
+                        $entry->payment_method?->label(),
+                        $entry->payee_name,
+                    ])->filter()->join(' · ') ?: null,
+                ];
+            })
+            ->all();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function upcomingInvoices(
+        Workspace $workspace,
+        CarbonImmutable $today,
+        CarbonImmutable $until,
+    ): array {
+        return $workspace->creditCardInvoices()
+            ->where('status', '!=', CreditCardInvoiceStatus::Paid->value)
+            ->where('due_date', '<=', $until->toDateString())
+            ->with(['creditCard:id,name,last_four'])
+            ->orderBy('due_date')
+            ->orderBy('id')
+            ->get()
+            ->map(function (CreditCardInvoice $invoice) use ($today): ?array {
+                $target = (string) ($invoice->statement_amount
+                    ?? $invoice->calculated_amount);
+                $outstanding = $this->moneyToCents($target)
+                    - $this->moneyToCents((string) $invoice->paid_amount);
+
+                if ($outstanding <= 0) {
+                    return null;
+                }
+
+                $card = $invoice->creditCard;
+                $isOverdue = $invoice->due_date->lt($today);
+
+                return [
+                    'id' => $invoice->id,
+                    'source' => 'invoice',
+                    'type' => FinancialTransactionType::Expense->value,
+                    'description' => $card === null
+                        ? 'Fatura do cartão'
+                        : "Fatura {$card->name}",
+                    'amount' => $this->money($outstanding),
+                    'date' => $invoice->due_date->toDateString(),
+                    'status' => $isOverdue ? 'overdue' : $invoice->status->value,
+                    'status_label' => $isOverdue
+                        ? 'Vencido'
+                        : $invoice->status->label(),
+                    'is_overdue' => $isOverdue,
+                    'category' => 'Cartão de crédito',
+                    'context' => $card === null
+                        ? null
+                        : "final {$card->last_four}",
+                ];
+            })
+            ->filter()
+            ->values()
             ->all();
     }
 
@@ -383,6 +532,12 @@ class DashboardController extends Controller
     {
         return $workspace->financialTransactions()
             ->where('status', '!=', FinancialTransactionStatus::Cancelled->value)
+            ->where(function ($query): void {
+                $query
+                    ->whereNotNull('settled_on')
+                    ->orWhereNotNull('credit_card_id')
+                    ->orWhere('type', FinancialTransactionType::Transfer->value);
+            })
             ->with([
                 'account:id,name',
                 'creditCard:id,name,last_four',
@@ -391,24 +546,45 @@ class DashboardController extends Controller
                 'sourceAccount:id,name',
                 'destinationAccount:id,name',
             ])
-            ->orderByDesc('transaction_date')
+            ->orderByRaw('coalesce(settled_on, transaction_date) desc')
             ->orderByDesc('id')
             ->limit(6)
             ->get()
             ->map(fn (FinancialTransaction $entry): array => [
                 'id' => $entry->id,
+                'source' => 'transaction',
                 'type' => $entry->type->value,
                 'description' => $entry->description,
                 'amount' => $entry->amount,
-                'date' => $entry->transaction_date->toDateString(),
+                'date' => ($entry->settled_on ?? $entry->transaction_date)->toDateString(),
                 'status' => $entry->status->value,
-                'status_label' => $entry->status->label(),
+                'status_label' => $this->settlementLabel($entry),
+                'is_overdue' => false,
                 'category' => $entry->type === FinancialTransactionType::Transfer
                     ? 'Transferência'
                     : $this->categoryName($entry->category),
                 'context' => $this->entryContext($entry),
             ])
             ->all();
+    }
+
+    private function settlementLabel(FinancialTransaction $entry): string
+    {
+        if ($entry->type === FinancialTransactionType::Transfer) {
+            return $entry->status->label();
+        }
+
+        if ($entry->credit_card_id !== null) {
+            return $entry->status->label();
+        }
+
+        if ($entry->settled_on !== null) {
+            return $entry->type === FinancialTransactionType::Expense
+                ? 'Pago'
+                : 'Recebido';
+        }
+
+        return $entry->status->label();
     }
 
     private function entryContext(FinancialTransaction $entry): ?string
@@ -429,13 +605,53 @@ class DashboardController extends Controller
 
     private function categoryName(?Category $category): string
     {
+        return $this->categoryGroup($category)['name'];
+    }
+
+    /**
+     * @param  array<string, array{id: int|null, name: string, amount: int}>  $totals
+     */
+    private function addCategoryTotal(
+        array &$totals,
+        ?Category $category,
+        string $amount,
+    ): void {
+        $group = $this->categoryGroup($category);
+        $current = $totals[$group['key']] ?? [
+            'id' => $group['id'],
+            'name' => $group['name'],
+            'amount' => 0,
+        ];
+        $current['amount'] += $this->moneyToCents($amount);
+        $totals[$group['key']] = $current;
+    }
+
+    /**
+     * @return array{key: string, id: int|null, name: string}
+     */
+    private function categoryGroup(?Category $category): array
+    {
         if ($category === null) {
-            return 'Sem categoria';
+            return [
+                'key' => 'none',
+                'id' => null,
+                'name' => 'Sem categoria',
+            ];
         }
 
-        return $category->parent !== null
-            ? $category->parent->name
-            : $category->name;
+        if ($category->parent !== null) {
+            return [
+                'key' => (string) $category->parent->id,
+                'id' => $category->parent->id,
+                'name' => $category->parent->name,
+            ];
+        }
+
+        return [
+            'key' => (string) $category->id,
+            'id' => $category->id,
+            'name' => $category->name,
+        ];
     }
 
     /**

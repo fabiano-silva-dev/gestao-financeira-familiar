@@ -1,21 +1,26 @@
 import { Head, Link, usePage } from '@inertiajs/react';
 import {
     ArrowLeft,
-    CalendarClock,
     CreditCard as CreditCardIcon,
     Pencil,
     ReceiptText,
 } from 'lucide-react';
+import { ListingEmpty } from '@/components/listing/listing-empty';
+import { ListingToolbar } from '@/components/listing/listing-toolbar';
+import { SortableColumn } from '@/components/listing/sortable-column';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { edit as editCard, index } from '@/routes/credit-cards';
+import { sortListing } from '@/lib/listing';
+import { edit as editCard, index, show } from '@/routes/credit-cards';
 import { show as showInvoice } from '@/routes/credit-card-invoices';
 import { edit as editTransaction } from '@/routes/transactions';
 import type {
     CreditCard,
     CreditCardInvoiceOverview,
     CreditCardTransactionOverview,
+    ListingFilterOption,
+    ListingQueryState,
 } from '@/types';
 
 type Props = {
@@ -23,6 +28,9 @@ type Props = {
     currentInvoice: CreditCardInvoiceOverview | null;
     nextInvoice: CreditCardInvoiceOverview | null;
     transactions: CreditCardTransactionOverview[];
+    filters: ListingQueryState;
+    hasRecords: boolean;
+    statusOptions: ListingFilterOption[];
 };
 
 const currency = new Intl.NumberFormat('pt-BR', {
@@ -115,8 +123,23 @@ function InvoicePreview({
 }
 
 export default function CreditCardShow() {
-    const { card, currentInvoice, nextInvoice, transactions } =
-        usePage<Props>().props;
+    const {
+        card,
+        currentInvoice,
+        nextInvoice,
+        transactions,
+        filters,
+        hasRecords,
+        statusOptions,
+    } = usePage<Props>().props;
+    const listUrl = show.url(card.id);
+    const onSort = (column: string) =>
+        sortListing(
+            listUrl,
+            filters,
+            column,
+            column === 'description' || column === 'status' ? 'asc' : 'desc',
+        );
 
     return (
         <>
@@ -224,7 +247,7 @@ export default function CreditCardShow() {
                     />
                 </div>
 
-                <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                         <h2 className="text-lg font-semibold">
                             Lançamentos do cartão
@@ -241,7 +264,7 @@ export default function CreditCardShow() {
                     </Badge>
                 </div>
 
-                {transactions.length === 0 ? (
+                {!hasRecords ? (
                     <Card className="border-dashed">
                         <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
                             <CreditCardIcon className="text-muted-foreground size-6" />
@@ -256,92 +279,124 @@ export default function CreditCardShow() {
                         </CardContent>
                     </Card>
                 ) : (
-                    <div className="space-y-3">
-                        {transactions.map((transaction) => (
-                            <Card
-                                key={transaction.id}
-                                className={
-                                    transaction.status === 'cancelled'
-                                        ? 'opacity-65'
-                                        : undefined
-                                }
-                            >
-                                <CardContent className="p-5">
-                                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <p className="truncate font-semibold">
+                    <>
+                        <ListingToolbar
+                            url={listUrl}
+                            query={filters}
+                            searchPlaceholder="Buscar lançamento…"
+                            selects={[
+                                {
+                                    key: 'status',
+                                    label: 'Status',
+                                    value: filters.status,
+                                    options: statusOptions,
+                                    allLabel: 'Todos',
+                                },
+                            ]}
+                        />
+
+                        {transactions.length === 0 ? (
+                            <ListingEmpty />
+                        ) : (
+                            <Card className="gap-0 overflow-hidden py-0">
+                                <div className="text-muted-foreground hidden grid-cols-[minmax(0,1.6fr)_minmax(7rem,0.6fr)_minmax(7rem,0.6fr)_minmax(7rem,0.6fr)_minmax(6rem,0.5fr)] gap-3 border-b px-4 py-3 text-xs font-medium tracking-wide uppercase md:grid">
+                                    <SortableColumn
+                                        column="description"
+                                        label="Lançamento"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <SortableColumn
+                                        column="date"
+                                        label="Data"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <SortableColumn
+                                        column="status"
+                                        label="Status"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <SortableColumn
+                                        column="amount"
+                                        label="Valor"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                        align="right"
+                                    />
+                                    <span className="text-right">Ações</span>
+                                </div>
+                                <div className="divide-y">
+                                    {transactions.map((transaction) => (
+                                        <div
+                                            key={transaction.id}
+                                            className={`grid grid-cols-1 gap-3 px-4 py-3 md:grid-cols-[minmax(0,1.6fr)_minmax(7rem,0.6fr)_minmax(7rem,0.6fr)_minmax(7rem,0.6fr)_minmax(6rem,0.5fr)] md:items-center md:gap-3 ${
+                                                transaction.status ===
+                                                'cancelled'
+                                                    ? 'opacity-65'
+                                                    : ''
+                                            }`}
+                                        >
+                                            <div className="min-w-0">
+                                                <p className="truncate font-medium">
                                                     {transaction.description}
                                                 </p>
-                                                <Badge variant="outline">
-                                                    {transaction.status_label}
-                                                </Badge>
+                                                <p className="text-muted-foreground mt-1 truncate text-xs">
+                                                    {transaction.category_name
+                                                        ? transaction.category_name
+                                                        : 'Sem categoria'}
+                                                    {transaction.installment_count >
+                                                    1
+                                                        ? ` · ${transaction.installment_count} parcelas`
+                                                        : ''}
+                                                    {transaction.next_due_date
+                                                        ? ` · vence ${formatDate(transaction.next_due_date)}`
+                                                        : ''}
+                                                </p>
                                             </div>
-                                            <p className="text-muted-foreground mt-1 text-xs">
+                                            <p className="text-muted-foreground hidden text-sm md:block md:text-foreground">
                                                 {formatDate(
                                                     transaction.transaction_date,
                                                 )}
-                                                {transaction.category_name
-                                                    ? ' · ' +
-                                                      transaction.category_name
-                                                    : ''}
-                                                {transaction.family_member_name
-                                                    ? ' · ' +
-                                                      transaction.family_member_name
-                                                    : ''}
                                             </p>
-                                            <div className="text-muted-foreground mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                                                <span>
-                                                    {transaction.installment_count >
-                                                    1
-                                                        ? transaction.installment_count +
-                                                          ' parcelas'
-                                                        : '1 parcela'}
-                                                </span>
-                                                <span>
-                                                    {
-                                                        transaction.open_installment_count
-                                                    }{' '}
-                                                    em aberto
-                                                </span>
-                                                {transaction.next_due_date && (
-                                                    <span className="flex items-center gap-1">
-                                                        <CalendarClock className="size-3.5" />
-                                                        Próximo vencimento{' '}
-                                                        {formatDate(
-                                                            transaction.next_due_date,
-                                                        )}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <div className="flex items-center justify-between gap-4 lg:justify-end">
-                                            <p className="text-lg font-semibold tabular-nums">
+                                            <Badge
+                                                variant="outline"
+                                                className="w-fit"
+                                            >
+                                                {transaction.status_label}
+                                            </Badge>
+                                            <p className="text-right text-sm font-semibold tabular-nums">
                                                 {currency.format(
                                                     Number(transaction.amount),
                                                 )}
                                             </p>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                asChild
-                                            >
-                                                <Link
-                                                    href={editTransaction(
-                                                        transaction.id,
-                                                    )}
+                                            <div className="flex justify-end">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    asChild
                                                 >
-                                                    <Pencil />
-                                                    Editar
-                                                </Link>
-                                            </Button>
+                                                    <Link
+                                                        href={editTransaction(
+                                                            transaction.id,
+                                                        )}
+                                                    >
+                                                        <Pencil />
+                                                        Editar
+                                                    </Link>
+                                                </Button>
+                                            </div>
                                         </div>
-                                    </div>
-                                </CardContent>
+                                    ))}
+                                </div>
                             </Card>
-                        ))}
-                    </div>
+                        )}
+                    </>
                 )}
             </div>
         </>

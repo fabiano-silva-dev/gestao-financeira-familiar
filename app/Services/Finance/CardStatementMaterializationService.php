@@ -25,6 +25,8 @@ final class CardStatementMaterializationService
     public function __construct(
         private readonly CardStatementReconciliationSuggestionService $suggestionService,
         private readonly CardStatementReconciliationService $reconciliationService,
+        private readonly ExpenseCategoryMatcher $categoryMatcher,
+        private readonly ClassificationRuleMatcher $ruleMatcher,
     ) {}
 
     public function materialize(
@@ -35,6 +37,10 @@ final class CardStatementMaterializationService
         User $user,
     ): void {
         if ($entry->is_reconciled || $this->moneyToCents($entry->amount) <= 0) {
+            return;
+        }
+
+        if ($this->isInvoicePayment((string) $entry->description)) {
             return;
         }
 
@@ -98,6 +104,56 @@ final class CardStatementMaterializationService
         );
     }
 
+    public function createFromPendingEntry(
+        Workspace $workspace,
+        CreditCard $card,
+        CreditCardInvoice $invoice,
+        CardStatementEntry $entry,
+        User $user,
+        ?string $payeeName = null,
+        ?int $categoryId = null,
+    ): void {
+        if ($entry->is_reconciled || $this->moneyToCents($entry->amount) <= 0) {
+            throw ValidationException::withMessages([
+                'entry' => 'Esta linha não pode gerar uma nova compra.',
+            ]);
+        }
+
+        if ($this->isInvoicePayment((string) $entry->description)) {
+            throw ValidationException::withMessages([
+                'entry' => 'Pagamento de fatura não é uma nova despesa.',
+            ]);
+        }
+
+        if ($invoice->status !== CreditCardInvoiceStatus::Open) {
+            throw ValidationException::withMessages([
+                'entry' => 'A fatura precisa estar aberta para criar a compra.',
+            ]);
+        }
+
+        $transaction = $this->createTransaction(
+            $workspace,
+            $card,
+            $entry,
+            $payeeName,
+            $categoryId,
+        );
+        $currentInstallment = $this->createCurrentAndFutureInstallments(
+            $transaction,
+            $card,
+            $invoice,
+            $entry,
+        );
+
+        $this->reconciliationService->reconcile(
+            $workspace,
+            $invoice,
+            $entry,
+            $currentInstallment,
+            $user,
+        );
+    }
+
     /**
      * @param  array<int, array<string, mixed>>  $candidates
      */
@@ -129,6 +185,8 @@ final class CardStatementMaterializationService
         Workspace $workspace,
         CreditCard $card,
         CardStatementEntry $entry,
+        ?string $payeeName = null,
+        ?int $categoryId = null,
     ): FinancialTransaction {
         $installmentNumber = max(1, $entry->installment_number ?? 1);
         $totalInstallments = max(
@@ -137,7 +195,21 @@ final class CardStatementMaterializationService
         );
         $installmentCents = $this->moneyToCents($entry->amount);
         $totalCents = $installmentCents * $totalInstallments;
-        $categoryId = $this->knownCategoryId($workspace, $entry->description);
+        $rule = $this->ruleMatcher->match($workspace, $entry->description);
+        $ruleCategoryId = is_array($rule)
+            && $rule['action_type'] !== FinancialTransactionType::Transfer->value
+            ? $rule['category_id']
+            : null;
+        $resolvedCategoryId = $categoryId
+            ?? $ruleCategoryId
+            ?? $this->categoryMatcher->match(
+                $workspace,
+                $entry->description,
+                $this->sourceCategory($entry),
+            );
+        $resolvedPayee = is_string($payeeName) && trim($payeeName) !== ''
+            ? trim($payeeName)
+            : ((is_array($rule) ? $rule['payee_name'] : null) ?? $entry->description);
 
         return $workspace->financialTransactions()->create([
             'type' => FinancialTransactionType::Expense,
@@ -147,10 +219,10 @@ final class CardStatementMaterializationService
             'amount' => $this->centsToMoney($totalCents),
             'financial_account_id' => null,
             'credit_card_id' => $card->id,
-            'category_id' => $categoryId,
+            'category_id' => $resolvedCategoryId,
             'family_member_id' => null,
             'payment_method' => PaymentMethod::CreditCard,
-            'payee_name' => $entry->description,
+            'payee_name' => $resolvedPayee,
             'payment_instructions' => null,
             'due_date' => null,
             'settled_on' => null,
@@ -266,36 +338,30 @@ final class CardStatementMaterializationService
         ]);
     }
 
-    private function knownCategoryId(
-        Workspace $workspace,
-        string $description,
-    ): ?int {
-        $normalized = $this->normalize($description);
+    private function sourceCategory(CardStatementEntry $entry): ?string
+    {
+        $raw = $entry->raw_data ?? [];
 
-        $match = $workspace->financialTransactions()
-            ->where('type', FinancialTransactionType::Expense->value)
-            ->whereNotNull('category_id')
-            ->where('status', '!=', FinancialTransactionStatus::Cancelled->value)
-            ->latest('id')
-            ->limit(500)
-            ->get(['id', 'category_id', 'description', 'payee_name'])
-            ->first(function (FinancialTransaction $transaction) use ($normalized): bool {
-                $payee = $transaction->getAttribute('payee_name');
-                $payee = is_string($payee) && $payee !== ''
-                    ? $payee
-                    : (string) $transaction->getAttribute('description');
+        foreach (['categoria', 'category', 'Categoria', 'Category'] as $key) {
+            $value = $raw[$key] ?? null;
 
-                return $this->normalize($payee) === $normalized
-                    || $this->normalize((string) $transaction->getAttribute('description')) === $normalized;
-            });
-
-        if (! $match instanceof FinancialTransaction) {
-            return null;
+            if (is_string($value) && trim($value) !== '') {
+                return trim($value);
+            }
         }
 
-        $categoryId = $match->getAttribute('category_id');
+        return null;
+    }
 
-        return is_int($categoryId) ? $categoryId : (int) $categoryId;
+    private function isInvoicePayment(string $description): bool
+    {
+        $normalized = $this->normalize($description);
+
+        return $normalized === 'pagamento recebido'
+            || str_contains($normalized, 'pagamento recebido')
+            || str_contains($normalized, 'pagamento da fatura')
+            || str_contains($normalized, 'pagamento de fatura')
+            || str_contains($normalized, 'payment received');
     }
 
     private function dateInMonth(

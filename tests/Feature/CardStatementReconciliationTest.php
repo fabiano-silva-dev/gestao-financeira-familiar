@@ -10,9 +10,11 @@ use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
 use App\Enums\TransactionInstallmentStatus;
+use App\Models\BankStatementEntry;
 use App\Models\CardStatementEntry;
 use App\Models\CreditCard;
 use App\Models\CreditCardInvoice;
+use App\Models\FinancialAccount;
 use App\Models\FinancialImport;
 use App\Models\TransactionInstallment;
 use App\Models\User;
@@ -312,6 +314,257 @@ class CardStatementReconciliationTest extends TestCase
         $this->assertSame($installment->id, $entry->fresh()->transaction_installment_id);
     }
 
+    public function test_reconciliation_index_lists_invoice_entries_with_candidates(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+        $invoice = $this->invoice($workspace, $card);
+        $entry = $this->statementEntry($workspace, $card, $invoice);
+        $best = $this->installment($workspace, $card, $invoice);
+        $this->installment(
+            $workspace,
+            $card,
+            $invoice,
+            '89.90',
+            '2026-08-01',
+            'Outra compra',
+        );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('reconciliation.index', $this->workbenchQuery($card)))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('reconciliation/index')
+                ->has('entries', 1)
+                ->where('entries.0.kind', 'invoice')
+                ->where('entries.0.id', $entry->id)
+                ->where('entries.0.invoice_id', $invoice->id)
+                ->where('entries.0.candidates.0.installment_id', $best->id)
+                ->where('pendingEntriesCount', 1)
+            );
+    }
+
+    public function test_reconciliation_index_filters_statement_and_invoice_sources(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $bankEntry = $this->bankEntry($workspace, $account);
+        $card = CreditCard::factory()->for($workspace)->create();
+        $invoice = $this->invoice($workspace, $card);
+        $cardEntry = $this->statementEntry($workspace, $card, $invoice);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->get(route('reconciliation.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('reconciliation/index')
+                ->where('scopeReady', false)
+                ->has('entries', 0)
+                ->where('pendingEntriesCount', 2)
+            );
+
+        $request->get(route('reconciliation.index', [
+            'account' => $account->id,
+            'card' => $card->id,
+            'period' => '2026-09',
+        ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('scopeReady', true)
+                ->has('entries', 2)
+                ->where(
+                    'entries',
+                    fn ($entries): bool => collect($entries)->pluck('kind')->sort()->values()->all()
+                        === ['invoice', 'statement'],
+                )
+            );
+
+        $request->get(route('reconciliation.index', $this->workbenchQuery($card, [
+            'kind' => 'invoice',
+        ])))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('entries', 1)
+                ->where('entries.0.id', $cardEntry->id)
+                ->where('entries.0.kind', 'invoice')
+                ->where('filters.kind', 'invoice')
+            );
+
+        $request->get(route('reconciliation.index', [
+            'kind' => 'statement',
+            'account' => $account->id,
+            'period' => '2026-09',
+        ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('entries', 1)
+                ->where('entries.0.id', $bankEntry->id)
+                ->where('entries.0.kind', 'statement')
+                ->where('filters.kind', 'statement')
+            );
+    }
+
+    public function test_invoice_reconciliation_from_workspace_page_returns_to_reconciliation(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+        $invoice = $this->invoice($workspace, $card);
+        $installment = $this->installment($workspace, $card, $invoice);
+        $entry = $this->statementEntry($workspace, $card, $invoice);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->from(route('reconciliation.index'))
+            ->post(
+                route('credit-card-invoices.statement-entries.reconcile', [$invoice, $entry]),
+                ['transaction_installment_id' => $installment->id],
+            )
+            ->assertRedirect(route('reconciliation.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertTrue($entry->fresh()->is_reconciled);
+    }
+
+    public function test_user_can_ignore_card_statement_entry(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+        $invoice = $this->invoice($workspace, $card);
+        $entry = $this->statementEntry($workspace, $card, $invoice);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->from(route('reconciliation.index'))
+            ->patch(route('credit-card-invoices.statement-entries.ignore', [$invoice, $entry]))
+            ->assertRedirect(route('reconciliation.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertTrue($entry->fresh()->is_ignored);
+        $this->assertDatabaseCount('financial_transactions', 0);
+    }
+
+    public function test_user_can_create_card_purchase_from_unmatched_statement_entry(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+        $invoice = $this->invoice($workspace, $card);
+        $entry = $this->statementEntry(
+            $workspace,
+            $card,
+            $invoice,
+            '45.90',
+            '2026-09-10',
+            'Padaria Centro',
+            1,
+            1,
+        );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->from(route('reconciliation.index'))
+            ->post(route('credit-card-invoices.statement-entries.create', [$invoice, $entry]))
+            ->assertRedirect(route('reconciliation.index'))
+            ->assertSessionHasNoErrors();
+
+        $entry->refresh();
+        $this->assertTrue($entry->is_reconciled);
+        $this->assertNotNull($entry->transaction_installment_id);
+        $this->assertDatabaseCount('financial_transactions', 1);
+        $this->assertSame(
+            'Padaria Centro',
+            $entry->transactionInstallment?->transaction?->description,
+        );
+    }
+
+    public function test_card_create_is_blocked_when_a_compatible_installment_exists(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+        $invoice = $this->invoice($workspace, $card);
+        $this->installment($workspace, $card, $invoice);
+        $entry = $this->statementEntry($workspace, $card, $invoice);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->from(route('reconciliation.index'))
+            ->post(route('credit-card-invoices.statement-entries.create', [$invoice, $entry]))
+            ->assertSessionHasErrors('entry');
+
+        $this->assertFalse($entry->fresh()->is_reconciled);
+        $this->assertDatabaseCount('financial_transactions', 1);
+    }
+
+    public function test_reconciliation_index_keeps_card_relation_path(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create([
+            'name' => 'Nubank',
+            'last_four' => '1234',
+        ]);
+        $invoice = $this->invoice($workspace, $card);
+        $this->statementEntry($workspace, $card, $invoice);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('reconciliation.index', $this->workbenchQuery($card)))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('entries.0.kind', 'invoice')
+                ->where(
+                    'entries.0.relation_path',
+                    'Compra → Nubank · final 1234 → Fatura 10/2026',
+                )
+            );
+    }
+
+    public function test_user_can_reopen_and_reprocess_a_card_import_without_duplicating_purchases(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+        $invoice = $this->invoice($workspace, $card);
+        $installment = $this->installment($workspace, $card, $invoice);
+        $entry = $this->statementEntry($workspace, $card, $invoice);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(
+            route('credit-card-invoices.statement-entries.reconcile', [$invoice, $entry]),
+            ['transaction_installment_id' => $installment->id],
+        )->assertSessionHasNoErrors();
+
+        $ignored = $this->statementEntry(
+            $workspace,
+            $card,
+            $invoice,
+            '45.00',
+            '2026-09-11',
+            'Padaria do Bairro',
+            1,
+            1,
+        );
+        $ignored->update(['financial_import_id' => $entry->financial_import_id]);
+        $request->patch(
+            route('credit-card-invoices.statement-entries.ignore', [$invoice, $ignored]),
+        )->assertSessionHasNoErrors();
+
+        $request->post(route('reconciliation.reprocess', $entry->financial_import_id))
+            ->assertRedirect(route('reconciliation.index', [
+                'import' => $entry->financial_import_id,
+            ]))
+            ->assertSessionHasNoErrors();
+
+        $entry->refresh();
+        $ignored->refresh();
+        $this->assertTrue($entry->is_reconciled);
+        $this->assertSame($installment->id, $entry->transaction_installment_id);
+        $this->assertFalse($ignored->is_ignored);
+        $this->assertTrue($ignored->is_reconciled);
+        $this->assertNotNull($ignored->transaction_installment_id);
+        $this->assertDatabaseCount('financial_transactions', 2);
+    }
+
     /** @return array{User, Workspace} */
     private function userAndWorkspace(): array
     {
@@ -320,6 +573,19 @@ class CardStatementReconciliationTest extends TestCase
         $user->workspaces()->attach($workspace, ['role' => 'owner']);
 
         return [$user, $workspace];
+    }
+
+    /**
+     * @param  array<string, int|string>  $extra
+     * @return array<string, int|string>
+     */
+    private function workbenchQuery(CreditCard $card, array $extra = []): array
+    {
+        return [
+            'card' => $card->id,
+            'period' => '2026-09',
+            ...$extra,
+        ];
     }
 
     private function invoice(
@@ -415,6 +681,41 @@ class CardStatementReconciliationTest extends TestCase
             'installment_number' => $installmentNumber,
             'total_installments' => $totalInstallments,
             'deduplication_key' => hash('sha256', "entry-{$workspace->id}-{$suffix}"),
+            'is_reconciled' => false,
+        ]);
+    }
+
+    private function bankEntry(
+        Workspace $workspace,
+        FinancialAccount $account,
+    ): BankStatementEntry {
+        $this->sequence++;
+        $suffix = str_pad((string) $this->sequence, 4, '0', STR_PAD_LEFT);
+        $import = FinancialImport::query()->create([
+            'workspace_id' => $workspace->id,
+            'financial_account_id' => $account->id,
+            'type' => FinancialImportType::Ofx,
+            'status' => FinancialImportStatus::Completed,
+            'source_filename' => "extrato-{$suffix}.ofx",
+            'file_hash' => hash('sha256', "bank-file-{$workspace->id}-{$suffix}"),
+            'deduplication_key' => hash('sha256', "bank-import-{$workspace->id}-{$suffix}"),
+            'total_records' => 1,
+            'imported_records' => 1,
+            'duplicate_records' => 0,
+            'imported_at' => now(),
+        ]);
+
+        return BankStatementEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'financial_import_id' => $import->id,
+            'financial_account_id' => $account->id,
+            'external_id' => "fit-{$suffix}",
+            'deduplication_key' => hash('sha256', "bank-entry-{$workspace->id}-{$suffix}"),
+            'occurred_on' => '2026-09-10',
+            'amount' => '-89.90',
+            'transaction_type' => 'DEBIT',
+            'description' => 'Energia elétrica',
+            'memo' => null,
             'is_reconciled' => false,
         ]);
     }

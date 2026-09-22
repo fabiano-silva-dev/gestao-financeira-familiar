@@ -45,6 +45,10 @@ class FinancialEntryService
     public function update(FinancialTransaction $entry, array $data): FinancialTransaction
     {
         return DB::transaction(function () use ($entry, $data): FinancialTransaction {
+            if ($entry->type === FinancialTransactionType::Transfer) {
+                $this->clearTransferMovements($entry);
+            }
+
             $entry->update($this->entryData($data, $entry));
 
             if ($entry->financial_recurrence_id !== null) {
@@ -136,6 +140,8 @@ class FinancialEntryService
             'description' => $data['description'],
             'amount' => $data['amount'],
             'financial_account_id' => $data['financial_account_id'] ?? null,
+            'source_account_id' => null,
+            'destination_account_id' => null,
             'credit_card_id' => $data['credit_card_id'] ?? null,
             'category_id' => $data['category_id'] ?? null,
             'family_member_id' => $data['family_member_id'] ?? null,
@@ -173,6 +179,17 @@ class FinancialEntryService
         }
 
         $this->cardPurchaseService->clear($entry);
+    }
+
+    private function clearTransferMovements(FinancialTransaction $entry): void
+    {
+        $entry->accountMovements()
+            ->whereIn('type', [
+                AccountMovementType::TransferOut,
+                AccountMovementType::TransferIn,
+            ])
+            ->get()
+            ->each(fn (AccountMovement $movement) => $movement->delete());
     }
 
     private function syncMovement(FinancialTransaction $entry): void

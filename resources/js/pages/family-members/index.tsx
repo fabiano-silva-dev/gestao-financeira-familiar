@@ -1,25 +1,35 @@
 import { Form, Head, Link, usePage } from '@inertiajs/react';
 import { Pencil, Plus, Power, UserRound, Users } from 'lucide-react';
 import FamilyMemberController from '@/actions/App/Http/Controllers/FamilyMemberController';
+import { ListingEmpty } from '@/components/listing/listing-empty';
+import { ListingToolbar } from '@/components/listing/listing-toolbar';
+import { SortableColumn } from '@/components/listing/sortable-column';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardFooter,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { sortListing } from '@/lib/listing';
 import { create, edit, index } from '@/routes/family-members';
-import type { FamilyMember } from '@/types';
+import type {
+    FamilyMember,
+    ListingFilterOption,
+    ListingQueryState,
+} from '@/types';
 
 type Props = {
     members: FamilyMember[];
+    filters: ListingQueryState;
+    hasRecords: boolean;
+    statusOptions: ListingFilterOption[];
 };
 
+const rowGridClass =
+    'md:grid-cols-[minmax(0,1.6fr)_minmax(7rem,0.6fr)_minmax(12rem,0.8fr)]';
+
 export default function FamilyMembersIndex() {
-    const { members, workspace } = usePage<Props>().props;
+    const { members, filters, hasRecords, statusOptions, workspace } =
+        usePage<Props>().props;
+    const listUrl = index.url();
+    const onSort = (column: string) => sortListing(listUrl, filters, column);
 
     return (
         <>
@@ -48,7 +58,7 @@ export default function FamilyMembersIndex() {
                     </Button>
                 </div>
 
-                {members.length === 0 ? (
+                {!hasRecords ? (
                     <Card className="border-dashed">
                         <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
                             <div className="bg-muted rounded-full p-3">
@@ -71,72 +81,118 @@ export default function FamilyMembersIndex() {
                         </CardContent>
                     </Card>
                 ) : (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                        {members.map((member) => (
-                            <Card
-                                key={member.id}
-                                className={
-                                    member.is_active ? undefined : 'opacity-70'
-                                }
-                            >
-                                <CardHeader>
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="flex min-w-0 items-center gap-3">
-                                            <div className="bg-muted rounded-full p-2">
-                                                <UserRound className="size-5" />
-                                            </div>
-                                            <div className="min-w-0">
-                                                <CardTitle className="truncate">
+                    <>
+                        <ListingToolbar
+                            url={listUrl}
+                            query={filters}
+                            searchPlaceholder="Buscar pessoa…"
+                            selects={[
+                                {
+                                    key: 'status',
+                                    label: 'Situação',
+                                    value: filters.status,
+                                    options: statusOptions,
+                                    allLabel: 'Todas',
+                                },
+                            ]}
+                        />
+
+                        {members.length === 0 ? (
+                            <ListingEmpty />
+                        ) : (
+                            <Card className="gap-0 overflow-hidden py-0">
+                                <div
+                                    className={`text-muted-foreground hidden gap-3 border-b px-4 py-3 text-xs font-medium tracking-wide uppercase md:grid ${rowGridClass}`}
+                                >
+                                    <SortableColumn
+                                        column="name"
+                                        label="Pessoa"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <SortableColumn
+                                        column="status"
+                                        label="Situação"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <span className="text-right">Ações</span>
+                                </div>
+                                <div className="divide-y">
+                                    {members.map((member) => (
+                                        <div
+                                            key={member.id}
+                                            className={`grid grid-cols-1 gap-3 px-4 py-3 md:items-center md:gap-3 ${rowGridClass} ${
+                                                member.is_active
+                                                    ? ''
+                                                    : 'opacity-70'
+                                            }`}
+                                        >
+                                            <div className="flex min-w-0 items-center gap-3">
+                                                <div className="bg-muted rounded-full p-2">
+                                                    <UserRound className="size-4" />
+                                                </div>
+                                                <p className="truncate font-medium">
                                                     {member.name}
-                                                </CardTitle>
-                                                <CardDescription>
-                                                    Pessoa da família
-                                                </CardDescription>
+                                                </p>
+                                            </div>
+                                            <Badge
+                                                variant={
+                                                    member.is_active
+                                                        ? 'secondary'
+                                                        : 'outline'
+                                                }
+                                                className="w-fit"
+                                            >
+                                                {member.is_active
+                                                    ? 'Ativa'
+                                                    : 'Inativa'}
+                                            </Badge>
+                                            <div className="flex flex-wrap justify-end gap-2">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    asChild
+                                                >
+                                                    <Link
+                                                        href={edit(member.id)}
+                                                    >
+                                                        <Pencil />
+                                                        Editar
+                                                    </Link>
+                                                </Button>
+                                                <Form
+                                                    {...FamilyMemberController.toggleStatus.form(
+                                                        member.id,
+                                                    )}
+                                                    options={{
+                                                        preserveScroll: true,
+                                                    }}
+                                                >
+                                                    {({ processing }) => (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            disabled={
+                                                                processing
+                                                            }
+                                                        >
+                                                            <Power />
+                                                            {member.is_active
+                                                                ? 'Desativar'
+                                                                : 'Ativar'}
+                                                        </Button>
+                                                    )}
+                                                </Form>
                                             </div>
                                         </div>
-                                        <Badge
-                                            variant={
-                                                member.is_active
-                                                    ? 'secondary'
-                                                    : 'outline'
-                                            }
-                                        >
-                                            {member.is_active
-                                                ? 'Ativa'
-                                                : 'Inativa'}
-                                        </Badge>
-                                    </div>
-                                </CardHeader>
-                                <CardFooter className="flex flex-wrap justify-end gap-2">
-                                    <Button variant="outline" size="sm" asChild>
-                                        <Link href={edit(member.id)}>
-                                            <Pencil />
-                                            Editar
-                                        </Link>
-                                    </Button>
-                                    <Form
-                                        {...FamilyMemberController.toggleStatus.form(
-                                            member.id,
-                                        )}
-                                        options={{ preserveScroll: true }}
-                                    >
-                                        {({ processing }) => (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                disabled={processing}
-                                            >
-                                                <Power />
-                                                {member.is_active
-                                                    ? 'Desativar'
-                                                    : 'Ativar'}
-                                            </Button>
-                                        )}
-                                    </Form>
-                                </CardFooter>
+                                    ))}
+                                </div>
                             </Card>
-                        ))}
-                    </div>
+                        )}
+                    </>
                 )}
             </div>
         </>

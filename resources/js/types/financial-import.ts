@@ -60,6 +60,47 @@ export type CardStatementImportHistoryItem = {
     created_at: string | null;
 };
 
+export type UnifiedImportKind = 'statement' | 'invoice';
+
+export type PdfLayoutOption = {
+    value: string;
+    label: string;
+    kind: UnifiedImportKind;
+};
+
+export type UnifiedImportHistoryItem = {
+    id: number;
+    kind: UnifiedImportKind;
+    kind_label: string;
+    source_filename: string;
+    target_name: string | null;
+    status: 'processing' | 'completed' | 'failed';
+    status_label: string;
+    total_records: number;
+    imported_records: number;
+    duplicate_records: number;
+    statement_start_on: string | null;
+    statement_end_on: string | null;
+    statement_amount: string | null;
+    statement_amount_applied: boolean | null;
+    reference_month: string | null;
+    source_format: string | null;
+    error_message: string | null;
+    created_at: string | null;
+};
+
+export type UnifiedImportEntry = {
+    id: string;
+    kind: UnifiedImportKind;
+    kind_label: string;
+    target_name: string;
+    occurred_on: string;
+    description: string;
+    amount: string;
+    is_reconciled: boolean;
+    installment_label: string | null;
+};
+
 export type CardStatementEntry = {
     id: number;
     card_name: string;

@@ -14,9 +14,11 @@ use App\Models\TransactionInstallment;
 use App\Models\Workspace;
 use App\Services\Finance\CreditCardInvoiceService;
 use App\Services\Reconciliation\CardStatementReconciliationSuggestionService;
+use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -29,18 +31,73 @@ class CreditCardInvoiceController extends Controller
         private readonly CardStatementReconciliationSuggestionService $reconciliationSuggestionService,
     ) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
-        $invoices = $this->workspace()
+        $workspace = $this->workspace();
+        $listing = ListingQuery::from(
+            $request,
+            ['card', 'month', 'due_date', 'amount', 'status'],
+            'due_date',
+            'desc',
+            ['status', 'card'],
+        );
+        $query = $workspace
             ->creditCardInvoices()
             ->with('creditCard:id,name,last_four')
-            ->orderByDesc('due_date')
-            ->orderByDesc('id')
-            ->get()
-            ->map(fn (CreditCardInvoice $invoice): array => $this->invoiceData($invoice));
+            ->select('credit_card_invoices.*')
+            ->leftJoin(
+                'credit_cards',
+                'credit_cards.id',
+                '=',
+                'credit_card_invoices.credit_card_id',
+            );
+
+        if ($listing->search !== '') {
+            $term = $listing->searchTerm();
+            $query->where(function ($inner) use ($term): void {
+                $inner->where('credit_cards.name', 'ilike', $term)
+                    ->orWhere('credit_cards.last_four', 'ilike', $term);
+            });
+        }
+
+        $status = $listing->filter('status');
+
+        if ($status === 'overdue') {
+            $query->where('credit_card_invoices.status', '!=', CreditCardInvoiceStatus::Paid->value)
+                ->whereDate('credit_card_invoices.due_date', '<', CarbonImmutable::today());
+        } elseif ($status !== null && CreditCardInvoiceStatus::tryFrom($status) !== null) {
+            $query->where('credit_card_invoices.status', $status);
+        }
+
+        $cardId = $listing->intFilter('card');
+
+        if ($cardId !== null) {
+            $query->where('credit_card_invoices.credit_card_id', $cardId);
+        }
+
+        $listing->applySort($query, [
+            'card' => 'credit_cards.name',
+            'month' => 'credit_card_invoices.reference_month',
+            'due_date' => 'credit_card_invoices.due_date',
+            'amount' => 'credit_card_invoices.calculated_amount',
+            'status' => 'credit_card_invoices.status',
+        ], 'credit_card_invoices.id');
 
         return Inertia::render('credit-card-invoices/index', [
-            'invoices' => $invoices,
+            'invoices' => $query
+                ->get()
+                ->map(fn (CreditCardInvoice $invoice): array => $this->invoiceData($invoice)),
+            'filters' => $listing->toArray(),
+            'hasRecords' => $workspace->creditCardInvoices()->exists(),
+            'statusOptions' => CreditCardInvoiceStatus::filterOptions(),
+            'cardOptions' => $workspace->creditCards()
+                ->orderByDesc('is_active')
+                ->orderBy('name')
+                ->get(['id', 'name', 'last_four'])
+                ->map(fn ($card): array => [
+                    'value' => (string) $card->id,
+                    'label' => "{$card->name} · final {$card->last_four}",
+                ]),
         ]);
     }
 

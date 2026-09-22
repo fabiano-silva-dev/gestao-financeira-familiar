@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
 use Throwable;
 
 final class CardStatementImportService
@@ -48,6 +49,8 @@ final class CardStatementImportService
         }
 
         $fileHash = hash('sha256', $contents);
+        $this->rejectIfAlreadyImported($workspace, $card, $fileHash);
+
         $deduplicationKey = hash('sha256', implode('|', [
             'card_statement',
             "card:{$card->id}",
@@ -59,19 +62,6 @@ final class CardStatementImportService
             ->where('type', FinancialImportType::CardStatement->value)
             ->where('deduplication_key', $deduplicationKey)
             ->first();
-
-        if ($existing?->status === FinancialImportStatus::Completed) {
-            $this->materializeExistingImport(
-                $workspace,
-                $card,
-                $existing,
-                $user,
-                $referenceMonth,
-            );
-            $this->enrichWithAiSafely($workspace, $existing);
-
-            return new CardStatementImportResult($existing->refresh(), true);
-        }
 
         $extension = strtolower($file->getClientOriginalExtension());
         $storedPath = "imports/{$workspace->id}/cards/{$card->id}/{$referenceMonth}/{$fileHash}.{$extension}";
@@ -241,6 +231,31 @@ final class CardStatementImportService
         return new CardStatementImportResult($financialImport->refresh(), false);
     }
 
+    private function rejectIfAlreadyImported(
+        Workspace $workspace,
+        CreditCard $card,
+        string $fileHash,
+    ): void {
+        $alreadyImported = $workspace->financialImports()
+            ->where('file_hash', $fileHash)
+            ->where('credit_card_id', $card->id)
+            ->where('status', FinancialImportStatus::Completed)
+            ->exists();
+
+        if (! $alreadyImported) {
+            return;
+        }
+
+        Inertia::flash('toast', [
+            'type' => 'warning',
+            'message' => 'Este arquivo já foi importado.',
+        ]);
+
+        throw ValidationException::withMessages([
+            'file' => 'Este arquivo já foi importado. Envie um arquivo diferente.',
+        ]);
+    }
+
     private function enrichWithAiSafely(
         Workspace $workspace,
         FinancialImport $financialImport,
@@ -250,43 +265,6 @@ final class CardStatementImportService
         } catch (Throwable $exception) {
             report($exception);
         }
-    }
-
-    private function materializeExistingImport(
-        Workspace $workspace,
-        CreditCard $card,
-        FinancialImport $financialImport,
-        User $user,
-        string $referenceMonth,
-    ): void {
-        $invoice = $this->resolveInvoice($card, $referenceMonth);
-
-        DB::transaction(function () use (
-            $workspace,
-            $card,
-            $financialImport,
-            $user,
-            $invoice,
-        ): void {
-            $financialImport->cardStatementEntries()
-                ->where('is_reconciled', false)
-                ->orderBy('id')
-                ->get()
-                ->each(function (CardStatementEntry $entry) use (
-                    $workspace,
-                    $card,
-                    $invoice,
-                    $user,
-                ): void {
-                    $this->materializationService->materialize(
-                        $workspace,
-                        $card,
-                        $invoice,
-                        $entry,
-                        $user,
-                    );
-                });
-        });
     }
 
     private function resolveInvoice(

@@ -5,11 +5,13 @@ use App\Http\Controllers\BankReconciliationController;
 use App\Http\Controllers\CardStatementImportController;
 use App\Http\Controllers\CardStatementReconciliationController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\ClassificationRuleController;
 use App\Http\Controllers\CreditCardController;
 use App\Http\Controllers\CreditCardInvoiceController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FamilyMemberController;
 use App\Http\Controllers\FinancialAccountController;
+use App\Http\Controllers\FinancialImportController;
 use App\Http\Controllers\FinancialRecurrenceController;
 use App\Http\Controllers\FinancialTransactionController;
 use App\Http\Controllers\OfxImportController;
@@ -72,6 +74,22 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->whereNumber('category')
         ->name('categories.toggle-status');
 
+    Route::get('regras', [ClassificationRuleController::class, 'index'])
+        ->name('classification-rules.index');
+    Route::get('regras/nova', [ClassificationRuleController::class, 'create'])
+        ->name('classification-rules.create');
+    Route::post('regras', [ClassificationRuleController::class, 'store'])
+        ->name('classification-rules.store');
+    Route::get('regras/{rule}/editar', [ClassificationRuleController::class, 'edit'])
+        ->whereNumber('rule')
+        ->name('classification-rules.edit');
+    Route::put('regras/{rule}', [ClassificationRuleController::class, 'update'])
+        ->whereNumber('rule')
+        ->name('classification-rules.update');
+    Route::patch('regras/{rule}/status', [ClassificationRuleController::class, 'toggleStatus'])
+        ->whereNumber('rule')
+        ->name('classification-rules.toggle-status');
+
     Route::get('cartoes', [CreditCardController::class, 'index'])
         ->name('credit-cards.index');
     Route::get('cartoes/novo', [CreditCardController::class, 'create'])
@@ -116,6 +134,27 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->whereNumber('invoice')
         ->whereNumber('entry')
         ->name('credit-card-invoices.statement-entries.reconciliation.destroy');
+    Route::patch(
+        'faturas/{invoice}/linhas/{entry}/ignorar',
+        [CardStatementReconciliationController::class, 'ignore'],
+    )
+        ->whereNumber('invoice')
+        ->whereNumber('entry')
+        ->name('credit-card-invoices.statement-entries.ignore');
+    Route::patch(
+        'faturas/{invoice}/linhas/{entry}/classificacao',
+        [CardStatementReconciliationController::class, 'classify'],
+    )
+        ->whereNumber('invoice')
+        ->whereNumber('entry')
+        ->name('credit-card-invoices.statement-entries.classify');
+    Route::post(
+        'faturas/{invoice}/linhas/{entry}/lancamento',
+        [CardStatementReconciliationController::class, 'create'],
+    )
+        ->whereNumber('invoice')
+        ->whereNumber('entry')
+        ->name('credit-card-invoices.statement-entries.create');
 
     Route::get('lancamentos', [FinancialTransactionController::class, 'index'])
         ->name('transactions.index');
@@ -123,6 +162,8 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->name('transactions.create-expense');
     Route::get('lancamentos/nova-receita', [FinancialTransactionController::class, 'createIncome'])
         ->name('transactions.create-income');
+    Route::get('lancamentos/nova-transferencia', [FinancialTransactionController::class, 'createTransfer'])
+        ->name('transactions.create-transfer');
     Route::post('lancamentos', [FinancialTransactionController::class, 'store'])
         ->name('transactions.store');
     Route::get('lancamentos/{entry}/editar', [FinancialTransactionController::class, 'edit'])
@@ -154,13 +195,15 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->whereNumber('recurrence')
         ->name('recurrences.toggle-status');
 
-    Route::get('transferencias', [TransferController::class, 'index'])
+    Route::get('transferencias', fn () => to_route('transactions.index'))
         ->name('transfers.index');
-    Route::get('transferencias/nova', [TransferController::class, 'create'])
+    Route::get('transferencias/nova', fn () => to_route('transactions.create-transfer'))
         ->name('transfers.create');
     Route::post('transferencias', [TransferController::class, 'store'])
         ->name('transfers.store');
-    Route::get('transferencias/{transfer}/editar', [TransferController::class, 'edit'])
+    Route::get('transferencias/{transfer}/editar', function (int $transfer) {
+        return to_route('transactions.edit', $transfer);
+    })
         ->whereNumber('transfer')
         ->name('transfers.edit');
     Route::put('transferencias/{transfer}', [TransferController::class, 'update'])
@@ -170,24 +213,43 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->whereNumber('transfer')
         ->name('transfers.advance-status');
 
-    Route::get('importacoes/ofx', [OfxImportController::class, 'index'])
+    Route::get('importacoes', [FinancialImportController::class, 'index'])
+        ->name('imports.index');
+    Route::post('importacoes', [FinancialImportController::class, 'store'])
+        ->name('imports.store');
+    Route::get('importacoes/extrato', fn () => to_route('imports.index'))
         ->name('imports.ofx.index');
-    Route::post('importacoes/ofx', [OfxImportController::class, 'store'])
+    Route::post('importacoes/extrato', [OfxImportController::class, 'store'])
         ->name('imports.ofx.store');
-
-    Route::get('importacoes/faturas', [CardStatementImportController::class, 'index'])
+    Route::redirect('importacoes/ofx', '/importacoes');
+    Route::get('importacoes/faturas', fn () => to_route('imports.index'))
         ->name('imports.card-statements.index');
     Route::post('importacoes/faturas', [CardStatementImportController::class, 'store'])
         ->name('imports.card-statements.store');
 
     Route::get('conciliacao', [BankReconciliationController::class, 'index'])
         ->name('reconciliation.index');
+    Route::post('conciliacao/importacoes/{import}/reprocessar', [BankReconciliationController::class, 'reprocess'])
+        ->whereNumber('import')
+        ->name('reconciliation.reprocess');
     Route::post('conciliacao/{entry}', [BankReconciliationController::class, 'store'])
         ->whereNumber('entry')
         ->name('reconciliation.store');
     Route::delete('conciliacao/{entry}', [BankReconciliationController::class, 'destroy'])
         ->whereNumber('entry')
         ->name('reconciliation.destroy');
+    Route::patch('conciliacao/{entry}/ignorar', [BankReconciliationController::class, 'ignore'])
+        ->whereNumber('entry')
+        ->name('reconciliation.ignore');
+    Route::patch('conciliacao/{entry}/classificacao', [BankReconciliationController::class, 'classify'])
+        ->whereNumber('entry')
+        ->name('reconciliation.classify');
+    Route::post('conciliacao/{entry}/lancamento', [BankReconciliationController::class, 'create'])
+        ->whereNumber('entry')
+        ->name('reconciliation.create');
+    Route::post('conciliacao/{entry}/transferencia', [BankReconciliationController::class, 'transfer'])
+        ->whereNumber('entry')
+        ->name('reconciliation.transfer');
 
     Route::post('workspaces/{workspace}/activate', ActiveWorkspaceController::class)
         ->name('workspaces.activate');

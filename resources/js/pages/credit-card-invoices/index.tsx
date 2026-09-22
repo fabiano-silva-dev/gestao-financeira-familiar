@@ -1,13 +1,24 @@
 import { Head, Link, usePage } from '@inertiajs/react';
-import { CalendarClock, CreditCard, ReceiptText } from 'lucide-react';
+import { ArrowRight, ReceiptText } from 'lucide-react';
+import { ListingEmpty } from '@/components/listing/listing-empty';
+import { ListingToolbar } from '@/components/listing/listing-toolbar';
+import { SortableColumn } from '@/components/listing/sortable-column';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { sortListing } from '@/lib/listing';
 import { index, show } from '@/routes/credit-card-invoices';
-import type { CreditCardInvoice } from '@/types';
+import type {
+    CreditCardInvoice,
+    ListingFilterOption,
+    ListingQueryState,
+} from '@/types';
 
 type Props = {
     invoices: CreditCardInvoice[];
+    filters: ListingQueryState;
+    hasRecords: boolean;
+    statusOptions: ListingFilterOption[];
+    cardOptions: ListingFilterOption[];
 };
 
 const currency = new Intl.NumberFormat('pt-BR', {
@@ -16,7 +27,7 @@ const currency = new Intl.NumberFormat('pt-BR', {
 });
 
 const month = new Intl.DateTimeFormat('pt-BR', {
-    month: 'long',
+    month: 'short',
     year: 'numeric',
     timeZone: 'UTC',
 });
@@ -35,8 +46,26 @@ function statusVariant(status: CreditCardInvoice['status']) {
     return 'outline' as const;
 }
 
+const rowGridClass =
+    'md:grid-cols-[minmax(0,1.4fr)_minmax(7rem,0.6fr)_minmax(8rem,0.7fr)_minmax(7rem,0.6fr)_minmax(8rem,0.7fr)_1.25rem]';
+
 export default function CreditCardInvoicesIndex() {
-    const { invoices, workspace } = usePage<Props>().props;
+    const {
+        invoices,
+        filters,
+        hasRecords,
+        statusOptions,
+        cardOptions,
+        workspace,
+    } = usePage<Props>().props;
+    const listUrl = index.url();
+    const onSort = (column: string) =>
+        sortListing(
+            listUrl,
+            filters,
+            column,
+            column === 'card' || column === 'status' ? 'asc' : 'desc',
+        );
 
     return (
         <>
@@ -56,7 +85,7 @@ export default function CreditCardInvoicesIndex() {
                     </p>
                 </div>
 
-                {invoices.length === 0 ? (
+                {!hasRecords ? (
                     <Card className="border-dashed">
                         <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
                             <div className="bg-muted rounded-full p-3">
@@ -75,102 +104,125 @@ export default function CreditCardInvoicesIndex() {
                         </CardContent>
                     </Card>
                 ) : (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                        {invoices.map((invoice) => (
-                            <Card key={invoice.id}>
-                                <CardHeader>
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="min-w-0">
-                                            <CardTitle className="truncate">
-                                                {invoice.credit_card_name}
-                                            </CardTitle>
-                                            <p className="text-muted-foreground mt-1 text-sm capitalize">
+                    <>
+                        <ListingToolbar
+                            url={listUrl}
+                            query={filters}
+                            searchPlaceholder="Buscar cartão ou final…"
+                            selects={[
+                                {
+                                    key: 'card',
+                                    label: 'Cartão',
+                                    value: filters.card,
+                                    options: cardOptions,
+                                    allLabel: 'Todos',
+                                },
+                                {
+                                    key: 'status',
+                                    label: 'Situação',
+                                    value: filters.status,
+                                    options: statusOptions,
+                                    allLabel: 'Todas',
+                                },
+                            ]}
+                        />
+
+                        {invoices.length === 0 ? (
+                            <ListingEmpty />
+                        ) : (
+                            <Card className="gap-0 overflow-hidden py-0">
+                                <div
+                                    className={`text-muted-foreground hidden gap-3 border-b px-4 py-3 text-xs font-medium tracking-wide uppercase md:grid ${rowGridClass}`}
+                                >
+                                    <SortableColumn
+                                        column="card"
+                                        label="Cartão"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <SortableColumn
+                                        column="month"
+                                        label="Mês"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <SortableColumn
+                                        column="due_date"
+                                        label="Vencimento"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <SortableColumn
+                                        column="status"
+                                        label="Situação"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <SortableColumn
+                                        column="amount"
+                                        label="Valor"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                        align="right"
+                                    />
+                                    <span className="sr-only">Abrir</span>
+                                </div>
+                                <div className="divide-y">
+                                    {invoices.map((invoice) => (
+                                        <Link
+                                            key={invoice.id}
+                                            href={show(invoice.id)}
+                                            className={`hover:bg-muted/40 focus-visible:ring-ring group grid grid-cols-1 gap-2 px-4 py-3 transition-colors focus-visible:ring-2 focus-visible:outline-none md:items-center md:gap-3 ${rowGridClass}`}
+                                        >
+                                            <div className="min-w-0">
+                                                <p className="truncate font-medium">
+                                                    {invoice.credit_card_name}
+                                                </p>
+                                                <p className="text-muted-foreground mt-0.5 truncate text-xs">
+                                                    final{' '}
+                                                    {
+                                                        invoice.credit_card_last_four
+                                                    }
+                                                </p>
+                                            </div>
+                                            <p className="text-muted-foreground hidden text-sm capitalize md:block md:text-foreground">
                                                 {month.format(
                                                     new Date(
                                                         `${invoice.reference_month}T00:00:00Z`,
                                                     ),
-                                                )}{' '}
-                                                · final{' '}
-                                                {invoice.credit_card_last_four}
-                                            </p>
-                                        </div>
-                                        <Badge
-                                            variant={statusVariant(
-                                                invoice.status,
-                                            )}
-                                        >
-                                            {invoice.status_label}
-                                        </Badge>
-                                    </div>
-                                </CardHeader>
-                                <CardContent className="space-y-4">
-                                    <div>
-                                        <p className="text-muted-foreground text-xs uppercase">
-                                            Valor da fatura
-                                        </p>
-                                        <p className="text-2xl font-semibold tabular-nums">
-                                            {currency.format(
-                                                Number(
-                                                    invoice.statement_amount ??
-                                                        invoice.calculated_amount,
-                                                ),
-                                            )}
-                                        </p>
-                                        {invoice.statement_amount && (
-                                            <p className="text-muted-foreground text-xs">
-                                                Calculado:{' '}
-                                                {currency.format(
-                                                    Number(
-                                                        invoice.calculated_amount,
-                                                    ),
                                                 )}
                                             </p>
-                                        )}
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-4 text-sm">
-                                        <div>
-                                            <p className="text-muted-foreground text-xs uppercase">
-                                                Vencimento
-                                            </p>
-                                            <p className="font-medium">
+                                            <p className="text-muted-foreground hidden text-sm md:block md:text-foreground">
                                                 {formatDate(invoice.due_date)}
                                             </p>
-                                        </div>
-                                        <div>
-                                            <p className="text-muted-foreground text-xs uppercase">
-                                                Em aberto
-                                            </p>
-                                            <p className="font-medium tabular-nums">
+                                            <Badge
+                                                variant={statusVariant(
+                                                    invoice.status,
+                                                )}
+                                                className="w-fit"
+                                            >
+                                                {invoice.status_label}
+                                            </Badge>
+                                            <p className="text-right text-sm font-semibold tabular-nums">
                                                 {currency.format(
                                                     Number(
-                                                        invoice.outstanding_amount,
+                                                        invoice.statement_amount ??
+                                                            invoice.calculated_amount,
                                                     ),
                                                 )}
                                             </p>
-                                        </div>
-                                    </div>
-
-                                    <div className="text-muted-foreground flex items-center gap-2 text-xs">
-                                        <CalendarClock className="size-4" />
-                                        Fecha em{' '}
-                                        {formatDate(invoice.closing_date)}
-                                    </div>
-
-                                    <Button
-                                        className="w-full"
-                                        variant="outline"
-                                        asChild
-                                    >
-                                        <Link href={show(invoice.id)}>
-                                            <CreditCard />
-                                            Ver fatura
+                                            <ArrowRight className="text-muted-foreground hidden size-4 shrink-0 transition-transform group-hover:translate-x-0.5 md:block" />
                                         </Link>
-                                    </Button>
-                                </CardContent>
+                                    ))}
+                                </div>
                             </Card>
-                        ))}
-                    </div>
+                        )}
+                    </>
                 )}
             </div>
         </>

@@ -6,8 +6,10 @@ use App\Http\Requests\StoreFamilyMemberRequest;
 use App\Http\Requests\UpdateFamilyMemberRequest;
 use App\Models\FamilyMember;
 use App\Models\Workspace;
+use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -17,17 +19,41 @@ class FamilyMemberController extends Controller
         private readonly CurrentWorkspace $currentWorkspace,
     ) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
-        $members = $this->workspace()
-            ->familyMembers()
-            ->orderByDesc('is_active')
-            ->orderBy('name')
-            ->get()
-            ->map(fn (FamilyMember $member): array => $this->memberData($member));
+        $workspace = $this->workspace();
+        $listing = ListingQuery::from(
+            $request,
+            ['name', 'status'],
+            'status',
+            'desc',
+            ['status'],
+        );
+        $query = $workspace->familyMembers()->getQuery();
+        $listing->applySearch($query, ['name']);
+
+        $active = $listing->booleanFilter('status');
+
+        if ($active !== null) {
+            $query->where('is_active', $active);
+        }
+
+        if ($listing->sort === 'status') {
+            $query->orderBy('is_active', $listing->direction)->orderBy('name');
+        } else {
+            $listing->applySort($query, [
+                'name' => 'name',
+                'status' => 'is_active',
+            ]);
+        }
 
         return Inertia::render('family-members/index', [
-            'members' => $members,
+            'members' => $query
+                ->get()
+                ->map(fn (FamilyMember $member): array => $this->memberData($member)),
+            'filters' => $listing->toArray(),
+            'hasRecords' => $workspace->familyMembers()->exists(),
+            'statusOptions' => ListingQuery::statusOptions(),
         ]);
     }
 

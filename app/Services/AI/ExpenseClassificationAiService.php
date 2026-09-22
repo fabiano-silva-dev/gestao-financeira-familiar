@@ -12,6 +12,10 @@ use Illuminate\Support\Facades\Log;
 
 final class ExpenseClassificationAiService
 {
+    public function __construct(
+        private readonly FinancialAiCredentialsService $credentials,
+    ) {}
+
     /**
      * @param  Collection<int, CardStatementEntry>  $entries
      * @return array{
@@ -30,12 +34,12 @@ final class ExpenseClassificationAiService
         Workspace $workspace,
         Collection $entries,
     ): ?array {
-        if (! (bool) config('financial_ai.enabled', true) || $entries->isEmpty()) {
+        if (! $this->credentials->enabled($workspace) || $entries->isEmpty()) {
             return null;
         }
 
         $prompt = $this->prompt($workspace, $entries);
-        $geminiKey = trim((string) config('financial_ai.gemini.api_key', ''));
+        $geminiKey = $this->credentials->geminiApiKey($workspace);
 
         if ($geminiKey !== '') {
             foreach ((array) config('financial_ai.gemini.models', []) as $model) {
@@ -56,7 +60,7 @@ final class ExpenseClassificationAiService
             }
         }
 
-        $groqKey = trim((string) config('financial_ai.groq.api_key', ''));
+        $groqKey = $this->credentials->groqApiKey($workspace);
 
         if ($groqKey !== '') {
             foreach ((array) config('financial_ai.groq.models', []) as $model) {

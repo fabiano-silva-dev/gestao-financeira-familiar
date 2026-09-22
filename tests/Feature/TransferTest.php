@@ -25,7 +25,7 @@ class TransferTest extends TestCase
             ->assertRedirect(route('login'));
     }
 
-    public function test_index_only_lists_transfers_from_current_workspace(): void
+    public function test_index_lists_transfers_together_with_other_entries(): void
     {
         [$user, $currentWorkspace] = $this->userAndWorkspace();
         $otherWorkspace = Workspace::factory()->create();
@@ -50,13 +50,29 @@ class TransferTest extends TestCase
             ->withSession([
                 CurrentWorkspace::SESSION_KEY => $currentWorkspace->id,
             ])
-            ->get(route('transfers.index'))
+            ->get(route('transactions.index'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('transfers/index')
-                ->has('transfers', 1)
-                ->where('transfers.0.id', $visibleTransfer->id)
-                ->where('transfers.0.description', 'Transferência visível')
+                ->component('transactions/index')
+                ->has('entries', 1)
+                ->where('entries.0.id', $visibleTransfer->id)
+                ->where('entries.0.description', 'Transferência visível')
+                ->where('entries.0.type', 'transfer')
+            );
+    }
+
+    public function test_user_can_open_transfer_form_from_transactions(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $this->accountPair($workspace);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('transactions.create-transfer'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('transactions/create')
+                ->where('entryType', 'transfer')
             );
     }
 
@@ -72,7 +88,7 @@ class TransferTest extends TestCase
                 'amount' => '2000.00',
                 'description' => 'Reserva mensal',
             ])
-            ->assertRedirect(route('transfers.index'))
+            ->assertRedirect(route('transactions.index'))
             ->assertSessionHasNoErrors();
 
         $transfer = FinancialTransaction::query()->sole();
@@ -140,7 +156,7 @@ class TransferTest extends TestCase
                 'description' => 'Transferência atualizada',
                 'amount' => '350.75',
             ])
-            ->assertRedirect(route('transfers.index'))
+            ->assertRedirect(route('transactions.index'))
             ->assertSessionHasNoErrors();
 
         $transfer->refresh()->load('accountMovements');
@@ -184,7 +200,7 @@ class TransferTest extends TestCase
         $this->assertAccountBalances($request, '5000.00', '1000.00');
 
         $request->patch(route('transfers.advance-status', $transfer))
-            ->assertRedirect(route('transfers.index'));
+            ->assertRedirect(route('transactions.index'));
         $this->assertSame(
             FinancialTransactionStatus::Confirmed,
             $transfer->fresh()->status,
@@ -192,7 +208,7 @@ class TransferTest extends TestCase
         $this->assertAccountBalances($request, '3000.00', '3000.00');
 
         $request->patch(route('transfers.advance-status', $transfer))
-            ->assertRedirect(route('transfers.index'));
+            ->assertRedirect(route('transactions.index'));
         $this->assertSame(
             FinancialTransactionStatus::Cancelled,
             $transfer->fresh()->status,

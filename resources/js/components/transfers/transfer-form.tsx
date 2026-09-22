@@ -12,7 +12,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { index } from '@/routes/transfers';
+import { index } from '@/routes/transactions';
 import type { Transfer, TransferAccountOption } from '@/types';
 
 type Props = {
@@ -27,10 +27,12 @@ export default function TransferForm({
     defaultDate,
 }: Props) {
     const [sourceAccount, setSourceAccount] = useState(
-        transfer ? String(transfer.source_account_id) : '',
+        transfer?.source_account_id ? String(transfer.source_account_id) : '',
     );
     const [destinationAccount, setDestinationAccount] = useState(
-        transfer ? String(transfer.destination_account_id) : '',
+        transfer?.destination_account_id
+            ? String(transfer.destination_account_id)
+            : '',
     );
     const form = transfer
         ? TransferController.update.form(transfer.id)

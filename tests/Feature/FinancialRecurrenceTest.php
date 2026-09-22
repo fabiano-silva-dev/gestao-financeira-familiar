@@ -82,6 +82,62 @@ class FinancialRecurrenceTest extends TestCase
         $this->assertDatabaseCount('account_movements', 0);
     }
 
+    public function test_already_settled_recurrence_marks_current_occurrence_as_paid(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-21 12:00:00'));
+
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'opening_balance' => '3000.00',
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('recurrences.store'), [
+                ...$this->validRecurrenceData($account),
+                'description' => 'Aluguel',
+                'amount' => '2177.34',
+                'starts_on' => '2026-06-08',
+                'already_settled' => '1',
+            ])
+            ->assertRedirect(route('recurrences.index'))
+            ->assertSessionHasNoErrors();
+
+        $recurrence = FinancialRecurrence::query()->sole();
+        $transactions = $recurrence->transactions()
+            ->orderBy('recurrence_occurrence_date')
+            ->get();
+        $current = $transactions->first();
+        $future = $transactions->skip(1);
+
+        $this->assertSame('2026-09-08', $current?->recurrence_occurrence_date?->toDateString());
+        $this->assertSame(FinancialTransactionStatus::Confirmed, $current?->status);
+        $this->assertSame('2026-09-08', $current?->settled_on?->toDateString());
+        $this->assertNotNull($current?->accountMovements()->first());
+
+        foreach ($future as $transaction) {
+            $this->assertSame(FinancialTransactionStatus::Planned, $transaction->status);
+            $this->assertNull($transaction->settled_on);
+        }
+
+        $this->assertGreaterThanOrEqual(2, $transactions->count());
+        $this->assertDatabaseCount('account_movements', 1);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('dashboard')
+                ->where('metrics.current_balance', '822.66')
+                ->where('metrics.expenses', '2177.34')
+                ->where('recentEntries.0.description', 'Aluguel')
+                ->where('recentEntries.0.status_label', 'Pago')
+                ->where('upcomingEntries.0.description', 'Aluguel')
+                ->where('upcomingEntries.0.date', '2026-10-08')
+            );
+    }
+
     public function test_recurrence_generation_is_idempotent(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-09-20 12:00:00'));
@@ -287,6 +343,17 @@ class FinancialRecurrenceTest extends TestCase
                 ->where('projection.0.month', '2026-09-01')
                 ->where('projection.0.expenses', '100.00')
                 ->where('projection.1.expenses', '100.00')
+            );
+
+        $recurrence = FinancialRecurrence::query()->sole();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('recurrences.edit', $recurrence))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('recurrences/edit')
+                ->where('recurrence.id', $recurrence->id)
             );
     }
 

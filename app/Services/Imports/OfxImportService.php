@@ -16,12 +16,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
 use Throwable;
 
 final class OfxImportService
 {
     public function __construct(
-        private readonly OfxParser $parser,
+        private readonly BankStatementParser $parser,
     ) {}
 
     public function import(
@@ -39,6 +40,8 @@ final class OfxImportService
         }
 
         $fileHash = hash('sha256', $contents);
+        $this->rejectIfAlreadyImported($workspace, $account, $fileHash);
+
         $deduplicationKey = hash(
             'sha256',
             "ofx|account:{$account->id}|file:{$fileHash}",
@@ -48,11 +51,8 @@ final class OfxImportService
             ->where('deduplication_key', $deduplicationKey)
             ->first();
 
-        if ($existing?->status === FinancialImportStatus::Completed) {
-            return new OfxImportResult($existing, true);
-        }
-
-        $storedPath = "imports/{$workspace->id}/ofx/{$fileHash}.ofx";
+        $extension = strtolower($file->getClientOriginalExtension() ?: 'ofx');
+        $storedPath = "imports/{$workspace->id}/statements/{$fileHash}.{$extension}";
 
         if (! Storage::disk('local')->put($storedPath, $contents)) {
             throw ValidationException::withMessages([
@@ -90,13 +90,14 @@ final class OfxImportService
         $financialImport->save();
 
         try {
-            $statement = $this->parser->parse($contents);
+            $statement = $this->parser->parse($contents, $extension);
 
             DB::transaction(function () use (
                 $financialImport,
                 $workspace,
                 $account,
                 $statement,
+                $extension,
             ): void {
                 $lockedImport = FinancialImport::query()
                     ->whereKey($financialImport->id)
@@ -138,12 +139,13 @@ final class OfxImportService
                     'metadata' => array_filter([
                         'bank_id' => $statement->bankId,
                         'currency' => $statement->currency,
+                        'source_format' => $extension,
                     ], static fn (mixed $value): bool => $value !== null),
                     'error_message' => null,
                     'imported_at' => now(),
                 ]);
             });
-        } catch (OfxParseException $exception) {
+        } catch (OfxParseException|BankStatementParseException $exception) {
             $this->markAsFailed($financialImport, $exception->getMessage());
 
             throw ValidationException::withMessages([
@@ -162,6 +164,31 @@ final class OfxImportService
         }
 
         return new OfxImportResult($financialImport->refresh(), false);
+    }
+
+    private function rejectIfAlreadyImported(
+        Workspace $workspace,
+        FinancialAccount $account,
+        string $fileHash,
+    ): void {
+        $alreadyImported = $workspace->financialImports()
+            ->where('file_hash', $fileHash)
+            ->where('financial_account_id', $account->id)
+            ->where('status', FinancialImportStatus::Completed)
+            ->exists();
+
+        if (! $alreadyImported) {
+            return;
+        }
+
+        Inertia::flash('toast', [
+            'type' => 'warning',
+            'message' => 'Este arquivo já foi importado.',
+        ]);
+
+        throw ValidationException::withMessages([
+            'file' => 'Este arquivo já foi importado. Envie um arquivo diferente.',
+        ]);
     }
 
     private function entryDeduplicationKey(OfxTransaction $transaction): string

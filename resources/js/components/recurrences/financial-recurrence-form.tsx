@@ -1,6 +1,7 @@
 import { Form, Link } from '@inertiajs/react';
 import { useState } from 'react';
 import FinancialRecurrenceController from '@/actions/App/Http/Controllers/FinancialRecurrenceController';
+import { AlreadySettledToggle } from '@/components/finance/already-settled-toggle';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,6 +67,7 @@ export default function FinancialRecurrenceForm({
             ? String(recurrence.family_member_id)
             : 'none',
     );
+    const [alreadySettled, setAlreadySettled] = useState(false);
 
     const isExpense = type === 'expense';
     const usesCreditCard = isExpense && paymentMethod === 'credit_card';
@@ -495,6 +497,19 @@ export default function FinancialRecurrenceForm({
                         />
                         <InputError message={errors.notes} />
                     </div>
+
+                    {!usesCreditCard && (
+                        <AlreadySettledToggle
+                            checked={alreadySettled}
+                            isExpense={isExpense}
+                            onCheckedChange={setAlreadySettled}
+                            description={
+                                alreadySettled
+                                    ? `A ocorrência atual entra em transações recentes como ${isExpense ? 'Pago' : 'Recebido'} e altera o saldo. As próximas continuam como compromisso.`
+                                    : 'As ocorrências não alteram o saldo nem o gráfico do período. Elas aparecem no fluxo de caixa, nos próximos vencimentos e nos atrasados.'
+                            }
+                        />
+                    )}
 
                     <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                         <Button

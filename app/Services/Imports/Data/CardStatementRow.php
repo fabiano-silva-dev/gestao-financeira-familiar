@@ -15,5 +15,6 @@ final readonly class CardStatementRow
         public ?int $totalInstallments,
         public ?string $externalId,
         public array $rawData,
+        public ?string $sourceCategory = null,
     ) {}
 }

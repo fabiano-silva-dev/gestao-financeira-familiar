@@ -3,7 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\FinancialAccount;
-use App\Rules\OfxFile;
+use App\Rules\BankStatementFile;
 use App\Support\Workspaces\CurrentWorkspace;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Database\Query\Builder;
@@ -25,6 +25,8 @@ class StoreOfxImportRequest extends FormRequest
         $workspace = $currentWorkspace->get();
         abort_if($workspace === null, 403);
 
+        $isPdf = strtolower((string) $this->file('file')?->getClientOriginalExtension()) === 'pdf';
+
         return [
             'financial_account_id' => [
                 'required',
@@ -33,7 +35,13 @@ class StoreOfxImportRequest extends FormRequest
                     ->where(fn (Builder $query): Builder => $query
                         ->where('workspace_id', $workspace->id)),
             ],
-            'file' => ['required', 'file', 'max:5120', new OfxFile],
+            'pdf_layout' => [
+                Rule::requiredIf($isPdf),
+                'nullable',
+                'string',
+                Rule::in(['banrisul_current_account']),
+            ],
+            'file' => ['required', 'file', 'max:10240', new BankStatementFile],
         ];
     }
 
@@ -42,7 +50,8 @@ class StoreOfxImportRequest extends FormRequest
     {
         return [
             'financial_account_id' => 'conta',
-            'file' => 'arquivo OFX',
+            'pdf_layout' => 'layout do PDF',
+            'file' => 'arquivo do extrato',
         ];
     }
 }
