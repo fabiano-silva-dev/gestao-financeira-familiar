@@ -144,6 +144,16 @@ class MonthlyImportClosingController extends Controller
 
     public function noMovement(Request $request, string $sourceType, int $source): RedirectResponse
     {
+        $workspace = $this->workspace();
+        $period = $this->validatedPeriod($request);
+        $this->source($workspace, $sourceType, $source);
+
+        abort_if(
+            $this->hasKnownMovement($workspace, $sourceType, $source, $period),
+            422,
+            'Não é possível marcar como sem movimento porque já existem movimentos conhecidos no período.',
+        );
+
         return $this->saveClosure($request, $sourceType, $source, 'no_movement');
     }
 
@@ -384,6 +394,64 @@ class MonthlyImportClosingController extends Controller
             'card' => $workspace->creditCards()->where('is_active', true)->findOrFail($source),
             default => abort(404),
         };
+    }
+
+    private function hasKnownMovement(
+        Workspace $workspace,
+        string $sourceType,
+        int $source,
+        CarbonImmutable $period,
+    ): bool {
+        $monthStart = $period->startOfMonth();
+        $monthEnd = $period->endOfMonth();
+        $periodKey = $period->format('Y-m');
+
+        if ($sourceType === 'account') {
+            $hasEntries = $workspace->bankStatementEntries()
+                ->where('financial_account_id', $source)
+                ->whereBetween('occurred_on', [
+                    $monthStart->toDateString(),
+                    $monthEnd->toDateString(),
+                ])
+                ->exists();
+
+            $hasImportedRecords = $workspace->financialImports()
+                ->where('financial_account_id', $source)
+                ->where('status', FinancialImportStatus::Completed->value)
+                ->whereDate('statement_start_on', '<=', $monthEnd->toDateString())
+                ->whereDate('statement_end_on', '>=', $monthStart->toDateString())
+                ->where('total_records', '>', 0)
+                ->exists();
+
+            return $hasEntries || $hasImportedRecords;
+        }
+
+        $hasEntries = $workspace->cardStatementEntries()
+            ->where('credit_card_id', $source)
+            ->whereHas('invoice', fn ($query) => $query->whereDate(
+                'reference_month',
+                $monthStart->toDateString(),
+            ))
+            ->exists();
+
+        $hasImportedRecords = $workspace->financialImports()
+            ->where('credit_card_id', $source)
+            ->where('status', FinancialImportStatus::Completed->value)
+            ->where('metadata->reference_month', $periodKey)
+            ->where('total_records', '>', 0)
+            ->exists();
+
+        $hasInvoiceAmount = $workspace->creditCardInvoices()
+            ->where('credit_card_id', $source)
+            ->whereDate('reference_month', $monthStart->toDateString())
+            ->where(function ($query): void {
+                $query
+                    ->where('statement_amount', '<>', 0)
+                    ->orWhere('calculated_amount', '<>', 0);
+            })
+            ->exists();
+
+        return $hasEntries || $hasImportedRecords || $hasInvoiceAmount;
     }
 
     private function closureQuery(
