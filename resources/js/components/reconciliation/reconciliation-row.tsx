@@ -10,6 +10,7 @@ import {
     Plus,
     RotateCcw,
     Sparkles,
+    WalletCards,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import BankReconciliationController from '@/actions/App/Http/Controllers/BankReconciliationController';
@@ -39,6 +40,7 @@ import type {
     ListingQueryState,
     ReconciliationAccountOption,
     ReconciliationCandidate,
+    ReconciliationCardOption,
     ReconciliationCategoryOption,
     ReconciliationPendingEntry,
 } from '@/types';
@@ -67,6 +69,7 @@ type Props = {
     entry: ReconciliationPendingEntry;
     query: ListingQueryState;
     categoryOptions: ReconciliationCategoryOption[];
+    cardOptions: ReconciliationCardOption[];
     counterpartAccountOptions: ReconciliationAccountOption[];
     onOpenDetails: (entry: ReconciliationPendingEntry) => void;
     onAskCreateRule: (prompt: ClassificationRulePrompt) => void;
@@ -76,6 +79,7 @@ export function ReconciliationRow({
     entry,
     query,
     categoryOptions,
+    cardOptions,
     counterpartAccountOptions,
     onOpenDetails,
     onAskCreateRule,
@@ -140,6 +144,9 @@ export function ReconciliationRow({
             ? String(entry.matcher_counterpart_account_id)
             : '',
     );
+    const [cardPaymentCardId, setCardPaymentCardId] = useState(
+        cardOptions.length === 1 ? String(cardOptions[0].id) : '',
+    );
 
     useEffect(() => {
         const nextSuggestion = entry.candidates.find(
@@ -174,6 +181,9 @@ export function ReconciliationRow({
                 ? String(entry.matcher_counterpart_account_id)
                 : '',
         );
+        setCardPaymentCardId(
+            cardOptions.length === 1 ? String(cardOptions[0].id) : '',
+        );
     }, [
         entry.id,
         entry.kind,
@@ -187,6 +197,7 @@ export function ReconciliationRow({
         entry.matcher_action_type,
         entry.matcher_counterpart_account_id,
         entry.candidates,
+        cardOptions,
     ]);
 
     const Icon = outflow ? ArrowDownCircle : ArrowUpCircle;
@@ -237,6 +248,11 @@ export function ReconciliationRow({
             : null;
     const showInvoicePayment =
         entry.is_likely_invoice_payment || selectedInvoice !== null;
+    const canRegisterPendingCardPayment =
+        entry.kind === 'statement' &&
+        showInvoicePayment &&
+        selectedInvoice === null &&
+        !entry.is_reconciled;
     const canCreate =
         !entry.is_reconciled &&
         !entry.has_suggestion &&
@@ -439,6 +455,21 @@ export function ReconciliationRow({
         );
     };
 
+    const registerPendingCardPayment = () => {
+        if (cardPaymentCardId === '') {
+            return;
+        }
+
+        router.post(
+            listingUrl(
+                BankReconciliationController.cardPayment.url(entry.id),
+                query,
+            ),
+            { credit_card_id: Number(cardPaymentCardId) },
+            visitOptions(),
+        );
+    };
+
     const markTransfer = () => {
         if (counterpartId === '') {
             return;
@@ -573,7 +604,10 @@ export function ReconciliationRow({
                             <dt className="text-muted-foreground text-[11px] tracking-wide uppercase">
                                 Fatura
                             </dt>
-                            <dd>{selectedInvoice?.invoiceLabel ?? '—'}</dd>
+                            <dd>
+                                {selectedInvoice?.invoiceLabel ??
+                                    'Aguardando identificação'}
+                            </dd>
                         </div>
                         <div>
                             <dt className="text-muted-foreground text-[11px] tracking-wide uppercase">
@@ -695,6 +729,42 @@ export function ReconciliationRow({
                             </SelectContent>
                         </Select>
                     </label>
+                    {canRegisterPendingCardPayment && (
+                        <label className="grid gap-1">
+                            <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
+                                Cartão do pagamento
+                            </span>
+                            <Select
+                                value={
+                                    cardPaymentCardId === ''
+                                        ? 'none'
+                                        : cardPaymentCardId
+                                }
+                                onValueChange={(value) =>
+                                    setCardPaymentCardId(
+                                        value === 'none' ? '' : value,
+                                    )
+                                }
+                            >
+                                <SelectTrigger size="sm" className="w-full">
+                                    <SelectValue placeholder="Selecione o cartão" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none">
+                                        Selecione o cartão
+                                    </SelectItem>
+                                    {cardOptions.map((card) => (
+                                        <SelectItem
+                                            key={card.id}
+                                            value={String(card.id)}
+                                        >
+                                            {card.name} · final {card.last_four}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </label>
+                    )}
                     {!showInvoicePayment && (
                         <>
                             <label className="grid gap-1">
@@ -854,6 +924,18 @@ export function ReconciliationRow({
                             <Plus />
                             Criar lançamento
                         </Button>
+                        {canRegisterPendingCardPayment && (
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                disabled={cardPaymentCardId === ''}
+                                onClick={registerPendingCardPayment}
+                            >
+                                <WalletCards />
+                                Registrar pagamento do cartão
+                            </Button>
+                        )}
                         {entry.kind === 'statement' &&
                             !showInvoicePayment &&
                             counterpartOptions.length > 0 &&

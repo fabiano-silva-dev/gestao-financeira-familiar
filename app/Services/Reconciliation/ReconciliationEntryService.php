@@ -13,6 +13,7 @@ use App\Models\AccountMovement;
 use App\Models\BankStatementEntry;
 use App\Models\CardStatementEntry;
 use App\Models\Category;
+use App\Models\CreditCard;
 use App\Models\CreditCardInvoice;
 use App\Models\FinancialAccount;
 use App\Models\FinancialTransaction;
@@ -320,6 +321,54 @@ final class ReconciliationEntryService
                 ->firstOrFail()
                 ->movement()
                 ->firstOrFail();
+
+            $this->bankReconciliation->reconcile(
+                $workspace,
+                $entry->refresh(),
+                $movement,
+                $user,
+            );
+
+            return $entry->refresh();
+        });
+    }
+
+    public function reconcileCardPaymentWithoutInvoice(
+        Workspace $workspace,
+        BankStatementEntry $entry,
+        CreditCard $card,
+        User $user,
+    ): BankStatementEntry {
+        $this->assertSameWorkspace($workspace, $entry->workspace_id);
+        $this->assertSameWorkspace($workspace, $card->workspace_id);
+        $this->guardPendingBankEntry($entry);
+
+        if (! $this->interpreter->isOutflow($entry->amount)) {
+            throw ValidationException::withMessages([
+                'credit_card_id' => 'Somente saídas bancárias podem ser registradas como pagamento de cartão.',
+            ]);
+        }
+
+        $amount = $this->interpreter->unsignedAmount($entry->amount);
+
+        return DB::transaction(function () use (
+            $workspace,
+            $entry,
+            $card,
+            $user,
+            $amount,
+        ): BankStatementEntry {
+            $payment = $this->invoiceService->createPendingPayment(
+                $card,
+                [
+                    'financial_account_id' => $entry->financial_account_id,
+                    'paid_on' => $entry->occurred_on->toDateString(),
+                    'amount' => $amount,
+                    'payment_method' => $card->invoice_payment_method->value,
+                    'notes' => 'Pagamento do cartão conciliado antes da identificação da fatura.',
+                ],
+            );
+            $movement = $payment->movement()->firstOrFail();
 
             $this->bankReconciliation->reconcile(
                 $workspace,

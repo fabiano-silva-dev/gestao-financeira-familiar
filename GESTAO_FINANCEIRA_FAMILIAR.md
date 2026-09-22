@@ -122,6 +122,8 @@ Ele deverá revisar e resolver somente aquilo que exigir intervenção.
 
 Na importação de faturas de cartão, uma compra só deve ser marcada como **conciliada** quando possuir uma categoria válida. A categoria pode ser definida por regra determinística, histórico, heurística conhecida, sugestão de IA com confiança suficiente ou confirmação do usuário. Se nenhuma categoria puder ser determinada com segurança, a linha permanece pendente na Caixa de Entrada Financeira e não deve ser marcada como conciliada.
 
+Pagamentos de cartão devem existir independentemente da presença da fatura no sistema. Quando um movimento bancário for identificado como pagamento de cartão e a fatura ainda não existir, o sistema deve registrar o pagamento vinculado ao cartão e à conta de origem, conciliar o movimento bancário e manter apenas o vínculo com a fatura como pendência. Esse pagamento não é uma nova despesa. Quando a fatura for importada, pagamentos pendentes do mesmo cartão devem ser vinculados automaticamente somente quando houver correspondência inequívoca; em casos ambíguos, o usuário deve poder vincular manualmente o pagamento à fatura.
+
 ---
 
 ## 35. Inteligência Artificial

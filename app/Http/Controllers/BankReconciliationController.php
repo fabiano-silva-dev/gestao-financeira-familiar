@@ -10,6 +10,7 @@ use App\Enums\FinancialImportType;
 use App\Enums\FinancialTransactionType;
 use App\Http\Requests\ClassifyReconciliationEntryRequest;
 use App\Http\Requests\StoreBankReconciliationRequest;
+use App\Http\Requests\StoreReconciliationCardPaymentRequest;
 use App\Http\Requests\StoreReconciliationInvoicePaymentRequest;
 use App\Http\Requests\StoreReconciliationTransferRequest;
 use App\Models\AccountMovement;
@@ -76,6 +77,7 @@ class BankReconciliationController extends Controller
                 ->whereDoesntHave('bankStatementEntry')
                 ->with([
                     'account:id,name',
+                    'invoicePayment.creditCard:id,name,institution,last_four,payment_account_id',
                     'invoicePayment.invoice.creditCard:id,name,institution,last_four,payment_account_id',
                     'transaction:id,description,type,payee_name,category_id,competence_date,financial_account_id,credit_card_id,source_account_id,destination_account_id',
                     'transaction.category:id,name,parent_id',
@@ -258,6 +260,32 @@ class BankReconciliationController extends Controller
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => 'Pagamento da fatura conciliado sem criar uma nova despesa.',
+        ]);
+
+        return to_route('reconciliation.index', $this->filterQuery($request));
+    }
+
+    public function cardPayment(
+        StoreReconciliationCardPaymentRequest $request,
+        int $entry,
+    ): RedirectResponse {
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $workspace = $this->workspace();
+        $statementEntry = $this->findEntry($workspace, $entry);
+        $card = $workspace->creditCards()
+            ->findOrFail($request->integer('credit_card_id'));
+
+        $this->entryActions->reconcileCardPaymentWithoutInvoice(
+            $workspace,
+            $statementEntry,
+            $card,
+            $user,
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Pagamento do cartão conciliado. O vínculo com a fatura ficará pendente até ela ser identificada.',
         ]);
 
         return to_route('reconciliation.index', $this->filterQuery($request));
@@ -517,6 +545,7 @@ class BankReconciliationController extends Controller
             'suggestedCategory:id,name,parent_id',
             'suggestedCategory.parent:id,name',
             'accountMovement.account:id,name',
+            'accountMovement.invoicePayment.creditCard:id,name,institution,last_four,payment_account_id',
             'accountMovement.invoicePayment.invoice.creditCard:id,name,institution,last_four,payment_account_id',
             'accountMovement.transaction:id,description,type,payee_name,category_id,competence_date,financial_account_id,credit_card_id,source_account_id,destination_account_id',
             'accountMovement.transaction.category:id,name,parent_id',

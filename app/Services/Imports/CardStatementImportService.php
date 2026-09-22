@@ -12,6 +12,7 @@ use App\Models\FinancialImport;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Finance\CardStatementAiEnrichmentService;
+use App\Services\Finance\CreditCardInvoiceService;
 use App\Services\Imports\Data\CardStatementImportResult;
 use App\Services\Imports\Data\CardStatementRow;
 use Carbon\CarbonImmutable;
@@ -29,6 +30,7 @@ final class CardStatementImportService
         private readonly CardStatementParser $parser,
         private readonly FinancialImportProcessor $processor,
         private readonly CardStatementAiEnrichmentService $aiEnrichmentService,
+        private readonly CreditCardInvoiceService $invoiceService,
     ) {}
 
     public function import(
@@ -245,6 +247,16 @@ final class CardStatementImportService
                 $workspace,
                 $financialImport->refresh(),
             );
+        }
+
+        $invoice = CreditCardInvoice::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('credit_card_id', $card->id)
+            ->where('reference_month', $referenceMonth.'-01')
+            ->first();
+
+        if ($invoice instanceof CreditCardInvoice) {
+            $this->invoiceService->autoLinkPendingPayments($invoice);
         }
 
         return new CardStatementImportResult($financialImport->refresh(), false);

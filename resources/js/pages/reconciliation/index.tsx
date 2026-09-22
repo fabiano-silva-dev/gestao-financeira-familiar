@@ -261,6 +261,7 @@ export default function ReconciliationIndex({
                                     entry={entry}
                                     query={filters}
                                     categoryOptions={categoryOptions}
+                                    cardOptions={cardOptions}
                                     counterpartAccountOptions={
                                         counterpartAccountOptions
                                     }

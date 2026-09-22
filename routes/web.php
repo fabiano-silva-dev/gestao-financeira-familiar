@@ -121,6 +121,13 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->whereNumber('invoice')
         ->name('credit-card-invoices.pay');
     Route::post(
+        'faturas/{invoice}/pagamentos/{payment}/vincular',
+        [CreditCardInvoiceController::class, 'linkPayment'],
+    )
+        ->whereNumber('invoice')
+        ->whereNumber('payment')
+        ->name('credit-card-invoices.payments.link');
+    Route::post(
         'faturas/{invoice}/linhas/{entry}/conciliar',
         [CardStatementReconciliationController::class, 'store'],
     )
@@ -256,6 +263,9 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::post('conciliacao/{entry}/pagamento-fatura', [BankReconciliationController::class, 'invoicePayment'])
         ->whereNumber('entry')
         ->name('reconciliation.invoice-payment');
+    Route::post('conciliacao/{entry}/pagamento-cartao', [BankReconciliationController::class, 'cardPayment'])
+        ->whereNumber('entry')
+        ->name('reconciliation.card-payment');
 
     Route::post('workspaces/{workspace}/activate', ActiveWorkspaceController::class)
         ->name('workspaces.activate');

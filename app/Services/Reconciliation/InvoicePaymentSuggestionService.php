@@ -121,10 +121,46 @@ final class InvoicePaymentSuggestionService
     public function fromMovement(?AccountMovement $movement): array
     {
         $payment = $movement?->invoicePayment;
-        $invoice = $payment?->invoice;
+
+        if ($payment === null) {
+            return $this->emptyDetails();
+        }
+
+        $invoice = $payment->invoice;
 
         if ($invoice === null) {
-            return $this->emptyDetails();
+            $card = $payment->creditCard;
+
+            return [
+                'invoice_id' => null,
+                'invoice_payment_id' => $payment->id,
+                'card_name' => $card?->name,
+                'card_last_four' => $card?->last_four,
+                'invoice_label' => 'Aguardando fatura',
+                'invoice_due_date' => null,
+                'invoice_total_amount' => null,
+                'invoice_paid_amount' => null,
+                'invoice_outstanding_amount' => null,
+                'invoice_status' => 'pending_invoice',
+                'invoice_status_label' => 'Aguardando vínculo',
+                'is_invoice_payment' => true,
+                'related_is_transfer' => false,
+                'related_type' => AccountMovementType::CardPayment->value,
+                'related_type_label' => 'Pagamento de cartão',
+                'related_description' => 'Pagamento do cartão '
+                    .($card?->name ?? 'não identificado')
+                    .' — aguardando vínculo com fatura',
+                'related_account_name' => $card?->name,
+                'related_competence_date' => null,
+                'related_payee_name' => $card?->name,
+                'related_category_id' => null,
+                'related_category_name' => null,
+                'related_parent_category_id' => null,
+                'related_parent_category_name' => null,
+                'related_subcategory_id' => null,
+                'related_subcategory_name' => null,
+                'related_transaction_id' => null,
+            ];
         }
 
         $details = $this->details($invoice, alreadyRegistered: true);
@@ -209,7 +245,84 @@ final class InvoicePaymentSuggestionService
         return array_values(array_filter([
             $card->name,
             $card->institution,
+            $card->last_four,
         ], fn (?string $token): bool => is_string($token) && trim($token) !== ''));
+    }
+
+    /**
+     * Resolve somente quando há um cartão inequivocamente associado ao
+     * movimento. Em caso de empate, mantém a decisão para o usuário.
+     *
+     * @param Collection<int, CreditCard> $cards
+     */
+    public function cardForEntry(
+        BankStatementEntry $entry,
+        Collection $cards,
+    ): ?CreditCard {
+        if (
+            ! $this->interpreter->isOutflow($entry->amount)
+            || $cards->isEmpty()
+        ) {
+            return null;
+        }
+
+        $haystack = $this->interpreter->normalize(
+            $entry->description.' '.($entry->memo ?? ''),
+        );
+        $matches = $cards
+            ->filter(function (CreditCard $card) use ($haystack): bool {
+                foreach ($this->cardTokens($card) as $token) {
+                    $normalized = $this->interpreter->normalize($token);
+
+                    if (
+                        $normalized !== ''
+                        && mb_strlen($normalized) >= 3
+                        && str_contains($haystack, $normalized)
+                    ) {
+                        return true;
+                    }
+                }
+
+                return false;
+            })
+            ->values();
+
+        if ($matches->count() === 1) {
+            return $matches->first();
+        }
+
+        if ($matches->count() > 1) {
+            return null;
+        }
+
+        $accountMatches = $cards
+            ->filter(
+                fn (CreditCard $card): bool =>
+                    $card->payment_account_id === $entry->financial_account_id,
+            )
+            ->values();
+
+        if (
+            $accountMatches->count() === 1
+            && $this->interpreter->isInvoicePayment(
+                $entry->description,
+                $this->cardTokens($accountMatches->first()),
+            )
+        ) {
+            return $accountMatches->first();
+        }
+
+        if (
+            $cards->count() === 1
+            && $this->interpreter->isInvoicePayment(
+                $entry->description,
+                $this->cardTokens($cards->first()),
+            )
+        ) {
+            return $cards->first();
+        }
+
+        return null;
     }
 
     private function dueDateDistance(BankStatementEntry $entry, CreditCardInvoice $invoice): int

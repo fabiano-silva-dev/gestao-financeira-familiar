@@ -40,6 +40,7 @@ type Props = {
     paymentMethods: PaymentMethodOption[];
     defaultPaymentAccountId: number | null;
     defaultPaymentMethod: string;
+    unlinkedPayments: CreditCardInvoice['payments'];
     defaultPaymentDate: string;
 };
 
@@ -77,6 +78,7 @@ export default function CreditCardInvoiceShow() {
         defaultPaymentAccountId,
         defaultPaymentMethod,
         defaultPaymentDate,
+        unlinkedPayments = [],
     } = usePage<Props>().props;
     const [accountId, setAccountId] = useState(
         defaultPaymentAccountId ? String(defaultPaymentAccountId) : '',
@@ -579,6 +581,66 @@ export default function CreditCardInvoiceShow() {
                                     </div>
                                 );
                             })}
+                        </CardContent>
+                    </Card>
+                )}
+
+                {unlinkedPayments.length > 0 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Pagamentos aguardando fatura</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <p className="text-muted-foreground text-sm">
+                                Estes pagamentos já saíram da conta e estão conciliados
+                                com o cartão, mas ainda não pertencem a uma fatura.
+                            </p>
+                            {unlinkedPayments.map((payment) => (
+                                <div
+                                    key={payment.id}
+                                    className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+                                >
+                                    <div>
+                                        <p className="font-medium">
+                                            {payment.account_name}
+                                        </p>
+                                        <p className="text-muted-foreground text-xs">
+                                            {formatDate(payment.paid_on)} ·{' '}
+                                            {payment.payment_method_label}
+                                        </p>
+                                        {payment.notes && (
+                                            <p className="text-muted-foreground mt-1 text-xs">
+                                                {payment.notes}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <p className="font-semibold tabular-nums">
+                                            {currency.format(Number(payment.amount))}
+                                        </p>
+                                        <Form
+                                            {...CreditCardInvoiceController.linkPayment.form(
+                                                {
+                                                    invoice: invoice.id,
+                                                    payment: payment.id,
+                                                },
+                                            )}
+                                            options={{ preserveScroll: true }}
+                                        >
+                                            {({ processing }) => (
+                                                <Button
+                                                    size="sm"
+                                                    variant="secondary"
+                                                    disabled={processing}
+                                                >
+                                                    <Link2 />
+                                                    Vincular a esta fatura
+                                                </Button>
+                                            )}
+                                        </Form>
+                                    </div>
+                                </div>
+                            ))}
                         </CardContent>
                     </Card>
                 )}

@@ -12,12 +12,17 @@ use Illuminate\Support\Carbon;
 /**
  * @property Carbon $paid_on
  * @property string $amount
+ * @property int $credit_card_id
+ * @property int|null $credit_card_invoice_id
  * @property PaymentMethod $payment_method
- * @property-read CreditCardInvoice $invoice
+ * @property-read CreditCard $creditCard
+ * @property-read CreditCardInvoice|null $invoice
  * @property-read FinancialAccount $account
  */
 #[Fillable([
     'workspace_id',
+    'credit_card_id',
+    'credit_card_invoice_id',
     'financial_account_id',
     'paid_on',
     'amount',
@@ -30,6 +35,12 @@ class CreditCardInvoicePayment extends Model
     public function workspace(): BelongsTo
     {
         return $this->belongsTo(Workspace::class);
+    }
+
+    /** @return BelongsTo<CreditCard, $this> */
+    public function creditCard(): BelongsTo
+    {
+        return $this->belongsTo(CreditCard::class);
     }
 
     /** @return BelongsTo<CreditCardInvoice, $this> */

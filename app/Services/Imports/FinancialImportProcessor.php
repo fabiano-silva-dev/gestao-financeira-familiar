@@ -294,17 +294,44 @@ final class FinancialImportProcessor
             ->get();
         $candidates = $this->invoicePaymentSuggestions->candidates($entry, $invoices);
 
-        if (! $this->canAutoReconcile($candidates, 85)) {
+        if ($this->canAutoReconcile($candidates, 85)) {
+            $invoice = $invoices->firstWhere('id', $candidates[0]['invoice_id']);
+
+            if ($invoice instanceof CreditCardInvoice) {
+                $this->entryActions->reconcileInvoicePayment(
+                    $workspace,
+                    $entry,
+                    $invoice,
+                    $user,
+                );
+
+                return $entry->refresh()->is_reconciled;
+            }
+        }
+
+        $cards = $workspace->creditCards()
+            ->where('is_active', true)
+            ->get([
+                'id',
+                'workspace_id',
+                'name',
+                'institution',
+                'last_four',
+                'payment_account_id',
+                'invoice_payment_method',
+            ]);
+        $card = $this->invoicePaymentSuggestions->cardForEntry($entry, $cards);
+
+        if ($card === null) {
             return false;
         }
 
-        $invoice = $invoices->firstWhere('id', $candidates[0]['invoice_id']);
-
-        if (! $invoice instanceof CreditCardInvoice) {
-            return false;
-        }
-
-        $this->entryActions->reconcileInvoicePayment($workspace, $entry, $invoice, $user);
+        $this->entryActions->reconcileCardPaymentWithoutInvoice(
+            $workspace,
+            $entry,
+            $card,
+            $user,
+        );
 
         return $entry->refresh()->is_reconciled;
     }

@@ -68,6 +68,14 @@ class CreditCard extends Model
     }
 
     /**
+     * @return HasMany<CreditCardInvoicePayment, $this>
+     */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(CreditCardInvoicePayment::class);
+    }
+
+    /**
      * @return HasMany<FinancialTransaction, $this>
      */
     public function transactions(): HasMany

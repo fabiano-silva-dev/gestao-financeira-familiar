@@ -163,6 +163,22 @@ class CreditCardInvoiceController extends Controller
                     'is_active' => $account->is_active,
                 ])
                 ->all(),
+            'unlinkedPayments' => $card->payments()
+                ->whereNull('credit_card_invoice_id')
+                ->with('account:id,name')
+                ->orderByDesc('paid_on')
+                ->orderByDesc('id')
+                ->get()
+                ->map(fn (CreditCardInvoicePayment $payment): array => [
+                    'id' => $payment->id,
+                    'paid_on' => $payment->paid_on->toDateString(),
+                    'amount' => $payment->amount,
+                    'payment_method' => $payment->payment_method->value,
+                    'payment_method_label' => $payment->payment_method->label(),
+                    'account_name' => $payment->account->name,
+                    'notes' => $payment->notes,
+                ])
+                ->all(),
             'paymentMethods' => PaymentMethod::invoiceOptions(),
             'defaultPaymentAccountId' => $card->payment_account_id,
             'defaultPaymentMethod' => $card->invoice_payment_method->value,
@@ -199,6 +215,29 @@ class CreditCardInvoiceController extends Controller
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => 'Pagamento da fatura registrado sem criar uma nova despesa.',
+        ]);
+
+        return to_route('credit-card-invoices.show', $invoice);
+    }
+
+    public function linkPayment(
+        Request $request,
+        int $invoice,
+        int $payment,
+    ): RedirectResponse {
+        $creditCardInvoice = $this->findInvoice($invoice);
+        $cardPayment = $this->workspace()
+            ->creditCardInvoicePayments()
+            ->findOrFail($payment);
+
+        $this->invoiceService->linkPendingPayment(
+            $creditCardInvoice,
+            $cardPayment,
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Pagamento vinculado à fatura sem criar uma nova despesa.',
         ]);
 
         return to_route('credit-card-invoices.show', $invoice);
