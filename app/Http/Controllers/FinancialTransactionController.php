@@ -225,6 +225,9 @@ class FinancialTransactionController extends Controller
                     'label' => $category->parent === null
                         ? $category->name
                         : "{$category->parent->name} / {$category->name}",
+                    'name' => $category->name,
+                    'type' => $category->type->value,
+                    'is_active' => $category->is_active,
                 ])
                 ->push([
                     'value' => 'none',
