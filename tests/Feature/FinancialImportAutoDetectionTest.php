@@ -130,7 +130,7 @@ class FinancialImportAutoDetectionTest extends TestCase
 
         $pending = FinancialImport::query()->sole();
         $this->assertSame(FinancialImportStatus::NeedsConfirmation, $pending->status);
-        $this->assertSame('600685509', data_get($pending->metadata, 'autodetection.identifier_value'));
+        $this->assertSame('0600685509', data_get($pending->metadata, 'autodetection.identifier_value'));
 
         $request->post(route('imports.resolve', $pending), [
             'document_type' => 'bank_statement',
@@ -140,7 +140,7 @@ class FinancialImportAutoDetectionTest extends TestCase
         $this->assertDatabaseCount('import_source_bindings', 1);
         $binding = ImportSourceBinding::query()->sole();
         $this->assertSame($first->id, $binding->financial_account_id);
-        $this->assertSame('600685509', $binding->identifier_value);
+        $this->assertSame('0600685509', $binding->identifier_value);
 
         $request->post(route('imports.store'), [
             'files' => [
