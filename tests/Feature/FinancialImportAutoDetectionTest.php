@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\FinancialImportStatus;
 use App\Enums\FinancialImportType;
+use App\Models\CardStatementEntry;
 use App\Models\CreditCard;
 use App\Models\FamilyMember;
 use App\Models\FinancialAccount;
