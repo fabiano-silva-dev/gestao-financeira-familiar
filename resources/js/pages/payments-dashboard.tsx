@@ -211,7 +211,12 @@ function ItemRow({
                                                 {child.description}
                                             </p>
                                             <p className="text-muted-foreground mt-0.5 text-xs">
-                                                {[child.meta, child.date ? formatDate(child.date) : null]
+                                                {[
+                                                    child.meta,
+                                                    child.date
+                                                        ? formatDate(child.date)
+                                                        : null,
+                                                ]
                                                     .filter(Boolean)
                                                     .join(' · ')}
                                             </p>
@@ -305,10 +310,14 @@ function UpcomingCard({
                                 <Clock3 className="size-4" aria-hidden="true" />
                             </span>
                             <div>
-                                <p className="text-sm font-medium">{group.label}</p>
+                                <p className="text-sm font-medium">
+                                    {group.label}
+                                </p>
                                 <p className="text-muted-foreground text-xs">
                                     {group.count}{' '}
-                                    {group.count === 1 ? 'compromisso' : 'compromissos'}
+                                    {group.count === 1
+                                        ? 'compromisso'
+                                        : 'compromissos'}
                                 </p>
                             </div>
                         </div>
@@ -381,10 +390,14 @@ export default function PaymentsDashboard() {
                             Dashboard de pagamentos
                         </h1>
                         <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
-                            Veja o que já entrou e saiu do caixa e os compromissos previstos para o mês.
+                            Veja o que já entrou e saiu do caixa e os
+                            compromissos previstos para o mês.
                         </p>
                     </div>
-                    <MonthSelector currentPeriod={currentPeriod} url={payments.url()} />
+                    <MonthSelector
+                        currentPeriod={currentPeriod}
+                        url={payments.url()}
+                    />
                 </div>
 
                 <section
@@ -431,7 +444,8 @@ export default function PaymentsDashboard() {
                     <CardHeader>
                         <CardTitle>Próximos vencimentos</CardTitle>
                         <CardDescription>
-                            Vencidos, compromissos de hoje, próximos sete dias e restante do mês.
+                            Vencidos, compromissos de hoje, próximos sete dias
+                            e restante do mês.
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -478,7 +492,9 @@ export default function PaymentsDashboard() {
                         aria-hidden="true"
                     />
                     <p>
-                        Compras de cartão aparecem somente dentro da expansão da fatura. O pagamento da fatura movimenta o caixa, mas não cria uma nova despesa.
+                        Compras de cartão aparecem somente dentro da expansão
+                        da fatura. O pagamento da fatura movimenta o caixa, mas
+                        não cria uma nova despesa.
                     </p>
                 </div>
             </div>
