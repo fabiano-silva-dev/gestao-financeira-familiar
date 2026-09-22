@@ -140,22 +140,19 @@ function statusPresentation(status: SourceItem['status']) {
             return {
                 label: 'Fechado',
                 Icon: CheckCircle2,
-                className:
-                    'border-positive/30 bg-positive-muted text-positive',
+                className: 'border-positive/30 bg-positive-muted text-positive',
             };
         case 'no_movement':
             return {
                 label: 'Sem movimento',
                 Icon: CheckCircle2,
-                className:
-                    'border-positive/30 bg-positive-muted text-positive',
+                className: 'border-positive/30 bg-positive-muted text-positive',
             };
         case 'reconciled':
             return {
                 label: 'Conciliado',
                 Icon: CheckCircle2,
-                className:
-                    'border-positive/30 bg-positive-muted text-positive',
+                className: 'border-positive/30 bg-positive-muted text-positive',
             };
         case 'pending_reconciliation':
             return {
@@ -185,9 +182,7 @@ function SourceCard({ item, period }: { item: SourceItem; period: string }) {
     const status = statusPresentation(item.status);
     const StatusIcon = status.Icon;
     const historyQuery =
-        item.kind === 'account'
-            ? `account=${item.id}`
-            : `card=${item.id}`;
+        item.kind === 'account' ? `account=${item.id}` : `card=${item.id}`;
     const reconciliationQuery =
         item.kind === 'account'
             ? `kind=statement&account=${item.id}`
@@ -275,7 +270,8 @@ function SourceCard({ item, period }: { item: SourceItem; period: string }) {
 
                         {item.closure && (
                             <p className="text-muted-foreground text-xs">
-                                Confirmado por {item.closure.closed_by ?? 'usuário'}
+                                Confirmado por{' '}
+                                {item.closure.closed_by ?? 'usuário'}
                                 {item.closure.closed_at
                                     ? ` em ${dateTime.format(new Date(item.closure.closed_at))}`
                                     : ''}
@@ -404,10 +400,12 @@ function SourceCard({ item, period }: { item: SourceItem; period: string }) {
                                     {entry.processing_summary && (
                                         <p className="text-muted-foreground mt-1 text-xs">
                                             {entry.processing_summary
-                                                .automatically_reconciled ?? 0}{' '}
+                                                .automatically_reconciled ??
+                                                0}{' '}
                                             conciliados automaticamente ·{' '}
                                             {entry.processing_summary
-                                                .categorized_automatically ?? 0}{' '}
+                                                .categorized_automatically ??
+                                                0}{' '}
                                             categorizados ·{' '}
                                             {entry.processing_summary
                                                 .remaining_exceptions ?? 0}{' '}
@@ -523,7 +521,9 @@ export default function MonthlyClosing({
                     </Card>
                     <Card>
                         <CardHeader className="pb-2">
-                            <CardDescription>Período incompleto</CardDescription>
+                            <CardDescription>
+                                Período incompleto
+                            </CardDescription>
                             <CardTitle className="text-warning-foreground text-2xl tabular-nums">
                                 {summary.incomplete_period}
                             </CardTitle>

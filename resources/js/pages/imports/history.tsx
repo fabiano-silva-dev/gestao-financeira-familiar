@@ -229,9 +229,7 @@ export default function ImportHistory({
                         <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() =>
-                                router.get('/importacoes/historico')
-                            }
+                            onClick={() => router.get('/importacoes/historico')}
                         >
                             Limpar contexto
                         </Button>
@@ -273,8 +271,7 @@ export default function ImportHistory({
                                 value={filters.kind || 'all'}
                                 onValueChange={(value) =>
                                     navigate({
-                                        kind:
-                                            value === 'all' ? '' : value,
+                                        kind: value === 'all' ? '' : value,
                                     })
                                 }
                             >
@@ -300,8 +297,7 @@ export default function ImportHistory({
                                 value={filters.status || 'all'}
                                 onValueChange={(value) =>
                                     navigate({
-                                        status:
-                                            value === 'all' ? '' : value,
+                                        status: value === 'all' ? '' : value,
                                     })
                                 }
                             >
@@ -433,7 +429,7 @@ export default function ImportHistory({
                                                 <p className="truncate text-sm">
                                                     {item.target_name}
                                                 </p>
-                                                <p className="text-muted-foreground truncate text-sm lg:text-foreground">
+                                                <p className="text-muted-foreground lg:text-foreground truncate text-sm">
                                                     {item.institution ?? '—'}
                                                 </p>
                                                 <p className="text-sm">
@@ -443,7 +439,9 @@ export default function ImportHistory({
                                                     {periodLabel(item)}
                                                 </p>
                                                 <Badge
-                                                    variant={statusVariant(item)}
+                                                    variant={statusVariant(
+                                                        item,
+                                                    )}
                                                 >
                                                     {item.status_label}
                                                 </Badge>
@@ -470,7 +468,8 @@ export default function ImportHistory({
                                                     </p>
                                                 </div>
                                                 <div className="flex flex-wrap gap-1">
-                                                    {item.kind !== 'document' && (
+                                                    {item.kind !==
+                                                        'document' && (
                                                         <Button
                                                             asChild
                                                             variant="ghost"
@@ -492,8 +491,7 @@ export default function ImportHistory({
                                                                 action={`/conciliacao/importacoes/${item.id}/reprocessar`}
                                                                 method="post"
                                                                 options={{
-                                                                    preserveScroll:
-                                                                        true,
+                                                                    preserveScroll: true,
                                                                 }}
                                                             >
                                                                 <Button
