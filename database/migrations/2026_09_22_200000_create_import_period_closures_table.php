@@ -44,9 +44,9 @@ return new class extends Migration
         });
 
         DB::statement(
-            "ALTER TABLE import_period_closures
+            'ALTER TABLE import_period_closures
              ADD CONSTRAINT import_period_closures_one_source_check
-             CHECK ((financial_account_id IS NULL) <> (credit_card_id IS NULL))"
+             CHECK ((financial_account_id IS NULL) <> (credit_card_id IS NULL))'
         );
     }
 
