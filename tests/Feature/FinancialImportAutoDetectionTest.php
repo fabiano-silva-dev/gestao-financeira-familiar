@@ -54,6 +54,43 @@ class FinancialImportAutoDetectionTest extends TestCase
         ]);
     }
 
+    public function test_multiple_files_are_detected_and_processed_in_one_upload(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Sicredi',
+            'institution' => 'Sicredi',
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.store'), [
+                'files' => [
+                    UploadedFile::fake()->createWithContent(
+                        'extrato-1.ofx',
+                        $this->ofx('auto-batch-001', '-89.90', '20260910120000[-3:BRT]'),
+                    ),
+                    UploadedFile::fake()->createWithContent(
+                        'extrato-2.ofx',
+                        $this->ofx('auto-batch-002', '-49.90', '20260911120000[-3:BRT]'),
+                    ),
+                ],
+            ])
+            ->assertRedirect(route('imports.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseCount('financial_imports', 2);
+        $this->assertDatabaseCount('bank_statement_entries', 2);
+        $this->assertDatabaseCount('financial_transactions', 2);
+        $this->assertSame(
+            2,
+            FinancialImport::query()
+                ->where('status', FinancialImportStatus::Completed->value)
+                ->count(),
+        );
+    }
+
     public function test_ambiguous_nubank_csv_waits_only_for_card_confirmation(): void
     {
         Storage::fake('local');
@@ -193,9 +230,12 @@ class FinancialImportAutoDetectionTest extends TestCase
         $this->assertDatabaseCount('card_statement_entries', 0);
     }
 
-    private function ofx(): string
-    {
-        return <<<'OFX'
+    private function ofx(
+        string $fitid = 'auto-001',
+        string $amount = '-89.90',
+        string $date = '20260910120000[-3:BRT]',
+    ): string {
+        return <<<OFX
 OFXHEADER:100
 DATA:OFXSGML
 VERSION:102
@@ -217,9 +257,9 @@ CHARSET:UTF-8
 <DTEND>20260930235959[-3:BRT]
 <STMTTRN>
 <TRNTYPE>DEBIT
-<DTPOSTED>20260910120000[-3:BRT]
-<TRNAMT>-89.90
-<FITID>auto-001
+<DTPOSTED>{$date}
+<TRNAMT>{$amount}
+<FITID>{$fitid}
 <NAME>Energia elétrica
 <MEMO>Débito automático
 </STMTTRN>

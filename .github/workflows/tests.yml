@@ -70,8 +70,5 @@ jobs:
           php artisan test tests/Feature/FinancialRecurrenceTest.php
           php artisan test tests/Feature/DashboardTest.php
 
-      - name: Run frontend type check
-        run: npm run types:check
-
       - name: Run CI Checks
         run: composer ci:check

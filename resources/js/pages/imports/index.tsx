@@ -437,7 +437,7 @@ export default function ImportsIndex({
                 {pendingImports.length > 0 && (
                     <Card>
                         <CardHeader>
-                            <CardTitle>Documentos para confirmar</CardTitle>
+                            <CardTitle>Caixa de Entrada Financeira · documentos</CardTitle>
                             <CardDescription>
                                 O arquivo já foi inspecionado. Complete somente
                                 o vínculo que não pôde ser determinado com segurança.
