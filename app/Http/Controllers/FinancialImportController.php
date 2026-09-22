@@ -202,11 +202,18 @@ class FinancialImportController extends Controller
         $user = $request->user();
         abort_unless($user instanceof User, 403);
         $files = $request->file('files', []);
+        $files = is_array($files) ? $files : [$files];
+
+        if ($request->hasFile('file')) {
+            $files[] = $request->file('file');
+        }
+
+        $files = array_values(array_filter($files));
         $processed = 0;
         $pending = 0;
         $duplicates = 0;
 
-        foreach (is_array($files) ? $files : [$files] as $file) {
+        foreach ($files as $file) {
             if (! $file instanceof \Illuminate\Http\UploadedFile) {
                 continue;
             }

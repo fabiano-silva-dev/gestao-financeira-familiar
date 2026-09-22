@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use App\Rules\FinancialImportFile;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreFinancialImportRequest extends FormRequest
 {
@@ -13,19 +14,24 @@ class StoreFinancialImportRequest extends FormRequest
         return $this->user() !== null;
     }
 
-    protected function prepareForValidation(): void
-    {
-        if ($this->hasFile('file') && ! $this->hasFile('files')) {
-            $this->files->set('files', [$this->file('file')]);
-        }
-    }
-
     /** @return array<string, ValidationRule|array<mixed>|string> */
     public function rules(): array
     {
         return [
-            'files' => ['required', 'array', 'min:1', 'max:10'],
+            'files' => [
+                Rule::requiredIf(! $this->hasFile('file')),
+                'nullable',
+                'array',
+                'min:1',
+                'max:10',
+            ],
             'files.*' => ['required', 'file', new FinancialImportFile],
+            'file' => [
+                Rule::requiredIf(! $this->hasFile('files')),
+                'nullable',
+                'file',
+                new FinancialImportFile,
+            ],
         ];
     }
 
@@ -35,6 +41,7 @@ class StoreFinancialImportRequest extends FormRequest
         return [
             'files' => 'arquivos',
             'files.*' => 'arquivo',
+            'file' => 'arquivo',
         ];
     }
 }
