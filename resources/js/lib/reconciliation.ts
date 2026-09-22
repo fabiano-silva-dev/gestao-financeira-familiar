@@ -30,6 +30,10 @@ export function candidateMatchId(
             return String(candidate.movement_id);
         }
 
+        if (candidate.is_planned && candidate.transaction_id) {
+            return `planned:${candidate.transaction_id}`;
+        }
+
         if (candidate.invoice_id) {
             return `invoice:${candidate.invoice_id}`;
         }

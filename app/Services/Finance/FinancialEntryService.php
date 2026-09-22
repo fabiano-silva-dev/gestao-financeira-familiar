@@ -90,6 +90,19 @@ class FinancialEntryService
         });
     }
 
+    public function settle(FinancialTransaction $entry, string $settledOn): FinancialTransaction
+    {
+        return DB::transaction(function () use ($entry, $settledOn): FinancialTransaction {
+            $entry->update([
+                'status' => FinancialTransactionStatus::Confirmed,
+                'settled_on' => $settledOn,
+            ]);
+            $this->syncMovement($entry->refresh());
+
+            return $entry->refresh();
+        });
+    }
+
     public function toggleSettlement(FinancialTransaction $entry): FinancialTransaction
     {
         abort_if(

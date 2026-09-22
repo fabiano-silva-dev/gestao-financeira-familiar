@@ -95,19 +95,19 @@ class OfxImportTest extends TestCase
             'occurred_on' => '2026-09-10',
             'amount' => '-89.90',
             'description' => 'Energia elétrica',
-            'is_reconciled' => true,
+            'is_reconciled' => false,
         ]);
         $this->assertDatabaseHas('bank_statement_entries', [
             'external_id' => 'fit-002',
             'amount' => '2500.00',
-            'is_reconciled' => true,
+            'is_reconciled' => false,
         ]);
-        $this->assertDatabaseCount('financial_transactions', 2);
-        $this->assertDatabaseCount('account_movements', 2);
-        $this->assertSame(2, $summary['automatically_reconciled']);
-        $this->assertSame(2, $summary['new_transactions_created']);
-        $this->assertSame(2, $summary['pending_categorization']);
-        $this->assertSame(0, $summary['pending_confirmation']);
+        $this->assertDatabaseCount('financial_transactions', 0);
+        $this->assertDatabaseCount('account_movements', 0);
+        $this->assertSame(0, $summary['automatically_reconciled']);
+        $this->assertSame(0, $summary['new_transactions_created']);
+        $this->assertSame(0, $summary['pending_categorization']);
+        $this->assertSame(2, $summary['pending_confirmation']);
 
         $this->actingAs($user)
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
@@ -117,9 +117,9 @@ class OfxImportTest extends TestCase
                 ->component('imports/index')
                 ->has('imports', 1)
                 ->where('imports.0.imported_records', 2)
-                ->where('imports.0.processing_summary.automatically_reconciled', 2)
+                ->where('imports.0.processing_summary.automatically_reconciled', 0)
                 ->has('entries', 2)
-                ->where('pendingEntriesCount', 0)
+                ->where('pendingEntriesCount', 2)
             );
     }
 
@@ -129,6 +129,10 @@ class OfxImportTest extends TestCase
         [$user, $workspace] = $this->userAndWorkspace();
         $account = FinancialAccount::factory()->for($workspace)->create();
 
+        $category = Category::factory()->for($workspace)->create([
+            'name' => 'Moradia',
+            'type' => CategoryType::Expense->value,
+        ]);
         app(FinancialEntryService::class)->create($workspace, [
             'type' => FinancialTransactionType::Expense->value,
             'transaction_date' => '2026-09-10',
@@ -137,7 +141,7 @@ class OfxImportTest extends TestCase
             'amount' => '89.90',
             'financial_account_id' => $account->id,
             'credit_card_id' => null,
-            'category_id' => null,
+            'category_id' => $category->id,
             'family_member_id' => null,
             'payment_method' => PaymentMethod::Other->value,
             'payee_name' => 'RGE',
@@ -177,6 +181,56 @@ class OfxImportTest extends TestCase
         ]);
         $this->assertSame(1, $summary['matched_existing']);
         $this->assertSame(0, $summary['new_transactions_created']);
+    }
+
+    public function test_import_keeps_existing_uncategorized_movement_pending(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+
+        app(FinancialEntryService::class)->create($workspace, [
+            'type' => FinancialTransactionType::Income->value,
+            'transaction_date' => '2026-09-21',
+            'competence_date' => '2026-09-21',
+            'description' => 'Rendimentos',
+            'amount' => '0.04',
+            'financial_account_id' => $account->id,
+            'credit_card_id' => null,
+            'category_id' => null,
+            'family_member_id' => null,
+            'payment_method' => PaymentMethod::Other->value,
+            'payee_name' => 'Rendimentos',
+            'payment_instructions' => null,
+            'due_date' => '2026-09-21',
+            'settled_on' => '2026-09-21',
+            'status' => FinancialTransactionStatus::Confirmed->value,
+            'notes' => null,
+        ], FinancialTransactionOrigin::Manual);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.ofx.store'), [
+                'financial_account_id' => $account->id,
+                'file' => UploadedFile::fake()->createWithContent(
+                    'rendimentos.ofx',
+                    $this->ofxFile([[
+                        'type' => 'CREDIT',
+                        'date' => '20260921120000[-3:BRT]',
+                        'amount' => '0.04',
+                        'fitid' => 'rend-001',
+                        'name' => 'Rendimentos',
+                        'memo' => 'Rendimento da reserva',
+                    ]]),
+                ),
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseCount('financial_transactions', 1);
+        $this->assertDatabaseHas('bank_statement_entries', [
+            'external_id' => 'rend-001',
+            'is_reconciled' => false,
+        ]);
     }
 
     public function test_import_applies_classification_rule_when_creating_transaction(): void
@@ -488,8 +542,9 @@ class OfxImportTest extends TestCase
         $this->assertDatabaseHas('bank_statement_entries', [
             'description' => 'PIX Enviado',
             'amount' => '-50.00',
+            'is_reconciled' => false,
         ]);
-        $this->assertDatabaseCount('financial_transactions', 2);
+        $this->assertDatabaseCount('financial_transactions', 0);
     }
 
     public function test_user_can_import_mercado_pago_csv_statement(): void
@@ -532,8 +587,9 @@ class OfxImportTest extends TestCase
         $this->assertDatabaseHas('bank_statement_entries', [
             'external_id' => '166801941210',
             'amount' => '500.00',
+            'is_reconciled' => false,
         ]);
-        $this->assertDatabaseCount('financial_transactions', 1);
+        $this->assertDatabaseCount('financial_transactions', 0);
     }
 
     public function test_user_can_import_banrisul_pdf_statement(): void

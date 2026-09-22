@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\CategoryType;
 use App\Enums\ClassificationRuleMatchType;
 use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\FinancialImportStatus;
@@ -453,6 +454,10 @@ class CardStatementReconciliationTest extends TestCase
         [$user, $workspace] = $this->userAndWorkspace();
         $card = CreditCard::factory()->for($workspace)->create();
         $invoice = $this->invoice($workspace, $card);
+        $category = Category::factory()->for($workspace)->create([
+            'name' => 'Alimentação',
+            'type' => CategoryType::Expense->value,
+        ]);
         $entry = $this->statementEntry(
             $workspace,
             $card,
@@ -463,6 +468,7 @@ class CardStatementReconciliationTest extends TestCase
             1,
             1,
         );
+        $entry->update(['suggested_category_id' => $category->id]);
 
         $this->actingAs($user)
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])

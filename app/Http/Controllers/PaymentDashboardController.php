@@ -142,6 +142,10 @@ class PaymentDashboardController extends Controller
         CarbonImmutable $start,
         CarbonImmutable $end,
     ): array {
+        $transferAccountColumn = $type === FinancialTransactionType::Expense
+            ? 'transfers.source_account_id'
+            : 'transfers.destination_account_id';
+
         return $workspace->financialTransactions()
             ->where('type', $type->value)
             ->where('status', FinancialTransactionStatus::Confirmed->value)
@@ -149,6 +153,17 @@ class PaymentDashboardController extends Controller
             ->whereNotNull('settled_on')
             ->whereDoesntHave('installments')
             ->whereBetween('settled_on', [$start->toDateString(), $end->toDateString()])
+            ->whereNotExists(function ($query) use ($transferAccountColumn): void {
+                $query->selectRaw('1')
+                    ->from('financial_transactions as transfers')
+                    ->whereColumn('transfers.workspace_id', 'financial_transactions.workspace_id')
+                    ->where('transfers.type', FinancialTransactionType::Transfer->value)
+                    ->where('transfers.status', '!=', FinancialTransactionStatus::Cancelled->value)
+                    ->whereColumn('transfers.amount', 'financial_transactions.amount')
+                    ->whereColumn('transfers.description', 'financial_transactions.description')
+                    ->whereColumn('transfers.transaction_date', 'financial_transactions.settled_on')
+                    ->whereColumn($transferAccountColumn, 'financial_transactions.financial_account_id');
+            })
             ->with(['account:id,name', 'recurrence:id,description'])
             ->get()
             ->map(fn (FinancialTransaction $entry): array => $this->item(

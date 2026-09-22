@@ -2,16 +2,31 @@
 
 namespace App\Services\Reconciliation;
 
+use App\Enums\FinancialTransactionStatus;
+use App\Enums\FinancialTransactionType;
 use App\Models\AccountMovement;
 use App\Models\BankStatementEntry;
+use App\Models\FinancialTransaction;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 
 final class BankReconciliationSuggestionService
 {
+    /** Transferência e lançamento avulso só combinam perto da data do extrato. */
+    private const NEAR_MATCH_DAYS = 7;
+
+    /** Pré-agendamento pode ser pago alguns dias antes ou depois, até esta janela. */
+    private const PLANNED_MATCH_DAYS = 180;
+
+    /** @var Collection<int, FinancialTransaction>|null */
+    private ?Collection $plannedTransactions = null;
+
     /**
      * @param  Collection<int, AccountMovement>  $movements
      * @return array<int, array{
-     *     movement_id: int,
+     *     movement_id: int|null,
+     *     planned_transaction_id: int|null,
+     *     is_planned: bool,
      *     occurred_on: string,
      *     description: string,
      *     amount: string,
@@ -30,56 +45,177 @@ final class BankReconciliationSuggestionService
     ): array {
         $entryCents = $this->moneyToCents($entry->amount);
 
-        return $movements
+        $movementCandidates = $movements
             ->filter(fn (AccountMovement $movement): bool => $movement->financial_account_id === $entry->financial_account_id
                 && $this->moneyToCents($movement->amount) === $entryCents
                 && ! $movement->is_reconciled)
             ->map(function (AccountMovement $movement) use ($entry): array {
-                $dateDistance = (int) abs(
-                    $entry->occurred_on->diffInDays($movement->occurred_on, false),
-                );
-                $descriptionScore = (int) round(
-                    $this->descriptionSimilarity(
-                        $entry->description.' '.($entry->memo ?? ''),
-                        $movement->description,
-                    ) * 15,
-                );
-                $dateScore = match (true) {
-                    $dateDistance === 0 => 25,
-                    $dateDistance === 1 => 20,
-                    $dateDistance <= 3 => 14,
-                    $dateDistance <= 7 => 8,
-                    default => 0,
-                };
-                $score = min(100, 60 + $dateScore + $descriptionScore);
-                [$confidence, $confidenceLabel] = match (true) {
-                    $score >= 85 => ['high', 'Alta confiança'],
-                    $score >= 72 => ['medium', 'Média confiança'],
-                    default => ['low', 'Conferência manual'],
-                };
+                $dateDistance = $this->dateDistance($entry->occurred_on, $movement->occurred_on);
+                $scored = $this->score($entry, $movement->description, $dateDistance, false);
 
                 return [
                     'movement_id' => $movement->id,
+                    'planned_transaction_id' => null,
+                    'is_planned' => false,
                     'occurred_on' => $movement->occurred_on->toDateString(),
                     'description' => $movement->description,
                     'amount' => $movement->amount,
                     'type' => $movement->type->value,
                     'type_label' => $movement->type->label(),
-                    'score' => $score,
-                    'confidence' => $confidence,
-                    'confidence_label' => $confidenceLabel,
+                    ...$scored,
                     'date_distance' => $dateDistance,
-                    'is_suggestion' => $dateDistance <= 7,
+                    'is_suggestion' => $dateDistance <= self::NEAR_MATCH_DAYS,
                 ];
             })
-            ->filter(fn (array $candidate): bool => $candidate['date_distance'] <= 180)
+            ->filter(function (array $candidate) use ($movements): bool {
+                if ($candidate['date_distance'] <= self::NEAR_MATCH_DAYS) {
+                    return true;
+                }
+
+                if ($candidate['date_distance'] > self::PLANNED_MATCH_DAYS) {
+                    return false;
+                }
+
+                $movement = $movements->firstWhere('id', $candidate['movement_id']);
+
+                return $movement?->transaction?->status === FinancialTransactionStatus::Planned;
+            });
+
+        return $movementCandidates
+            ->concat($this->plannedCandidates($entry, $entryCents))
             ->sort(function (array $left, array $right): int {
-                return [$right['score'], $left['date_distance'], $right['movement_id']]
-                    <=> [$left['score'], $right['date_distance'], $left['movement_id']];
+                return [$right['score'], $left['date_distance'], $right['movement_id'] ?? 0]
+                    <=> [$left['score'], $right['date_distance'], $left['movement_id'] ?? 0];
             })
             ->take(20)
             ->values()
             ->all();
+    }
+
+    public function plannedTransaction(?int $id): ?FinancialTransaction
+    {
+        if ($id === null || ! $this->plannedTransactions instanceof Collection) {
+            return null;
+        }
+
+        $transaction = $this->plannedTransactions->firstWhere('id', $id);
+
+        return $transaction instanceof FinancialTransaction ? $transaction : null;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function plannedCandidates(BankStatementEntry $entry, int $entryCents): array
+    {
+        return $this->plannedTransactions($entry->workspace_id)
+            ->filter(function (FinancialTransaction $transaction) use ($entry, $entryCents): bool {
+                return $transaction->financial_account_id === $entry->financial_account_id
+                    && $this->moneyToCents($this->signedAmount($transaction)) === $entryCents;
+            })
+            ->map(function (FinancialTransaction $transaction) use ($entry): array {
+                $scheduled = $transaction->due_date ?? $transaction->transaction_date;
+                $dateDistance = $this->dateDistance($entry->occurred_on, $scheduled);
+                $near = $dateDistance <= self::NEAR_MATCH_DAYS;
+                $scored = $this->score($entry, $transaction->description, $dateDistance, $near);
+
+                return [
+                    'movement_id' => null,
+                    'planned_transaction_id' => $transaction->id,
+                    'is_planned' => true,
+                    'occurred_on' => $scheduled->toDateString(),
+                    'description' => $transaction->description,
+                    'amount' => $this->signedAmount($transaction),
+                    'type' => $transaction->type->value,
+                    'type_label' => $transaction->type->label(),
+                    ...$scored,
+                    'date_distance' => $dateDistance,
+                    'is_suggestion' => $near,
+                ];
+            })
+            ->filter(fn (array $candidate): bool => $candidate['date_distance'] <= self::PLANNED_MATCH_DAYS)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return Collection<int, FinancialTransaction>
+     */
+    private function plannedTransactions(int $workspaceId): Collection
+    {
+        if ($this->plannedTransactions instanceof Collection) {
+            return $this->plannedTransactions;
+        }
+
+        return $this->plannedTransactions = FinancialTransaction::query()
+            ->where('workspace_id', $workspaceId)
+            ->where('status', FinancialTransactionStatus::Planned->value)
+            ->whereNull('settled_on')
+            ->whereNull('credit_card_id')
+            ->whereNotNull('financial_account_id')
+            ->whereIn('type', [
+                FinancialTransactionType::Expense->value,
+                FinancialTransactionType::Income->value,
+            ])
+            ->whereDoesntHave('accountMovements')
+            ->with([
+                'account:id,name',
+                'category:id,name,parent_id',
+                'category.parent:id,name',
+            ])
+            ->get();
+    }
+
+    /**
+     * @return array{score: int, confidence: string, confidence_label: string}
+     */
+    private function score(
+        BankStatementEntry $entry,
+        string $description,
+        int $dateDistance,
+        bool $preferNearPlanned,
+    ): array {
+        $descriptionScore = (int) round(
+            $this->descriptionSimilarity(
+                $entry->description.' '.($entry->memo ?? ''),
+                $description,
+            ) * 15,
+        );
+        $dateScore = match (true) {
+            $preferNearPlanned => 25,
+            $dateDistance === 0 => 25,
+            $dateDistance === 1 => 20,
+            $dateDistance <= 3 => 14,
+            $dateDistance <= self::NEAR_MATCH_DAYS => 8,
+            default => 0,
+        };
+        $score = min(100, 60 + $dateScore + $descriptionScore);
+
+        [$confidence, $confidenceLabel] = match (true) {
+            $score >= 85 => ['high', 'Alta confiança'],
+            $score >= 72 => ['medium', 'Média confiança'],
+            default => ['low', 'Conferência manual'],
+        };
+
+        return [
+            'score' => $score,
+            'confidence' => $confidence,
+            'confidence_label' => $confidenceLabel,
+        ];
+    }
+
+    private function dateDistance(CarbonInterface $left, CarbonInterface $right): int
+    {
+        return (int) abs($left->diffInDays($right, false));
+    }
+
+    private function signedAmount(FinancialTransaction $transaction): string
+    {
+        $amount = ltrim((string) $transaction->amount, '-');
+
+        return $transaction->type === FinancialTransactionType::Expense
+            ? '-'.$amount
+            : $amount;
     }
 
     private function descriptionSimilarity(string $left, string $right): float

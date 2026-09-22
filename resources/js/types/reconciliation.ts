@@ -16,6 +16,7 @@ export type ReconciliationCandidate = {
     invoice_payment_id?: number | null;
     transaction_id?: number | null;
     is_refund?: boolean;
+    is_planned?: boolean;
     remaining_refundable_amount?: string | null;
     occurred_on: string;
     description: string;

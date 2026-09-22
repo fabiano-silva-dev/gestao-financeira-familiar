@@ -175,14 +175,11 @@ export default function AccountShow() {
                             </p>
                             <p className="mt-1 text-2xl font-semibold tabular-nums">
                                 {currency.format(
-                                    Number(account.opening_balance),
+                                    Number(summary.period_opening_balance),
                                 )}
                             </p>
                             <p className="text-muted-foreground mt-1 text-xs">
-                                {account.opening_balance_date
-                                    ? 'Em ' +
-                                      formatDate(account.opening_balance_date)
-                                    : 'Data não informada'}
+                                No início de {periodLabel}
                             </p>
                         </CardContent>
                     </Card>
@@ -228,11 +225,11 @@ export default function AccountShow() {
                             </p>
                             <p className="mt-1 text-2xl font-semibold tabular-nums">
                                 {currency.format(
-                                    Number(account.current_balance),
+                                    Number(summary.period_closing_balance),
                                 )}
                             </p>
                             <p className="text-muted-foreground mt-1 text-xs">
-                                Saldo efetivo da conta
+                                No fim de {periodLabel}
                             </p>
                         </CardContent>
                     </Card>
@@ -285,7 +282,7 @@ export default function AccountShow() {
                                             Nenhum lançamento no período
                                         </p>
                                         <p className="text-muted-foreground mt-1 text-sm">
-                                            O saldo atual ainda corresponde ao
+                                            O saldo do mês ainda corresponde ao
                                             saldo inicial informado.
                                         </p>
                                     </div>

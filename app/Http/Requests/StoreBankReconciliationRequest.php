@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\AccountMovement;
+use App\Models\FinancialTransaction;
 use App\Support\Workspaces\CurrentWorkspace;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Database\Query\Builder;
@@ -26,9 +27,18 @@ class StoreBankReconciliationRequest extends FormRequest
 
         return [
             'account_movement_id' => [
-                'required',
+                'required_without:financial_transaction_id',
+                'nullable',
                 'integer',
                 Rule::exists(AccountMovement::class, 'id')
+                    ->where(fn (Builder $query): Builder => $query
+                        ->where('workspace_id', $workspace->id)),
+            ],
+            'financial_transaction_id' => [
+                'required_without:account_movement_id',
+                'nullable',
+                'integer',
+                Rule::exists(FinancialTransaction::class, 'id')
                     ->where(fn (Builder $query): Builder => $query
                         ->where('workspace_id', $workspace->id)),
             ],
@@ -40,6 +50,7 @@ class StoreBankReconciliationRequest extends FormRequest
     {
         return [
             'account_movement_id' => 'lançamento financeiro',
+            'financial_transaction_id' => 'lançamento planejado',
         ];
     }
 }

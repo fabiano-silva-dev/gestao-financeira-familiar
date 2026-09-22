@@ -50,10 +50,10 @@ class FinancialImportAutoDetectionTest extends TestCase
         $this->assertSame('sicredi', data_get($import->metadata, 'autodetection.institution'));
         $this->assertSame('bank_statement', data_get($import->metadata, 'autodetection.document_type'));
         $this->assertFalse((bool) data_get($import->metadata, 'autodetection.confirmed_by_user'));
-        $this->assertDatabaseCount('financial_transactions', 1);
+        $this->assertDatabaseCount('financial_transactions', 0);
         $this->assertDatabaseHas('bank_statement_entries', [
             'financial_account_id' => $account->id,
-            'is_reconciled' => true,
+            'is_reconciled' => false,
         ]);
     }
 
@@ -85,7 +85,7 @@ class FinancialImportAutoDetectionTest extends TestCase
 
         $this->assertDatabaseCount('financial_imports', 2);
         $this->assertDatabaseCount('bank_statement_entries', 2);
-        $this->assertDatabaseCount('financial_transactions', 2);
+        $this->assertDatabaseCount('financial_transactions', 0);
         $this->assertSame(
             2,
             FinancialImport::query()
@@ -209,6 +209,122 @@ class FinancialImportAutoDetectionTest extends TestCase
                 ->where('cardOptions.0.payment_account_agency', '0001')
                 ->where('cardOptions.0.payment_account_number', '12345678-9')
             );
+    }
+
+    public function test_spaced_banrisul_logo_exposes_statement_details_and_keeps_import_available(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Sicredi',
+            'institution' => 'Sicredi',
+            'account_number' => '12345-6',
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.store'), [
+                'files' => [
+                    UploadedFile::fake()->createWithContent(
+                        'extrato-compacto.pdf',
+                        $this->compactBanrisulPdf(),
+                    ),
+                ],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $pending = FinancialImport::query()->sole();
+
+        $this->assertSame(FinancialImportStatus::NeedsConfirmation, $pending->status);
+        $this->assertSame('banrisul', data_get($pending->metadata, 'autodetection.institution'));
+        $this->assertSame('banrisul_current_account', data_get($pending->metadata, 'autodetection.parser_key'));
+        $this->assertSame('FABIANO CARVALHO DA SILVA', data_get($pending->metadata, 'autodetection.holder_name'));
+        $this->assertSame('3511367906', data_get($pending->metadata, 'autodetection.identifier_value'));
+        $this->assertSame('2026-09', data_get($pending->metadata, 'autodetection.reference_month'));
+        $this->assertSame('0377', data_get($pending->metadata, 'autodetection.metadata.agency'));
+        $this->assertSame(['financial_account_id'], data_get($pending->metadata, 'missing_fields'));
+    }
+
+    public function test_pending_spaced_banrisul_layout_is_recognized_again_on_the_import_page(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $contents = $this->compactBanrisulPdf();
+        $hash = hash('sha256', $contents);
+        $path = "imports/{$workspace->id}/pending/{$hash}.pdf";
+        Storage::disk('local')->put($path, $contents);
+        FinancialImport::query()->create([
+            'workspace_id' => $workspace->id,
+            'created_by' => $user->id,
+            'type' => FinancialImportType::Document,
+            'status' => FinancialImportStatus::NeedsConfirmation,
+            'source_filename' => 'extrato21-09-2026_17-08-31_30dias.pdf',
+            'stored_path' => $path,
+            'file_hash' => $hash,
+            'deduplication_key' => hash('sha256', 'document|file:'.$hash),
+            'metadata' => [
+                'autodetection' => [
+                    'document_type' => 'bank_statement',
+                    'institution' => null,
+                    'confidence' => 0.68,
+                    'format' => 'pdf',
+                    'parser_key' => null,
+                    'identifier_type' => null,
+                    'identifier_value' => null,
+                    'reference_month' => null,
+                    'holder_name' => null,
+                    'metadata' => [],
+                ],
+                'missing_fields' => ['parser', 'financial_account_id'],
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('imports.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('imports.0.autodetection.institution', 'banrisul')
+                ->where('imports.0.autodetection.parser_key', 'banrisul_current_account')
+                ->where('imports.0.autodetection.holder_name', 'FABIANO CARVALHO DA SILVA')
+                ->where('imports.0.autodetection.identifier_value', '3511367906')
+                ->where('imports.0.autodetection.reference_month', '2026-09')
+                ->where('imports.0.autodetection.metadata.agency', '0377')
+                ->where('imports.0.missing_fields', ['financial_account_id'])
+            );
+    }
+
+    public function test_spaced_banrisul_statement_imports_when_account_number_matches(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Banrisul Fabiano',
+            'institution' => 'Banrisul',
+            'agency' => '0377',
+            'account_number' => '35.113679.0-6',
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.store'), [
+                'files' => [
+                    UploadedFile::fake()->createWithContent(
+                        'extrato-compacto.pdf',
+                        $this->compactBanrisulPdf(),
+                    ),
+                ],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $import = FinancialImport::query()->sole();
+
+        $this->assertSame(FinancialImportStatus::Completed, $import->status);
+        $this->assertSame($account->id, $import->financial_account_id);
+        $this->assertDatabaseHas('bank_statement_entries', [
+            'financial_account_id' => $account->id,
+            'description' => 'CRED TRANSFER',
+        ]);
     }
 
     public function test_account_number_resolves_ambiguous_banrisul_accounts_without_confirmation(): void
@@ -390,6 +506,24 @@ OFX;
             'Movimentações na fatura',
             'Cartão Visa [************3759]',
             '30/06 DL*GOOGLE Google R$ 14,99',
+        ]);
+    }
+
+    private function compactBanrisulPdf(): string
+    {
+        return $this->simplePdf([
+            'B A N R I S U L',
+            'AGENCIA: 0377',
+            'CONTA..: 3511367906',
+            'NOME...: FABIANO CARVALHO DA SILVA',
+            'DIA HISTORICO DOCUMENTO V A L O R',
+            '---------- MOVIMENTOS DA CONTA CORRENTE ----------',
+            'SALDO ANT EM 31/08/2026 15,31-',
+            '++ MOVIMENTOS SET/2026',
+            '01 CRED TRANSFER 332502 2.000,00',
+            'PIX 249759 2.000,00-',
+            'NOME: FABIANO CARVALHO DA SILVA',
+            'SALDO NA DATA 23,32-',
         ]);
     }
 

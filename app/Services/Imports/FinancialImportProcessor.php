@@ -94,7 +94,7 @@ final class FinancialImportProcessor
     }
 
     /**
-     * @param array<string, int>|null $actionCounters
+     * @param  array<string, int>|null  $actionCounters
      * @return array<string, int|string>
      */
     public function refreshSummary(
@@ -190,8 +190,10 @@ final class FinancialImportProcessor
                 $movement = $movements->firstWhere('id', $candidates[0]['movement_id']);
 
                 if ($movement instanceof AccountMovement) {
-                    $this->bankReconciliation->reconcile($workspace, $entry, $movement, $user);
-                    $counters['matched_existing']++;
+                    if ($this->entryActions->acceptsAutomaticBankLink($workspace, $entry, $movement)) {
+                        $this->bankReconciliation->reconcile($workspace, $entry, $movement, $user);
+                        $counters['matched_existing']++;
+                    }
 
                     return;
                 }

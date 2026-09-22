@@ -121,8 +121,10 @@ class FinancialAccountPanoramaTest extends TestCase
                 ->where('account.id', $account->id)
                 ->where('account.current_balance', '210.00')
                 ->where('currentPeriod', '2026-09-01')
+                ->where('summary.period_opening_balance', '100.00')
                 ->where('summary.inflows', '150.00')
                 ->where('summary.outflows', '40.00')
+                ->where('summary.period_closing_balance', '210.00')
                 ->where('summary.movement_count', 2)
                 ->has('movements', 2)
                 ->where('movements.0.description', 'Recebimento')
@@ -184,8 +186,10 @@ class FinancialAccountPanoramaTest extends TestCase
                 ->component('accounts/show')
                 ->where('currentPeriod', '2026-09-01')
                 ->where('account.current_balance', '350.00')
+                ->where('summary.period_opening_balance', '180.00')
                 ->where('summary.inflows', '200.00')
                 ->where('summary.outflows', '30.00')
+                ->where('summary.period_closing_balance', '350.00')
                 ->where('summary.movement_count', 2)
                 ->has('movements', 2)
                 ->where('movements.0.description', 'Conta de luz')
@@ -229,11 +233,76 @@ class FinancialAccountPanoramaTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('accounts/show')
                 ->where('currentPeriod', '2026-08-01')
+                ->where('account.current_balance', '150.00')
+                ->where('summary.period_opening_balance', '100.00')
                 ->where('summary.inflows', '80.00')
                 ->where('summary.outflows', '0.00')
+                ->where('summary.period_closing_balance', '180.00')
                 ->where('summary.movement_count', 1)
                 ->has('movements', 1)
                 ->where('movements.0.description', 'Recebimento de agosto')
+            );
+    }
+
+    public function test_account_statement_recalculates_balances_when_the_month_changes(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'opening_balance' => '0.00',
+            'opening_balance_date' => null,
+        ]);
+
+        $service = app(FinancialEntryService::class);
+
+        $this->createEntry(
+            $service,
+            $workspace,
+            $account,
+            FinancialTransactionType::Income,
+            '2026-06-06',
+            'Entrada de junho',
+            '500.00',
+        );
+        $this->createEntry(
+            $service,
+            $workspace,
+            $account,
+            FinancialTransactionType::Expense,
+            '2026-06-06',
+            'Saída de junho',
+            '500.00',
+        );
+        $this->createEntry(
+            $service,
+            $workspace,
+            $account,
+            FinancialTransactionType::Income,
+            '2026-07-02',
+            'Entrada de julho',
+            '1196.55',
+        );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('accounts.show', ['account' => $account, 'period' => '2026-06']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('summary.period_opening_balance', '0.00')
+                ->where('summary.inflows', '500.00')
+                ->where('summary.outflows', '500.00')
+                ->where('summary.period_closing_balance', '0.00')
+                ->where('account.current_balance', '1196.55')
+            );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('accounts.show', ['account' => $account, 'period' => '2026-07']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('summary.period_opening_balance', '0.00')
+                ->where('summary.inflows', '1196.55')
+                ->where('summary.outflows', '0.00')
+                ->where('summary.period_closing_balance', '1196.55')
             );
     }
 

@@ -23,6 +23,14 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -106,27 +114,125 @@ function cardOptionLabel(card: CardStatementCardOption) {
     return `${card.name} · ${details.join(' · ')}`;
 }
 
-function detectedDocumentLabel(item: UnifiedImportHistoryItem) {
+function formatInstitution(value: string | null | undefined) {
+    if (!value) {
+        return 'não identificada';
+    }
+
+    return value
+        .replaceAll('_', ' ')
+        .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatReferenceMonth(value: string) {
+    const match = /^(\d{4})-(\d{2})$/.exec(value);
+
+    return match ? `${match[2]}/${match[1]}` : value;
+}
+
+function detectedFacts(item: UnifiedImportHistoryItem) {
     const detection = item.autodetection;
 
     if (!detection) {
-        return null;
+        return [];
     }
 
-    const identifier =
-        detection.identifier_value && detection.identifier_type
-            ? detection.identifier_type === 'card_last_four'
-                ? `final ${detection.identifier_value}`
-                : `identificador ${detection.identifier_value}`
+    const agency =
+        typeof detection.metadata?.agency === 'string'
+            ? detection.metadata.agency
             : null;
-    const holder = detection.holder_name
-        ? `titular ${detection.holder_name}`
-        : null;
-    const reference = detection.reference_month
-        ? `referência ${detection.reference_month}`
-        : null;
+    const facts = [
+        detection.holder_name
+            ? { label: 'Titular', value: detection.holder_name }
+            : null,
+        agency ? { label: 'Agência', value: agency } : null,
+        detection.identifier_type === 'account_number' &&
+        detection.identifier_value
+            ? { label: 'Conta', value: detection.identifier_value }
+            : null,
+        detection.identifier_type === 'card_last_four' &&
+        detection.identifier_value
+            ? { label: 'Cartão', value: `final ${detection.identifier_value}` }
+            : null,
+        detection.reference_month
+            ? {
+                  label: 'Período',
+                  value: formatReferenceMonth(detection.reference_month),
+              }
+            : null,
+    ];
 
-    return [holder, identifier, reference].filter(Boolean).join(' · ') || null;
+    return facts.filter(
+        (fact): fact is { label: string; value: string } => fact !== null,
+    );
+}
+
+function suggestedCardId(
+    item: UnifiedImportHistoryItem,
+    cards: CardStatementCardOption[],
+) {
+    const detection = item.autodetection;
+
+    if (!detection || detection.document_type !== 'credit_card_statement') {
+        return undefined;
+    }
+
+    if (
+        detection.identifier_type === 'card_last_four' &&
+        detection.identifier_value
+    ) {
+        const matches = cards.filter(
+            (card) => card.last_four === detection.identifier_value,
+        );
+
+        if (matches.length === 1) {
+            return String(matches[0].id);
+        }
+    }
+
+    return undefined;
+}
+
+function suggestedAccountId(
+    item: UnifiedImportHistoryItem,
+    accounts: FinancialImportAccountOption[],
+) {
+    const detection = item.autodetection;
+
+    if (
+        !detection ||
+        detection.document_type === 'credit_card_statement' ||
+        detection.document_type === 'proof'
+    ) {
+        return undefined;
+    }
+
+    const identifier = detection.identifier_value?.replace(/\D/g, '');
+
+    if (identifier) {
+        const matches = accounts.filter(
+            (account) => account.account_number?.replace(/\D/g, '') === identifier,
+        );
+
+        if (matches.length === 1) {
+            return String(matches[0].id);
+        }
+    }
+
+    if (detection.institution) {
+        const institution = detection.institution.replaceAll('_', ' ');
+        const matches = accounts.filter((account) => {
+            const stored = `${account.institution ?? ''} ${account.name}`.toLowerCase();
+
+            return stored.includes(institution.toLowerCase());
+        });
+
+        if (matches.length === 1) {
+            return String(matches[0].id);
+        }
+    }
+
+    return undefined;
 }
 
 function PendingImportResolver({
@@ -149,15 +255,20 @@ function PendingImportResolver({
               ? 'credit_card_statement'
               : '';
     const [documentType, setDocumentType] = useState(initialType);
-    const needsTypeChoice = initialType === '';
+    const [accountId, setAccountId] = useState(
+        () => suggestedAccountId(item, accountOptions) ?? '',
+    );
+    const [cardId, setCardId] = useState(
+        () => suggestedCardId(item, cardOptions) ?? '',
+    );
     const isInvoice = documentType === 'credit_card_statement';
-    const parserMissing = item.missing_fields.includes('parser');
+    const parserMissing =
+        item.missing_fields.includes('parser') &&
+        (documentType === '' || documentType === initialType);
     const confidence = Math.round((item.autodetection?.confidence ?? 0) * 100);
-    const institution = item.autodetection?.institution
-        ? item.autodetection.institution.replaceAll('_', ' ')
-        : 'não identificada';
+    const institution = formatInstitution(item.autodetection?.institution);
     const detectedReference = item.autodetection?.reference_month;
-    const detectedDetails = detectedDocumentLabel(item);
+    const facts = detectedFacts(item);
 
     return (
         <div className="rounded-lg border p-4">
@@ -166,20 +277,41 @@ function PendingImportResolver({
                 <p className="text-muted-foreground text-sm">
                     Instituição: {institution} · confiança {confidence}%
                 </p>
-                {detectedDetails && (
-                    <p className="text-muted-foreground text-xs">
-                        Identificado no arquivo: {detectedDetails}
-                    </p>
-                )}
             </div>
 
-            {parserMissing && !needsTypeChoice && (
+            {facts.length > 0 && (
+                <dl className="mb-4 grid gap-3 text-sm sm:grid-cols-2">
+                    {facts.map((fact) => (
+                        <div key={fact.label}>
+                            <dt className="text-muted-foreground text-xs">
+                                {fact.label}
+                            </dt>
+                            <dd className="font-medium">{fact.value}</dd>
+                        </div>
+                    ))}
+                </dl>
+            )}
+
+            {parserMissing && (
                 <Alert className="mb-4">
                     <ShieldCheck />
                     <AlertTitle>Layout preservado para revisão</AlertTitle>
                     <AlertDescription>
                         O tipo foi identificado, mas ainda não existe parser
-                        determinístico seguro para este layout.
+                        determinístico seguro para este layout. Se a leitura
+                        estiver errada, troque o tipo abaixo.
+                    </AlertDescription>
+                </Alert>
+            )}
+
+            {!parserMissing && initialType !== '' && (
+                <Alert className="mb-4">
+                    <ShieldCheck />
+                    <AlertTitle>Layout reconhecido</AlertTitle>
+                    <AlertDescription>
+                        Os dados do arquivo foram lidos. O tipo, a conta e o
+                        cartão abaixo são a sugestão — troque o que não
+                        estiver certo antes de importar.
                     </AlertDescription>
                 </Alert>
             )}
@@ -192,47 +324,38 @@ function PendingImportResolver({
             >
                 {({ processing, errors }) => (
                     <>
-                        {needsTypeChoice ? (
-                            <div className="grid gap-2 md:col-span-2">
-                                <Label>Tipo do documento</Label>
-                                <Select
-                                    value={documentType}
-                                    onValueChange={setDocumentType}
-                                >
-                                    <SelectTrigger className="w-full">
-                                        <SelectValue placeholder="Selecione o tipo" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="bank_statement">
-                                            Extrato bancário
-                                        </SelectItem>
-                                        <SelectItem value="credit_card_statement">
-                                            Fatura de cartão
-                                        </SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <InputError message={errors.document_type} />
-                            </div>
-                        ) : (
-                            <input
-                                type="hidden"
+                        <div className="grid gap-2 md:col-span-2">
+                            <Label>Tipo do documento</Label>
+                            <Select
                                 name="document_type"
                                 value={documentType}
-                            />
-                        )}
-
-                        {needsTypeChoice && documentType !== '' && (
-                            <input
-                                type="hidden"
-                                name="document_type"
-                                value={documentType}
-                            />
-                        )}
+                                onValueChange={setDocumentType}
+                                required
+                            >
+                                <SelectTrigger className="w-full">
+                                    <SelectValue placeholder="Selecione o tipo" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="bank_statement">
+                                        Extrato bancário
+                                    </SelectItem>
+                                    <SelectItem value="credit_card_statement">
+                                        Fatura de cartão
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <InputError message={errors.document_type} />
+                        </div>
 
                         {documentType !== '' && !isInvoice && (
                             <div className="grid gap-2 md:col-span-2">
                                 <Label>Conta deste extrato</Label>
-                                <Select name="financial_account_id" required>
+                                <Select
+                                    name="financial_account_id"
+                                    value={accountId}
+                                    onValueChange={setAccountId}
+                                    required
+                                >
                                     <SelectTrigger className="w-full">
                                         <SelectValue placeholder="Selecione a conta" />
                                     </SelectTrigger>
@@ -255,7 +378,12 @@ function PendingImportResolver({
                             <>
                                 <div className="grid gap-2">
                                     <Label>Cartão desta fatura</Label>
-                                    <Select name="credit_card_id" required>
+                                    <Select
+                                        name="credit_card_id"
+                                        value={cardId}
+                                        onValueChange={setCardId}
+                                        required
+                                    >
                                         <SelectTrigger className="w-full">
                                             <SelectValue placeholder="Selecione o cartão" />
                                         </SelectTrigger>
@@ -309,6 +437,189 @@ function PendingImportResolver({
     );
 }
 
+function DestinationDialog({
+    item,
+    accountOptions,
+    cardOptions,
+    defaultReferenceMonth,
+    onClose,
+}: {
+    item: UnifiedImportHistoryItem;
+    accountOptions: FinancialImportAccountOption[];
+    cardOptions: CardStatementCardOption[];
+    defaultReferenceMonth: string;
+    onClose: () => void;
+}) {
+    const initialType =
+        item.kind === 'invoice' ? 'credit_card_statement' : 'bank_statement';
+    const [documentType, setDocumentType] = useState(initialType);
+    const [accountId, setAccountId] = useState(
+        item.financial_account_id ? String(item.financial_account_id) : '',
+    );
+    const [cardId, setCardId] = useState(
+        item.credit_card_id ? String(item.credit_card_id) : '',
+    );
+    const isInvoice = documentType === 'credit_card_statement';
+    const typeChanged = (item.kind === 'invoice') !== isInvoice;
+
+    return (
+        <Dialog open onOpenChange={(open) => !open && onClose()}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Alterar destino</DialogTitle>
+                    <DialogDescription>
+                        As linhas deste arquivo passam para a conta ou o cartão
+                        escolhido. O que o arquivo criou acompanha a mudança, e
+                        vínculos com lançamentos que já existiam no destino
+                        anterior são desfeitos. Se o tipo mudar, o arquivo é
+                        lido de novo e a importação anterior sai do lugar
+                        antigo.
+                    </DialogDescription>
+                </DialogHeader>
+                <p className="truncate text-sm font-medium">
+                    {item.source_filename}
+                </p>
+                <Form
+                    action={`/importacoes/${item.id}/destino`}
+                    method="post"
+                    options={{ preserveScroll: true }}
+                    onSuccess={onClose}
+                    className="grid gap-4"
+                >
+                    {({ processing, errors }) => (
+                        <>
+                            <div className="grid gap-2">
+                                <Label>Tipo</Label>
+                                <Select
+                                    name="document_type"
+                                    value={documentType}
+                                    onValueChange={setDocumentType}
+                                >
+                                    <SelectTrigger className="w-full">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="bank_statement">
+                                            Extrato bancário
+                                        </SelectItem>
+                                        <SelectItem value="credit_card_statement">
+                                            Fatura de cartão
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <InputError message={errors.document_type} />
+                            </div>
+                            {!isInvoice && (
+                                <div className="grid gap-2">
+                                    <Label>Conta</Label>
+                                    <Select
+                                        name="financial_account_id"
+                                        value={accountId}
+                                        onValueChange={setAccountId}
+                                    >
+                                        <SelectTrigger className="w-full">
+                                            <SelectValue placeholder="Selecione a conta" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {accountOptions.map((account) => (
+                                                <SelectItem
+                                                    key={account.id}
+                                                    value={String(account.id)}
+                                                >
+                                                    {accountOptionLabel(account)}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <InputError
+                                        message={errors.financial_account_id}
+                                    />
+                                </div>
+                            )}
+                            {isInvoice && (
+                                <>
+                                    <div className="grid gap-2">
+                                        <Label>Cartão</Label>
+                                        <Select
+                                            name="credit_card_id"
+                                            value={cardId}
+                                            onValueChange={setCardId}
+                                        >
+                                            <SelectTrigger className="w-full">
+                                                <SelectValue placeholder="Selecione o cartão" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {cardOptions.map((card) => (
+                                                    <SelectItem
+                                                        key={card.id}
+                                                        value={String(card.id)}
+                                                    >
+                                                        {cardOptionLabel(card)}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <InputError
+                                            message={errors.credit_card_id}
+                                        />
+                                    </div>
+                                    {typeChanged ? (
+                                        <div className="grid gap-2">
+                                            <Label>Mês de vencimento</Label>
+                                            <Input
+                                                name="reference_month"
+                                                type="month"
+                                                defaultValue={
+                                                    item.reference_month ??
+                                                    defaultReferenceMonth
+                                                }
+                                                required
+                                            />
+                                            <InputError
+                                                message={errors.reference_month}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <input
+                                            type="hidden"
+                                            name="reference_month"
+                                            value={
+                                                item.reference_month ??
+                                                defaultReferenceMonth
+                                            }
+                                        />
+                                    )}
+                                </>
+                            )}
+                            <DialogFooter>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={onClose}
+                                    disabled={processing}
+                                >
+                                    Cancelar
+                                </Button>
+                                <Button
+                                    disabled={
+                                        processing ||
+                                        (!isInvoice && accountId === '') ||
+                                        (isInvoice && cardId === '')
+                                    }
+                                >
+                                    {processing
+                                        ? 'Atualizando…'
+                                        : 'Salvar destino'}
+                                </Button>
+                            </DialogFooter>
+                        </>
+                    )}
+                </Form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 export default function ImportsIndex({
     accountOptions,
     cardOptions,
@@ -330,6 +641,8 @@ export default function ImportsIndex({
             column === 'amount' || column === 'date' ? 'desc' : 'asc',
         );
     const [fileNames, setFileNames] = useState<string[]>([]);
+    const [destination, setDestination] =
+        useState<UnifiedImportHistoryItem | null>(null);
     const canSubmit = fileNames.length > 0;
     const pendingImports = useMemo(
         () => imports.filter((item) => item.status === 'needs_confirmation'),
@@ -727,6 +1040,20 @@ export default function ImportsIndex({
                                             {item.status_label}
                                         </Badge>
                                         <div className="text-right text-sm">
+                                            {item.can_reassign && (
+                                                <div className="mb-2">
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() =>
+                                                            setDestination(item)
+                                                        }
+                                                    >
+                                                        Alterar destino
+                                                    </Button>
+                                                </div>
+                                            )}
                                             {item.status === 'completed' ? (
                                                 item.processing_summary ? (
                                                     <div className="space-y-0.5 tabular-nums">
@@ -775,6 +1102,15 @@ export default function ImportsIndex({
                         )}
                     </CardContent>
                 </Card>
+                {destination && (
+                    <DestinationDialog
+                        item={destination}
+                        accountOptions={accountOptions}
+                        cardOptions={cardOptions}
+                        defaultReferenceMonth={defaultReferenceMonth}
+                        onClose={() => setDestination(null)}
+                    />
+                )}
             </div>
         </>
     );

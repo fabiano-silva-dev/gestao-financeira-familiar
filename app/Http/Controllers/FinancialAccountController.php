@@ -109,10 +109,21 @@ class FinancialAccountController extends Controller
                 <<<'SQL'
                     COUNT(*) AS movement_count,
                     COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS inflows,
-                    COALESCE(SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END), 0) AS outflows
+                    COALESCE(SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END), 0) AS outflows,
+                    COALESCE(SUM(amount), 0) AS net
                 SQL,
             )
             ->first();
+        $carriedBeforePeriod = (clone $movementQuery)
+            ->whereDate('occurred_on', '<', $monthStart->toDateString())
+            ->selectRaw('COALESCE(SUM(amount), 0) AS total')
+            ->value('total');
+        $periodBalances = $this->periodBalances(
+            $financialAccount,
+            $monthEnd,
+            $carriedBeforePeriod,
+            $stats?->getAttribute('net'),
+        );
 
         $listedMovements = (clone $periodQuery)
             ->with([
@@ -140,8 +151,10 @@ class FinancialAccountController extends Controller
         return Inertia::render('accounts/show', [
             'account' => $this->accountData($financialAccount),
             'summary' => [
+                'period_opening_balance' => $periodBalances['opening'],
                 'inflows' => $this->formatMoney($stats?->getAttribute('inflows')),
                 'outflows' => $this->formatMoney($stats?->getAttribute('outflows')),
+                'period_closing_balance' => $periodBalances['closing'],
                 'movement_count' => (int) ($stats?->getAttribute('movement_count') ?? 0),
             ],
             'movements' => $movements,
@@ -367,6 +380,28 @@ class FinancialAccountController extends Controller
             'current_balance' => (string) ($account->getAttribute('current_balance')
                 ?? $account->opening_balance),
             'is_active' => $account->is_active,
+        ];
+    }
+
+    /**
+     * @return array{opening: string, closing: string}
+     */
+    private function periodBalances(
+        FinancialAccount $account,
+        CarbonImmutable $monthEnd,
+        mixed $carriedBeforePeriod,
+        mixed $periodNet,
+    ): array {
+        $openingDate = $account->opening_balance_date?->toDateString();
+        $openingCents = $openingDate === null || $openingDate <= $monthEnd->toDateString()
+            ? $this->moneyToCents((string) $account->opening_balance)
+            : 0;
+        $openingBalanceCents = $openingCents + $this->moneyToCents($this->formatMoney($carriedBeforePeriod));
+        $closingBalanceCents = $openingBalanceCents + $this->moneyToCents($this->formatMoney($periodNet));
+
+        return [
+            'opening' => $this->centsToMoney($openingBalanceCents),
+            'closing' => $this->centsToMoney($closingBalanceCents),
         ];
     }
 

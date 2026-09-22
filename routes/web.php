@@ -259,6 +259,9 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::post('importacoes/{import}/resolver', [FinancialImportController::class, 'resolve'])
         ->whereNumber('import')
         ->name('imports.resolve');
+    Route::post('importacoes/{import}/destino', [FinancialImportController::class, 'reassign'])
+        ->whereNumber('import')
+        ->name('imports.reassign');
     Route::get('importacoes/extrato', fn () => to_route('imports.index'))
         ->name('imports.ofx.index');
     Route::post('importacoes/extrato', [OfxImportController::class, 'store'])

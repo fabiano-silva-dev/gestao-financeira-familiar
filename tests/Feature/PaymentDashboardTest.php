@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Finance\CreditCardInvoiceService;
 use App\Services\Finance\FinancialEntryService;
+use App\Services\Finance\TransferService;
 use App\Support\Workspaces\CurrentWorkspace;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -238,6 +239,103 @@ class PaymentDashboardTest extends TestCase
                 ->where('paid.0.date', '2026-09-20')
                 ->has('paid.0.children', 1)
                 ->where('paid.0.children.0.description', 'Compra do cartão')
+            );
+    }
+
+    public function test_transfer_between_own_accounts_is_not_listed_as_payment_or_receipt(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-22 13:00:00'));
+
+        [$user, $workspace] = $this->userWithWorkspace();
+        $source = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Conta principal',
+            'opening_balance' => '0.00',
+        ]);
+        $destination = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Conta da família',
+            'opening_balance' => '0.00',
+        ]);
+        $service = app(FinancialEntryService::class);
+        $transfers = app(TransferService::class);
+
+        $this->createEntry($service, $workspace, $source, [
+            'transaction_date' => '2026-09-14',
+            'competence_date' => '2026-09-14',
+            'description' => 'Pix enviado Lidiane Ribeiro Ferro da Silva',
+            'amount' => '850.00',
+            'settled_on' => '2026-09-14',
+        ]);
+        $this->createEntry($service, $workspace, $source, [
+            'transaction_date' => '2026-09-14',
+            'competence_date' => '2026-09-14',
+            'description' => 'Aluguel',
+            'amount' => '850.00',
+            'settled_on' => '2026-09-14',
+        ]);
+        $this->createEntry($service, $workspace, $source, [
+            'transaction_date' => '2026-09-14',
+            'competence_date' => '2026-09-14',
+            'description' => 'Conta de luz',
+            'amount' => '120.00',
+            'settled_on' => '2026-09-14',
+        ]);
+        $this->createEntry($service, $workspace, $destination, [
+            'type' => FinancialTransactionType::Income->value,
+            'transaction_date' => '2026-09-08',
+            'competence_date' => '2026-09-08',
+            'description' => 'Pix recebido FABIANO CARVALHO DA SILVA',
+            'amount' => '300.00',
+            'settled_on' => '2026-09-08',
+        ]);
+        $this->createEntry($service, $workspace, $destination, [
+            'type' => FinancialTransactionType::Income->value,
+            'transaction_date' => '2026-09-10',
+            'competence_date' => '2026-09-10',
+            'description' => 'Pró-labore',
+            'amount' => '500.00',
+            'settled_on' => '2026-09-10',
+        ]);
+
+        $transfers->create($workspace, [
+            'transaction_date' => '2026-09-14',
+            'description' => 'Pix enviado Lidiane Ribeiro Ferro da Silva',
+            'amount' => '850.00',
+            'source_account_id' => $source->id,
+            'destination_account_id' => $destination->id,
+            'status' => FinancialTransactionStatus::Confirmed->value,
+            'notes' => null,
+        ]);
+        $transfers->create($workspace, [
+            'transaction_date' => '2026-09-08',
+            'description' => 'Pix recebido FABIANO CARVALHO DA SILVA',
+            'amount' => '300.00',
+            'source_account_id' => $source->id,
+            'destination_account_id' => $destination->id,
+            'status' => FinancialTransactionStatus::Confirmed->value,
+            'notes' => null,
+        ]);
+        $transfers->create($workspace, [
+            'transaction_date' => '2026-09-21',
+            'description' => 'Dinheiro reservado Despesas Mensais',
+            'amount' => '87.36',
+            'source_account_id' => $source->id,
+            'destination_account_id' => $destination->id,
+            'status' => FinancialTransactionStatus::Confirmed->value,
+            'notes' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('payments'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('metrics.paid', '970.00')
+                ->has('paid', 2)
+                ->where('paid.0.description', 'Aluguel')
+                ->where('paid.1.description', 'Conta de luz')
+                ->where('metrics.received', '500.00')
+                ->has('received', 1)
+                ->where('received.0.description', 'Pró-labore')
             );
     }
 

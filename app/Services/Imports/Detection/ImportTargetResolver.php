@@ -6,6 +6,7 @@ use App\Models\CreditCard;
 use App\Models\FinancialAccount;
 use App\Models\ImportSourceBinding;
 use App\Models\Workspace;
+use Illuminate\Support\Collection;
 
 final class ImportTargetResolver
 {
@@ -146,9 +147,9 @@ final class ImportTargetResolver
     }
 
     private function filterCardsByHolder(
-        \Illuminate\Support\Collection $cards,
+        Collection $cards,
         FinancialDocumentDetection $detection,
-    ): \Illuminate\Support\Collection {
+    ): Collection {
         if ($detection->holderName === null) {
             return collect();
         }
@@ -211,6 +212,69 @@ final class ImportTargetResolver
                 'credit_card_id' => $card->id,
             ],
         );
+    }
+
+    public function replaceDestination(
+        Workspace $workspace,
+        FinancialDocumentDetection $detection,
+        string $documentType,
+        ?FinancialAccount $account,
+        ?CreditCard $card,
+    ): void {
+        if (! $this->canLearn($detection)) {
+            return;
+        }
+
+        $replacement = new FinancialDocumentDetection(
+            documentType: $documentType,
+            institution: $detection->institution,
+            confidence: $detection->confidence,
+            format: $detection->format,
+            parserKey: $detection->parserKey,
+            identifierType: $detection->identifierType,
+            identifierValue: $detection->identifierValue,
+            referenceMonth: $detection->referenceMonth,
+            holderName: $detection->holderName,
+            metadata: $detection->metadata,
+        );
+
+        ImportSourceBinding::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('institution', $detection->institution ?? 'unknown')
+            ->where('identifier_type', (string) $detection->identifierType)
+            ->where('identifier_value', (string) $detection->identifierValue)
+            ->where('document_type', '!=', $documentType)
+            ->delete();
+
+        if ($account instanceof FinancialAccount) {
+            $this->learnAccount($workspace, $replacement, $account);
+
+            return;
+        }
+
+        if ($card instanceof CreditCard) {
+            $this->learnCard($workspace, $replacement, $card);
+        }
+    }
+
+    public function rememberedDocumentType(
+        Workspace $workspace,
+        FinancialDocumentDetection $detection,
+    ): ?string {
+        if (! $this->canLearn($detection)) {
+            return null;
+        }
+
+        $types = ImportSourceBinding::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('institution', $detection->institution ?? 'unknown')
+            ->where('identifier_type', (string) $detection->identifierType)
+            ->where('identifier_value', (string) $detection->identifierValue)
+            ->pluck('document_type')
+            ->unique()
+            ->values();
+
+        return $types->count() === 1 ? (string) $types->first() : null;
     }
 
     private function boundAccount(

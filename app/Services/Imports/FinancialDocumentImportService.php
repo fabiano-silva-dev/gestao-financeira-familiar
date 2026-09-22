@@ -63,12 +63,12 @@ final class FinancialDocumentImportService
         }
 
         $extension = strtolower($file->getClientOriginalExtension());
-        $detection = $this->detectors->detect(
+        $detection = $this->withRememberedType($workspace, $this->detectors->detect(
             $contents,
             $file->getClientOriginalName(),
             $extension,
             $file->getMimeType(),
-        );
+        ));
 
         try {
             $processed = $this->processAutomatically(
@@ -80,6 +80,8 @@ final class FinancialDocumentImportService
             );
 
             if ($processed instanceof FinancialImport) {
+                $this->discardPendingDuplicate($workspace, $fileHash);
+
                 return [
                     'status' => 'processed',
                     'import' => $processed,
@@ -109,7 +111,7 @@ final class FinancialDocumentImportService
     }
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     public function resolvePending(
         Workspace $workspace,
@@ -265,7 +267,12 @@ final class FinancialDocumentImportService
             ->first();
 
         if ($existing instanceof FinancialImport) {
-            return $existing;
+            return $this->syncPendingDetection(
+                $existing,
+                $workspace,
+                $detection,
+                $processingError,
+            );
         }
 
         $extension = strtolower($file->getClientOriginalExtension());
@@ -277,7 +284,7 @@ final class FinancialDocumentImportService
             ]);
         }
 
-        return FinancialImport::query()->create([
+        $pending = FinancialImport::query()->create([
             'workspace_id' => $workspace->id,
             'financial_account_id' => null,
             'credit_card_id' => null,
@@ -295,12 +302,92 @@ final class FinancialDocumentImportService
             'total_records' => 0,
             'imported_records' => 0,
             'duplicate_records' => 0,
-            'metadata' => array_filter([
-                'autodetection' => $detection->toArray(),
-                'missing_fields' => $this->missingFields($workspace, $detection),
-                'processing_error' => $processingError,
-            ], static fn (mixed $value): bool => $value !== null),
+            'metadata' => [],
         ]);
+
+        return $this->syncPendingDetection(
+            $pending,
+            $workspace,
+            $detection,
+            $processingError,
+        );
+    }
+
+    public function refreshPendingDetection(
+        Workspace $workspace,
+        FinancialImport $pending,
+    ): FinancialImport {
+        if (
+            $pending->type !== FinancialImportType::Document
+            || $pending->status !== FinancialImportStatus::NeedsConfirmation
+            || ! in_array('parser', $pending->metadata['missing_fields'] ?? [], true)
+        ) {
+            return $pending;
+        }
+
+        try {
+            $file = $this->pendingUploadedFile($pending);
+        } catch (ValidationException) {
+            return $pending;
+        }
+
+        $contents = $file->get();
+
+        if ($contents === false || $contents === '') {
+            return $pending;
+        }
+
+        $detection = $this->withRememberedType($workspace, $this->detectors->detect(
+            $contents,
+            $pending->source_filename,
+            $this->extension($pending->source_filename),
+            $file->getMimeType(),
+        ));
+
+        if ($detection->parserKey === null) {
+            return $pending;
+        }
+
+        return $this->syncPendingDetection($pending, $workspace, $detection);
+    }
+
+    private function syncPendingDetection(
+        FinancialImport $pending,
+        Workspace $workspace,
+        FinancialDocumentDetection $detection,
+        ?string $processingError = null,
+    ): FinancialImport {
+        $metadata = $pending->metadata ?? [];
+        $metadata['autodetection'] = $detection->toArray();
+        $metadata['missing_fields'] = $this->missingFields($workspace, $detection);
+
+        if ($processingError !== null) {
+            $metadata['processing_error'] = $processingError;
+        }
+
+        $pending->update(['metadata' => $metadata]);
+
+        return $pending->refresh();
+    }
+
+    private function discardPendingDuplicate(Workspace $workspace, string $fileHash): void
+    {
+        $pending = $workspace->financialImports()
+            ->where('type', FinancialImportType::Document->value)
+            ->where('file_hash', $fileHash)
+            ->where('status', FinancialImportStatus::NeedsConfirmation->value)
+            ->first();
+
+        if (! $pending instanceof FinancialImport) {
+            return;
+        }
+
+        $storedPath = $pending->stored_path;
+        $pending->delete();
+
+        if (is_string($storedPath) && $storedPath !== '') {
+            Storage::disk('local')->delete($storedPath);
+        }
     }
 
     /** @return list<string> */
@@ -366,6 +453,30 @@ final class FinancialDocumentImportService
         }
 
         return new UploadedFile($path, $pending->source_filename, null, null, true);
+    }
+
+    private function withRememberedType(
+        Workspace $workspace,
+        FinancialDocumentDetection $detection,
+    ): FinancialDocumentDetection {
+        $remembered = $this->targets->rememberedDocumentType($workspace, $detection);
+
+        if ($remembered === null || $remembered === $detection->documentType) {
+            return $detection;
+        }
+
+        return new FinancialDocumentDetection(
+            documentType: $remembered,
+            institution: $detection->institution,
+            confidence: $detection->confidence,
+            format: $detection->format,
+            parserKey: $this->resolvedParserKey($detection, $remembered),
+            identifierType: $detection->identifierType,
+            identifierValue: $detection->identifierValue,
+            referenceMonth: $detection->referenceMonth,
+            holderName: $detection->holderName,
+            metadata: $detection->metadata,
+        );
     }
 
     private function resolvedParserKey(

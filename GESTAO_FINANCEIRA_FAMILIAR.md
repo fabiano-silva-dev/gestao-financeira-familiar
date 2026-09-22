@@ -120,7 +120,7 @@ O objetivo é que o usuário não precise reconstruir o financeiro manualmente.
 
 Ele deverá revisar e resolver somente aquilo que exigir intervenção.
 
-Na importação de faturas de cartão, uma compra só deve ser marcada como **conciliada** quando possuir uma categoria válida. A categoria pode ser definida por regra determinística, histórico, heurística conhecida, sugestão de IA com confiança suficiente ou confirmação do usuário. Se nenhuma categoria puder ser determinada com segurança, a linha permanece pendente na Caixa de Entrada Financeira e não deve ser marcada como conciliada.
+Na importação de faturas de cartão, uma compra só deve ser marcada como **conciliada** quando possuir uma categoria válida. O mesmo vale para receita e despesa vindas de extrato bancário. A categoria pode ser definida por regra determinística, histórico, heurística conhecida, sugestão de IA com confiança suficiente ou confirmação do usuário. Se nenhuma categoria puder ser determinada com segurança, a linha permanece pendente na Caixa de Entrada Financeira e não deve ser marcada como conciliada. Transferência entre contas próprias, pagamento de fatura e reembolso não usam categoria.
 
 Pagamentos de cartão devem existir independentemente da presença da fatura no sistema. Quando um movimento bancário for identificado como pagamento de cartão e a fatura ainda não existir, o sistema deve registrar o pagamento vinculado ao cartão e à conta de origem, conciliar o movimento bancário e manter apenas o vínculo com a fatura como pendência. Esse pagamento não é uma nova despesa. Quando a fatura for importada, pagamentos pendentes do mesmo cartão devem ser vinculados automaticamente somente quando houver correspondência inequívoca; em casos ambíguos, o usuário deve poder vincular manualmente o pagamento à fatura.
 
@@ -147,6 +147,7 @@ O Dashboard de Pagamentos é uma visão operacional de caixa e compromissos do m
 Regras desta visão:
 
 - **Pago** e **Recebido** usam a data efetiva de pagamento ou recebimento para representar o fluxo de caixa realizado.
+- Transferência entre contas próprias não é pagamento nem recebimento. Ela não aparece em **Pago** ou **Recebido**. Se o mesmo movimento também existir como despesa ou receita, com a mesma descrição, valor, data e conta, ele não entra de novo nessas listas.
 - **A pagar** e **A receber** representam compromissos ainda pendentes no período, usando vencimento ou data prevista quando disponível.
 - Compras individuais de cartão não aparecem como obrigações separadas no **A pagar**. A obrigação exibida é a fatura, e as compras ficam disponíveis apenas no detalhamento expansível.
 - O pagamento da fatura movimenta o caixa, mas não cria uma nova despesa.

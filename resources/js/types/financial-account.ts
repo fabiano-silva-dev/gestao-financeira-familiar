@@ -18,8 +18,10 @@ export type FinancialAccountSummary = {
 };
 
 export type FinancialAccountPanoramaSummary = {
+    period_opening_balance: string;
     inflows: string;
     outflows: string;
+    period_closing_balance: string;
     movement_count: number;
 };
 

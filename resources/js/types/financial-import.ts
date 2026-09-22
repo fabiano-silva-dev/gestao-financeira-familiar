@@ -113,6 +113,9 @@ export type FinancialImportProcessingSummary = {
 
 export type UnifiedImportHistoryItem = {
     id: number;
+    financial_account_id: number | null;
+    credit_card_id: number | null;
+    can_reassign: boolean;
     kind: UnifiedImportKind;
     kind_label: string;
     source_filename: string;

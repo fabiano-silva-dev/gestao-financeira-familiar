@@ -254,13 +254,28 @@ export function ReconciliationRow({
         showInvoicePayment &&
         selectedInvoice === null &&
         !entry.is_reconciled;
+    const isTransferLine =
+        showTransfer ||
+        entry.is_likely_transfer ||
+        entry.related_is_transfer ||
+        entry.matcher_action_type === 'transfer';
+    const categoryExempt =
+        isTransferLine ||
+        showInvoicePayment ||
+        showRefund ||
+        entry.is_likely_refund;
+    const selectedHasCategory =
+        leafCategoryId !== null ||
+        (selectedCandidate?.related_category_id ?? null) !== null;
+    const needsCategory = !categoryExempt;
     const canCreate =
         !entry.is_reconciled &&
         !entry.has_suggestion &&
         !entry.is_likely_invoice_payment &&
         !entry.is_likely_refund &&
         !entry.is_likely_transfer &&
-        !showRefund;
+        !showRefund &&
+        (!needsCategory || leafCategoryId !== null);
     const counterpartOptions = counterpartAccountOptions.filter(
         (account) => account.id !== entry.financial_account_id,
     );
@@ -351,6 +366,23 @@ export function ReconciliationRow({
                         ),
                     },
                     visitOptions(),
+                );
+
+                return;
+            }
+
+            if (matchId.startsWith('planned:')) {
+                router.post(
+                    listingUrl(
+                        BankReconciliationController.store.url(entry.id),
+                        query,
+                    ),
+                    {
+                        financial_transaction_id: Number(
+                            matchId.slice('planned:'.length),
+                        ),
+                    },
+                    completeOptions(),
                 );
 
                 return;
@@ -690,9 +722,9 @@ export function ReconciliationRow({
                     </dl>
                 ) : null}
 
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid min-w-0 gap-2 sm:grid-cols-2">
                     {!showInvoicePayment && !showRefund && (
-                        <label className="grid gap-1">
+                        <label className="grid min-w-0 gap-1">
                             <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
                                 Empresa
                             </span>
@@ -712,7 +744,7 @@ export function ReconciliationRow({
                             />
                         </label>
                     )}
-                    <label className="grid gap-1">
+                    <label className="grid min-w-0 gap-1">
                         <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
                             {showInvoicePayment
                                 ? 'Fatura correspondente'
@@ -744,6 +776,9 @@ export function ReconciliationRow({
                                     return (
                                         <SelectItem key={id} value={id}>
                                             {candidate.description}
+                                            {candidate.is_planned
+                                                ? ' · pré-agendado'
+                                                : ''}
                                             {candidate.is_suggestion
                                                 ? ' · sugerido'
                                                 : ''}
@@ -754,7 +789,7 @@ export function ReconciliationRow({
                         </Select>
                     </label>
                     {canRegisterPendingCardPayment && (
-                        <label className="grid gap-1">
+                        <label className="grid min-w-0 gap-1">
                             <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
                                 Cartão do pagamento
                             </span>
@@ -789,9 +824,9 @@ export function ReconciliationRow({
                             </Select>
                         </label>
                     )}
-                    {!showInvoicePayment && !showRefund && (
+                    {!showInvoicePayment && !showRefund && !isTransferLine && (
                         <>
-                            <label className="grid gap-1">
+                            <label className="grid min-w-0 gap-1">
                                 <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
                                     Categoria
                                 </span>
@@ -834,7 +869,7 @@ export function ReconciliationRow({
                                     </SelectContent>
                                 </Select>
                             </label>
-                            <label className="grid gap-1">
+                            <label className="grid min-w-0 gap-1">
                                 <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
                                     Subcategoria
                                 </span>
@@ -933,7 +968,10 @@ export function ReconciliationRow({
                         <Button
                             type="button"
                             size="sm"
-                            disabled={matchId === ''}
+                            disabled={
+                                matchId === '' ||
+                                (needsCategory && !selectedHasCategory)
+                            }
                             onClick={conciliate}
                         >
                             <Link2 />
@@ -949,6 +987,14 @@ export function ReconciliationRow({
                             <Plus />
                             Criar lançamento
                         </Button>
+                        {needsCategory &&
+                            !entry.is_reconciled &&
+                            leafCategoryId === null &&
+                            !selectedHasCategory && (
+                                <p className="text-muted-foreground text-xs">
+                                    Defina a categoria para conciliar.
+                                </p>
+                            )}
                         {canRegisterPendingCardPayment && (
                             <Button
                                 type="button"

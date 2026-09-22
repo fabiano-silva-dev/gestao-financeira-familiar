@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\FinancialImportStatus;
 use App\Enums\FinancialImportType;
+use App\Http\Requests\ReassignFinancialImportRequest;
 use App\Http\Requests\ResolveFinancialImportRequest;
 use App\Http\Requests\StoreFinancialImportRequest;
 use App\Models\BankStatementEntry;
@@ -14,10 +15,12 @@ use App\Models\FinancialImport;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Imports\FinancialDocumentImportService;
+use App\Services\Imports\ImportedFileDestinationService;
 use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -26,6 +29,7 @@ class FinancialImportController extends Controller
     public function __construct(
         private readonly CurrentWorkspace $currentWorkspace,
         private readonly FinancialDocumentImportService $documentImportService,
+        private readonly ImportedFileDestinationService $destinationService,
     ) {}
 
     public function index(Request $request): Response
@@ -74,7 +78,14 @@ class FinancialImportController extends Controller
         $imports = $importQuery
             ->limit(20)
             ->get()
-            ->map(fn (FinancialImport $import): array => $this->importData($import));
+            ->map(function (FinancialImport $import) use ($workspace): array {
+                $import = $this->documentImportService->refreshPendingDetection(
+                    $workspace,
+                    $import,
+                );
+
+                return $this->importData($import);
+            });
 
         $bankQuery = $workspace->bankStatementEntries()->with('financialAccount:id,name');
         $cardQuery = $workspace->cardStatementEntries()->with([
@@ -233,7 +244,7 @@ class FinancialImportController extends Controller
         $duplicates = 0;
 
         foreach ($files as $file) {
-            if (! $file instanceof \Illuminate\Http\UploadedFile) {
+            if (! $file instanceof UploadedFile) {
                 continue;
             }
 
@@ -283,6 +294,30 @@ class FinancialImportController extends Controller
         return to_route('imports.index');
     }
 
+    public function reassign(
+        ReassignFinancialImportRequest $request,
+        int $import,
+    ): RedirectResponse {
+        $workspace = $this->workspace();
+        $financialImport = $workspace->financialImports()->findOrFail($import);
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+
+        $this->destinationService->reassign(
+            $workspace,
+            $financialImport,
+            $user,
+            $request->validated(),
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Destino da importação atualizado.',
+        ]);
+
+        return to_route('imports.index');
+    }
+
     private function workspace(): Workspace
     {
         $workspace = $this->currentWorkspace->get();
@@ -303,6 +338,13 @@ class FinancialImportController extends Controller
 
         return [
             'id' => $import->id,
+            'financial_account_id' => $import->financial_account_id,
+            'credit_card_id' => $import->credit_card_id,
+            'can_reassign' => $import->status === FinancialImportStatus::Completed
+                && in_array($import->type, [
+                    FinancialImportType::Ofx,
+                    FinancialImportType::CardStatement,
+                ], true),
             'kind' => $isDocument ? 'document' : ($isInvoice ? 'invoice' : 'statement'),
             'kind_label' => $import->type->label(),
             'source_filename' => $import->source_filename,

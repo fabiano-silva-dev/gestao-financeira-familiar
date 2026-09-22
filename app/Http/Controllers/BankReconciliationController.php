@@ -11,8 +11,8 @@ use App\Enums\FinancialTransactionType;
 use App\Http\Requests\ClassifyReconciliationEntryRequest;
 use App\Http\Requests\StoreBankReconciliationRequest;
 use App\Http\Requests\StoreReconciliationCardPaymentRequest;
-use App\Http\Requests\StoreReconciliationRefundRequest;
 use App\Http\Requests\StoreReconciliationInvoicePaymentRequest;
+use App\Http\Requests\StoreReconciliationRefundRequest;
 use App\Http\Requests\StoreReconciliationTransferRequest;
 use App\Models\AccountMovement;
 use App\Models\BankStatementEntry;
@@ -82,7 +82,7 @@ class BankReconciliationController extends Controller
                     'account:id,name',
                     'invoicePayment.creditCard:id,name,institution,last_four,payment_account_id',
                     'invoicePayment.invoice.creditCard:id,name,institution,last_four,payment_account_id',
-                    'transaction:id,description,type,payee_name,category_id,competence_date,financial_account_id,credit_card_id,source_account_id,destination_account_id',
+                    'transaction:id,description,type,status,payee_name,category_id,competence_date,financial_account_id,credit_card_id,source_account_id,destination_account_id',
                     'transaction.category:id,name,parent_id',
                     'transaction.category.parent:id,name',
                 ])
@@ -223,6 +223,23 @@ class BankReconciliationController extends Controller
         $user = $request->user();
         abort_unless($user instanceof User, 403);
         $statementEntry = $this->findEntry($workspace, $entry);
+
+        if ($request->filled('financial_transaction_id')) {
+            $this->entryActions->reconcilePlannedBankEntry(
+                $workspace,
+                $statementEntry,
+                $user,
+                $request->integer('financial_transaction_id'),
+            );
+
+            Inertia::flash('toast', [
+                'type' => 'success',
+                'message' => 'Pré-agendamento conciliado na data do extrato, sem criar outro lançamento.',
+            ]);
+
+            return to_route('reconciliation.index', $this->filterQuery($request));
+        }
+
         $movement = $workspace->accountMovements()
             ->findOrFail($request->integer('account_movement_id'));
 
@@ -864,15 +881,33 @@ class BankReconciliationController extends Controller
     ): array {
         $movementCandidates = collect($this->suggestionService->candidates($entry, $movements))
             ->map(function (array $candidate) use ($movements): array {
-                $movement = $movements->firstWhere('id', $candidate['movement_id']);
-                $invoiceFields = $this->invoicePaymentSuggestion->fromMovement($movement);
+                $movement = ($candidate['movement_id'] ?? null) !== null
+                    ? $movements->firstWhere('id', $candidate['movement_id'])
+                    : null;
+                $transaction = $movement?->transaction;
 
-                return [
+                if (
+                    ! $transaction instanceof FinancialTransaction
+                    && ($candidate['planned_transaction_id'] ?? null) !== null
+                ) {
+                    $transaction = $this->suggestionService->plannedTransaction(
+                        (int) $candidate['planned_transaction_id'],
+                    );
+                }
+
+                $mapped = [
                     ...$candidate,
                     'is_refund' => $movement?->type === AccountMovementType::Refund,
-                    ...$this->internalFromTransaction($movement?->transaction, $movement),
-                    ...$invoiceFields,
+                    ...$this->internalFromTransaction($transaction, $movement),
+                    ...$this->invoicePaymentSuggestion->fromMovement($movement),
                 ];
+
+                if (($candidate['is_planned'] ?? false) === true) {
+                    $mapped['is_planned'] = true;
+                    $mapped['transaction_id'] = $candidate['planned_transaction_id'];
+                }
+
+                return $mapped;
             });
         $claimedInvoiceIds = $movementCandidates
             ->pluck('invoice_id')
@@ -948,6 +983,7 @@ class BankReconciliationController extends Controller
             'related_type' => $type?->value ?? $transaction?->type->value,
             'related_type_label' => $typeLabel ?? $transaction?->type->label(),
             'related_account_name' => $movement?->account?->name
+                ?? $transaction?->account?->name
                 ?? $transaction?->creditCard?->name,
             'related_competence_date' => $transaction?->competence_date?->toDateString()
                 ?? $installment?->competence_month?->toDateString(),

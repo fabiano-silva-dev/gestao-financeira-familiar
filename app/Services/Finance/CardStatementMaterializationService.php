@@ -330,6 +330,17 @@ final class CardStatementMaterializationService
                 ?? (is_array($rule) ? $rule['payee_name'] : null)
                 ?? $entry->description);
 
+        if ($resolvedCategoryId === null) {
+            throw ValidationException::withMessages([
+                'category_id' => 'Defina uma categoria antes de conciliar esta compra.',
+            ]);
+        }
+
+        $entry->update([
+            'suggested_payee_name' => mb_substr($resolvedPayee, 0, 160),
+            'suggested_category_id' => $resolvedCategoryId,
+        ]);
+
         return $workspace->financialTransactions()->create([
             'type' => FinancialTransactionType::Expense,
             'transaction_date' => $entry->purchased_on->toDateString(),

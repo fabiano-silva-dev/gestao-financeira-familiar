@@ -196,6 +196,12 @@ final class ReconciliationEntryService
             $entry->suggested_payee_name,
         );
 
+        if ($resolved['category_id'] === null) {
+            throw ValidationException::withMessages([
+                'category_id' => 'Defina uma categoria antes de conciliar este movimento.',
+            ]);
+        }
+
         return DB::transaction(function () use (
             $workspace,
             $entry,
@@ -204,6 +210,10 @@ final class ReconciliationEntryService
             $amount,
             $resolved,
         ): BankStatementEntry {
+            $entry->update([
+                'suggested_payee_name' => $this->nullableName($resolved['payee_name']),
+                'suggested_category_id' => $resolved['category_id'],
+            ]);
             $created = $this->entryService->create(
                 $workspace,
                 [
@@ -524,6 +534,66 @@ final class ReconciliationEntryService
         });
     }
 
+    public function reconcilePlannedBankEntry(
+        Workspace $workspace,
+        BankStatementEntry $entry,
+        User $user,
+        int $transactionId,
+    ): BankStatementEntry {
+        $this->guardPendingBankEntry($entry);
+        $transaction = $workspace->financialTransactions()->find($transactionId);
+        $scheduled = $transaction instanceof FinancialTransaction
+            ? ($transaction->due_date ?? $transaction->transaction_date)
+            : null;
+        $signedAmount = $transaction instanceof FinancialTransaction
+            ? $this->signedTransactionAmount($transaction)
+            : null;
+        $days = $scheduled === null
+            ? null
+            : (int) abs($entry->occurred_on->diffInDays($scheduled, false));
+
+        if (
+            ! $transaction instanceof FinancialTransaction
+            || $transaction->status !== FinancialTransactionStatus::Planned
+            || ! in_array($transaction->type, [
+                FinancialTransactionType::Expense,
+                FinancialTransactionType::Income,
+            ], true)
+            || $transaction->financial_account_id !== $entry->financial_account_id
+            || $transaction->credit_card_id !== null
+            || $signedAmount === null
+            || $this->interpreter->moneyToCents($signedAmount) !== $this->interpreter->moneyToCents($entry->amount)
+            || $days === null
+            || $days > 180
+        ) {
+            throw ValidationException::withMessages([
+                'financial_transaction_id' => 'Selecione um lançamento planejado desta conta, com o mesmo valor e data próxima.',
+            ]);
+        }
+
+        return DB::transaction(function () use (
+            $workspace,
+            $entry,
+            $user,
+            $transaction,
+        ): BankStatementEntry {
+            $settled = $this->entryService->settle(
+                $transaction,
+                $entry->occurred_on->toDateString(),
+            );
+            $movement = $settled->accountMovements()
+                ->where('financial_account_id', $entry->financial_account_id)
+                ->firstOrFail();
+
+            return $this->bankReconciliation->reconcile(
+                $workspace,
+                $entry->refresh(),
+                $movement,
+                $user,
+            );
+        });
+    }
+
     public function createCardTransaction(
         Workspace $workspace,
         CardStatementEntry $entry,
@@ -652,6 +722,46 @@ final class ReconciliationEntryService
         ];
     }
 
+    public function acceptsAutomaticBankLink(
+        Workspace $workspace,
+        BankStatementEntry $entry,
+        AccountMovement $movement,
+    ): bool {
+        $movement->loadMissing('transaction');
+        $transaction = $movement->transaction;
+
+        if (! $transaction instanceof FinancialTransaction) {
+            return true;
+        }
+
+        if (! in_array($transaction->type, [
+            FinancialTransactionType::Expense,
+            FinancialTransactionType::Income,
+        ], true)) {
+            return true;
+        }
+
+        if ($transaction->category_id !== null) {
+            return true;
+        }
+
+        $resolved = $this->resolveClassification(
+            $workspace,
+            $entry->description,
+            $transaction->type === FinancialTransactionType::Expense,
+            $entry->suggested_category_id,
+            $entry->suggested_payee_name,
+        );
+
+        if ($resolved['category_id'] === null) {
+            return false;
+        }
+
+        $transaction->update(['category_id' => $resolved['category_id']]);
+
+        return true;
+    }
+
     private function assertSameWorkspace(Workspace $workspace, int $workspaceId): void
     {
         abort_unless($workspace->id === $workspaceId, 404);
@@ -700,12 +810,22 @@ final class ReconciliationEntryService
     /**
      * @return Collection<int, AccountMovement>
      */
+    private function signedTransactionAmount(FinancialTransaction $transaction): string
+    {
+        $amount = ltrim((string) $transaction->amount, '-');
+
+        return $transaction->type === FinancialTransactionType::Expense
+            ? '-'.$amount
+            : $amount;
+    }
+
     private function unmatchedMovements(Workspace $workspace, int $accountId): Collection
     {
         return $workspace->accountMovements()
             ->where('financial_account_id', $accountId)
             ->where('is_reconciled', false)
             ->whereDoesntHave('bankStatementEntry')
+            ->with('transaction')
             ->get();
     }
 
