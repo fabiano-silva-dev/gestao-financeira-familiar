@@ -155,3 +155,23 @@ Regras desta visão:
 - Recorrências materializadas, parcelas, crediários e faturas futuras já conhecidas devem alimentar a projeção sem duplicar compra, parcela, fatura e pagamento.
 - Todas as consultas permanecem isoladas pelo workspace ativo.
 
+
+
+---
+
+## 37. Fechamento Mensal das Fontes Financeiras
+
+O fechamento mensal de importações é um checklist operacional construído a partir das **contas financeiras e cartões de crédito ativos do workspace**, e não a partir da existência de arquivos importados. Dessa forma, uma origem sem documento no período continua visível como pendência.
+
+Regras estruturais:
+
+- o fechamento pertence ao `workspace` + origem financeira + período de referência;
+- **Conciliado** significa que todos os movimentos conhecidos daquela origem/período foram tratados;
+- **Fechado** exige confirmação explícita do usuário e nunca é inferido automaticamente apenas pela conciliação;
+- **Sem movimento** também é uma confirmação explícita por origem/período e pode concluir a fonte mesmo sem arquivo, sem ser confundido com uma importação;
+- para contas financeiras, a cobertura do período deve considerar as datas informadas pelos extratos e pode ser formada por múltiplas importações contíguas;
+- um extrato parcial não torna o mês completo, mesmo que todos os seus movimentos estejam conciliados;
+- para cartões, a conferência usa a referência/ciclo da fatura, e não a data de upload;
+- o fechamento não depende de PDF, CSV ou OFX: arquivos são apenas uma das possíveis fontes, ao lado de Open Finance, Gmail, APIs e outras integrações futuras;
+- novas informações importadas após um fechamento tornam a confirmação anterior passível de nova revisão;
+- todo fechamento registra quem confirmou e quando, sempre dentro do workspace ativo.

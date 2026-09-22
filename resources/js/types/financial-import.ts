@@ -20,6 +20,7 @@ export type FinancialImportHistoryItem = {
     statement_end_on: string | null;
     external_account_identifier: string | null;
     error_message: string | null;
+    imported_at: string | null;
     created_at: string | null;
 };
 
@@ -117,6 +118,9 @@ export type UnifiedImportHistoryItem = {
     kind_label: string;
     source_filename: string;
     target_name: string | null;
+    target_id: number | null;
+    target_type: 'account' | 'card' | null;
+    institution: string | null;
     status: 'processing' | 'needs_confirmation' | 'completed' | 'failed';
     status_label: string;
     total_records: number;
@@ -158,4 +162,64 @@ export type CardStatementEntry = {
     installment_number: number | null;
     total_installments: number | null;
     is_reconciled: boolean;
+};
+
+
+export type MonthlyImportClosingStatus =
+    | 'not_imported'
+    | 'imported'
+    | 'pending_reconciliation'
+    | 'reconciled'
+    | 'closed'
+    | 'no_movement';
+
+export type MonthlyImportClosingImport = {
+    id: number;
+    source_filename: string;
+    imported_at: string | null;
+    statement_start_on: string | null;
+    statement_end_on: string | null;
+    total_records: number;
+    imported_records: number;
+    duplicate_records: number;
+    categorized_automatically: number | null;
+    automatically_reconciled: number | null;
+    remaining_exceptions: number | null;
+};
+
+export type MonthlyImportClosingItem = {
+    id: number;
+    source_type: 'account' | 'card';
+    kind: 'statement' | 'invoice';
+    name: string;
+    institution: string | null;
+    last_four: string | null;
+    status: MonthlyImportClosingStatus;
+    status_label: string;
+    coverage_start_on: string | null;
+    coverage_end_on: string | null;
+    coverage_complete: boolean;
+    reference_month: string;
+    due_date: string | null;
+    statement_amount: string | null;
+    total_items: number;
+    reconciled_items: number;
+    ignored_items: number;
+    pending_items: number;
+    import_count: number;
+    imports: MonthlyImportClosingImport[];
+    can_close: boolean;
+    closed_at: string | null;
+    closed_by_name: string | null;
+    closure_needs_review: boolean;
+};
+
+export type MonthlyImportClosingSummary = {
+    total: number;
+    completed: number;
+    pending_total: number;
+    not_imported: number;
+    pending_reconciliation: number;
+    incomplete: number;
+    ready_to_close: number;
 };

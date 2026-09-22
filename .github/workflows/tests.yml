@@ -62,6 +62,7 @@ jobs:
       - name: Run financial feature tests
         run: |
           php artisan test tests/Feature/FinancialImportAutoDetectionTest.php
+          php artisan test tests/Feature/MonthlyImportClosingTest.php
           php artisan test tests/Feature/FinancialAccountTest.php
           php artisan test tests/Feature/OfxImportTest.php
           php artisan test tests/Feature/CardStatementImportTest.php
@@ -72,6 +73,13 @@ jobs:
           php artisan test tests/Feature/FinancialRecurrenceTest.php
           php artisan test tests/Feature/DashboardTest.php
           php artisan test tests/Feature/PaymentDashboardTest.php
+
+      - name: Check monthly import closing changes
+        run: |
+          ./vendor/bin/pint --test app/Http/Controllers/MonthlyImportClosingController.php app/Http/Controllers/FinancialImportController.php app/Models/FinancialPeriodClosure.php app/Models/Workspace.php app/Services/Imports/MonthlyImportClosingService.php tests/Feature/MonthlyImportClosingTest.php routes/web.php database/migrations/2026_09_22_160000_create_financial_period_closures_table.php
+          ./vendor/bin/phpstan analyse --no-progress app/Http/Controllers/MonthlyImportClosingController.php app/Http/Controllers/FinancialImportController.php app/Models/FinancialPeriodClosure.php app/Models/Workspace.php app/Services/Imports/MonthlyImportClosingService.php
+          ./node_modules/.bin/vp check resources/js/pages/imports/closing.tsx resources/js/pages/imports/index.tsx resources/js/components/imports/imports-navigation.tsx resources/js/types/financial-import.ts
+          npm run types:check
 
       - name: Capture formatted payment dashboard
         run: |
