@@ -56,7 +56,6 @@ export type CardStatementImportHistoryItem = {
     statement_amount: string | null;
     statement_amount_applied: boolean | null;
     source_format: string | null;
-    processing_summary: FinancialImportProcessingSummary | null;
     error_message: string | null;
     created_at: string | null;
 };
@@ -102,6 +101,7 @@ export type UnifiedImportHistoryItem = {
     statement_amount_applied: boolean | null;
     reference_month: string | null;
     source_format: string | null;
+    processing_summary: FinancialImportProcessingSummary | null;
     error_message: string | null;
     created_at: string | null;
 };
