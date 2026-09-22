@@ -6,7 +6,7 @@ import {
     SheetTitle,
 } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
-import { formatReconciliationDate } from '@/components/reconciliation/reconciliation-row';
+import { formatReconciliationDate } from '@/lib/reconciliation';
 import type { ReconciliationPendingEntry } from '@/types';
 
 const currency = new Intl.NumberFormat('pt-BR', {

@@ -39,6 +39,7 @@ final class CardStatementImportService
         UploadedFile $file,
         string $referenceMonth,
         string $amountSign,
+        ?string $pdfLayout = null,
     ): CardStatementImportResult {
         $contents = $file->get();
 
@@ -98,6 +99,7 @@ final class CardStatementImportService
             'metadata' => [
                 'reference_month' => $referenceMonth,
                 'amount_sign' => $amountSign,
+                'pdf_layout' => $pdfLayout,
             ],
             'error_message' => null,
             'imported_at' => null,
@@ -105,7 +107,7 @@ final class CardStatementImportService
         $financialImport->save();
 
         try {
-            $statement = $this->parser->parse($contents, $extension, $amountSign);
+            $statement = $this->parser->parse($contents, $extension, $amountSign, $pdfLayout);
 
             DB::transaction(function () use (
                 $financialImport,
@@ -113,6 +115,7 @@ final class CardStatementImportService
                 $card,
                 $referenceMonth,
                 $amountSign,
+                $pdfLayout,
                 $statement,
                 $user,
             ): void {
@@ -197,6 +200,7 @@ final class CardStatementImportService
                     'metadata' => [
                         'reference_month' => $referenceMonth,
                         'amount_sign' => $amountSign,
+                        'pdf_layout' => $pdfLayout,
                         'source_format' => $statement->sourceFormat,
                         'headers' => $statement->headers,
                         'ignored_rows' => $statement->ignoredRows,

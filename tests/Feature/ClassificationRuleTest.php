@@ -73,7 +73,66 @@ class ClassificationRuleTest extends TestCase
                 ->where('draft.action_type', FinancialTransactionType::Expense->value)
                 ->where('draft.source_description', 'PIX - FABIANO CARVALHO DA SILVA')
                 ->where('matchingRule', null)
+                ->where('returnTo', null)
             );
+    }
+
+    public function test_creating_a_rule_from_reconciliation_returns_to_the_same_filters(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $category = Category::factory()->for($workspace)->create(['name' => 'Transferências']);
+        $returnTo = '/conciliacao?account=12&period=2026-06&view=pending&focus=statement-9';
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->get(route('classification-rules.create', [
+            'description' => 'PIX - FABIANO CARVALHO DA SILVA',
+            'return_to' => $returnTo,
+        ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('classification-rules/create')
+                ->where('returnTo', $returnTo)
+            );
+
+        $request->post(route('classification-rules.store'), [
+            'name' => 'PIX Fabiano',
+            'match_type' => ClassificationRuleMatchType::Contains->value,
+            'pattern' => 'FABIANO CARVALHO DA SILVA',
+            'action_type' => FinancialTransactionType::Expense->value,
+            'category_id' => $category->id,
+            'return_to' => $returnTo,
+        ])
+            ->assertRedirect($returnTo)
+            ->assertSessionHasNoErrors();
+    }
+
+    public function test_invalid_return_to_is_ignored_when_creating_a_rule(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $category = Category::factory()->for($workspace)->create(['name' => 'Transferências']);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->get(route('classification-rules.create', [
+            'return_to' => 'https://evil.test/phish',
+        ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('classification-rules/create')
+                ->where('returnTo', null)
+            );
+
+        $request->post(route('classification-rules.store'), [
+            'name' => 'PIX Fabiano',
+            'match_type' => ClassificationRuleMatchType::Contains->value,
+            'pattern' => 'FABIANO CARVALHO DA SILVA',
+            'action_type' => FinancialTransactionType::Expense->value,
+            'category_id' => $category->id,
+            'return_to' => 'https://evil.test/phish',
+        ])
+            ->assertRedirect(route('classification-rules.index'))
+            ->assertSessionHasNoErrors();
     }
 
     public function test_user_can_create_and_update_a_rule_in_the_current_workspace(): void

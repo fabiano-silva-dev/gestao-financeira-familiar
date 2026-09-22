@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\ClassificationRuleMatchType;
 use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\FinancialImportStatus;
 use App\Enums\FinancialImportType;
@@ -12,6 +13,8 @@ use App\Enums\PaymentMethod;
 use App\Enums\TransactionInstallmentStatus;
 use App\Models\BankStatementEntry;
 use App\Models\CardStatementEntry;
+use App\Models\Category;
+use App\Models\ClassificationRule;
 use App\Models\CreditCard;
 use App\Models\CreditCardInvoice;
 use App\Models\FinancialAccount;
@@ -557,12 +560,123 @@ class CardStatementReconciliationTest extends TestCase
 
         $entry->refresh();
         $ignored->refresh();
+        $this->assertFalse($entry->is_reconciled);
+        $this->assertNull($entry->transaction_installment_id);
+        $this->assertFalse($ignored->is_ignored);
+        $this->assertFalse($ignored->is_reconciled);
+        $this->assertNull($ignored->transaction_installment_id);
+        $this->assertDatabaseCount('financial_transactions', 1);
+        $this->assertDatabaseHas('transaction_installments', [
+            'id' => $installment->id,
+        ]);
+    }
+
+    public function test_reprocessing_a_card_import_applies_a_new_classification_rule(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+        $invoice = $this->invoice($workspace, $card);
+        $category = Category::factory()->for($workspace)->create(['name' => 'Alimentação']);
+        $entry = $this->statementEntry(
+            $workspace,
+            $card,
+            $invoice,
+            '202.05',
+            '2026-05-18',
+            'Porto Garibaldi Comer',
+            1,
+            1,
+        );
+        ClassificationRule::factory()->for($workspace)->create([
+            'name' => 'Porto Garibaldi',
+            'match_type' => ClassificationRuleMatchType::Contains,
+            'pattern' => 'Porto Garibaldi',
+            'action_type' => FinancialTransactionType::Expense,
+            'payee_name' => 'Porto Garibaldi',
+            'category_id' => $category->id,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('reconciliation.reprocess', $entry->financial_import_id))
+            ->assertRedirect(route('reconciliation.index', [
+                'import' => $entry->financial_import_id,
+            ]))
+            ->assertSessionHasNoErrors();
+
+        $entry->refresh();
+        $this->assertTrue($entry->is_reconciled);
+        $this->assertSame('Porto Garibaldi', $entry->suggested_payee_name);
+        $this->assertSame($category->id, $entry->suggested_category_id);
+        $this->assertSame(
+            $category->id,
+            $entry->transactionInstallment?->transaction?->category_id,
+        );
+        $this->assertSame(
+            'Porto Garibaldi',
+            $entry->transactionInstallment?->transaction?->payee_name,
+        );
+        $this->assertDatabaseCount('financial_transactions', 1);
+    }
+
+    public function test_reprocessing_rematches_an_existing_categorized_purchase(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+        $invoice = $this->invoice($workspace, $card);
+        $category = Category::factory()->for($workspace)->create(['name' => 'Esporte']);
+        $installment = $this->installment(
+            $workspace,
+            $card,
+            $invoice,
+            categoryId: $category->id,
+        );
+        $entry = $this->statementEntry($workspace, $card, $invoice);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(
+            route('credit-card-invoices.statement-entries.reconcile', [$invoice, $entry]),
+            ['transaction_installment_id' => $installment->id],
+        )->assertSessionHasNoErrors();
+
+        $request->post(route('reconciliation.reprocess', $entry->financial_import_id))
+            ->assertRedirect(route('reconciliation.index', [
+                'import' => $entry->financial_import_id,
+            ]))
+            ->assertSessionHasNoErrors();
+
+        $entry->refresh();
         $this->assertTrue($entry->is_reconciled);
         $this->assertSame($installment->id, $entry->transaction_installment_id);
-        $this->assertFalse($ignored->is_ignored);
-        $this->assertTrue($ignored->is_reconciled);
-        $this->assertNotNull($ignored->transaction_installment_id);
-        $this->assertDatabaseCount('financial_transactions', 2);
+        $this->assertDatabaseCount('financial_transactions', 1);
+    }
+
+    public function test_uncategorized_view_includes_reconciled_card_line_without_category(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+        $invoice = $this->invoice($workspace, $card);
+        $installment = $this->installment($workspace, $card, $invoice);
+        $entry = $this->statementEntry($workspace, $card, $invoice);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(
+            route('credit-card-invoices.statement-entries.reconcile', [$invoice, $entry]),
+            ['transaction_installment_id' => $installment->id],
+        )->assertSessionHasNoErrors();
+
+        $request->get(route('reconciliation.index', $this->workbenchQuery($card, [
+            'view' => 'uncategorized',
+        ])))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('entries.0.id', $entry->id)
+                ->where('entries.0.is_reconciled', true)
+                ->where('entries.0.is_uncategorized', true)
+                ->where('viewCounts.uncategorized', 1)
+            );
     }
 
     /** @return array{User, Workspace} */
@@ -618,6 +732,7 @@ class CardStatementReconciliationTest extends TestCase
         string $description = 'Vôlei Lidiane',
         int $installmentNumber = 2,
         int $totalInstallments = 10,
+        ?int $categoryId = null,
     ): TransactionInstallment {
         $transaction = $workspace->financialTransactions()->create([
             'type' => FinancialTransactionType::Expense,
@@ -626,6 +741,7 @@ class CardStatementReconciliationTest extends TestCase
             'description' => $description,
             'amount' => $amount,
             'credit_card_id' => $card->id,
+            'category_id' => $categoryId,
             'payment_method' => PaymentMethod::CreditCard,
             'status' => FinancialTransactionStatus::Confirmed,
             'origin' => FinancialTransactionOrigin::Manual,

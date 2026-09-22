@@ -52,6 +52,7 @@ export type ClassificationRulePrompt = {
     action_type: ClassificationRuleActionType;
     category_id: number | null;
     counterpart_account_id: number | null;
+    return_to?: string;
 };
 
 export type ClassificationRuleMatchHint = {

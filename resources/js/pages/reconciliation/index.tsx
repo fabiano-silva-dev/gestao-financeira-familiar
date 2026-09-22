@@ -1,6 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
 import { BadgeCheck, FolderSearch, ListFilter } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ListingEmpty } from '@/components/listing/listing-empty';
 import { ListingToolbar } from '@/components/listing/listing-toolbar';
 import { CreateRulePromptDialog } from '@/components/reconciliation/create-rule-prompt-dialog';
@@ -71,6 +71,27 @@ export default function ReconciliationIndex({
         useState<ClassificationRulePrompt | null>(null);
     const listUrl = index.url();
     const currentView = filters.view ?? 'all';
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const focus =
+            params.get('focus') || window.location.hash.replace('#', '');
+
+        if (focus === '') {
+            return;
+        }
+
+        const elementId = focus.startsWith('entry-')
+            ? focus
+            : `entry-${focus}`;
+        const timeout = window.setTimeout(() => {
+            document.getElementById(elementId)?.scrollIntoView({
+                block: 'center',
+            });
+        }, 50);
+
+        return () => window.clearTimeout(timeout);
+    }, [entries]);
 
     const emptyCopy = (): { title: string; description: string } => {
         if (!scopeReady) {

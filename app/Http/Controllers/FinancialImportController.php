@@ -161,6 +161,11 @@ class FinancialImportController extends Controller
                     'label' => 'Banrisul · conta corrente',
                     'kind' => 'statement',
                 ],
+                [
+                    'value' => 'mercado_pago_credit_card',
+                    'label' => 'Mercado Pago · fatura de cartão',
+                    'kind' => 'invoice',
+                ],
             ],
             'imports' => $imports,
             'entries' => $entries->all(),
@@ -199,6 +204,7 @@ class FinancialImportController extends Controller
                 $request->file('file'),
                 $request->string('reference_month')->toString(),
                 $request->string('amount_sign')->toString(),
+                $this->optionalPdfLayout($request->input('pdf_layout')),
             );
             $message = sprintf(
                 'Fatura processada: %d nova(s) e %d duplicada(s) ignorada(s).',
@@ -235,6 +241,11 @@ class FinancialImportController extends Controller
         abort_if($workspace === null, 403);
 
         return $workspace;
+    }
+
+    private function optionalPdfLayout(mixed $value): ?string
+    {
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     /** @return array<string, mixed> */

@@ -425,6 +425,64 @@ class CardStatementImportTest extends TestCase
         $this->assertSame('41.97', CreditCardInvoice::query()->sole()->calculated_amount);
     }
 
+    public function test_user_can_import_mercado_pago_pdf_invoice(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create([
+            'name' => 'Mercado Pago Fabiano',
+            'last_four' => '3736',
+            'closing_day' => 2,
+            'due_day' => 8,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.store'), [
+                'kind' => 'invoice',
+                'credit_card_id' => $card->id,
+                'reference_month' => '2026-09',
+                'amount_sign' => 'auto',
+                'pdf_layout' => 'mercado_pago_credit_card',
+                'file' => UploadedFile::fake()->createWithContent(
+                    'fatura-setembro-mercado-pago.pdf',
+                    $this->mercadoPagoPdf(),
+                ),
+            ])
+            ->assertRedirect(route('imports.index'))
+            ->assertSessionHasNoErrors();
+
+        $financialImport = FinancialImport::query()->sole();
+        $this->assertSame(FinancialImportType::CardStatement, $financialImport->type);
+        $this->assertSame(FinancialImportStatus::Completed, $financialImport->status);
+        $this->assertSame(3, $financialImport->total_records);
+        $this->assertSame(3, $financialImport->imported_records);
+        $this->assertSame('pdf-mercado-pago', $financialImport->metadata['source_format'] ?? null);
+        $this->assertSame('mercado_pago_credit_card', $financialImport->metadata['pdf_layout'] ?? null);
+
+        $this->assertDatabaseCount('card_statement_entries', 3);
+        $this->assertDatabaseHas('card_statement_entries', [
+            'description' => 'Smhigienizacoes Parcela 2 de 3',
+            'amount' => '93.33',
+            'installment_number' => 2,
+            'total_installments' => 3,
+            'purchased_on' => '2026-07-09',
+        ]);
+        $this->assertDatabaseHas('card_statement_entries', [
+            'description' => 'VEST COMPANHIA Parcela 1 de 6',
+            'amount' => '91.80',
+            'installment_number' => 1,
+            'total_installments' => 6,
+        ]);
+        $this->assertDatabaseHas('card_statement_entries', [
+            'description' => 'DL*99 RIDE',
+            'amount' => '8.60',
+        ]);
+        $this->assertDatabaseMissing('card_statement_entries', [
+            'description' => 'Pagamento da fatura de agosto/2026',
+        ]);
+    }
+
     public function test_invalid_statement_is_recorded_as_failed(): void
     {
         Storage::fake('local');
@@ -473,6 +531,49 @@ class CardStatementImportTest extends TestCase
     private function csvFile(): string
     {
         return "Data da compra;Estabelecimento;Valor (R$);Parcela;Identificador\n10/09/2026;Vôlei Lidiane;89,90;2/10;linha-001\n12/09/2026;Estorno mensalidade;-10,00;;linha-002\n";
+    }
+
+    private function mercadoPagoPdf(): string
+    {
+        $lines = [
+            'Pague sua fatura pelo app Mercado Pago',
+            'Vencimento: 08/09/2026',
+            'Detalhes de consumo',
+            'Movimentações na fatura',
+            '04/08 Pagamento da fatura de agosto/2026 R$ 1.500,00',
+            '07/08 Pagamento da fatura de agosto/2026 R$ 2.108,26',
+            'Cartão Visa [************3736]',
+            '09/07 Smhigienizacoes Parcela 2 de 3 R$ 93,33',
+            '05/08 VEST COMPANHIA Parcela 1 de 6 R$ 91,80',
+            'Cartão Visa [************3759]',
+            '04/08 DL*99 RIDE R$ 8,60',
+            'Parcele a fatura do seu Cartão de Crédito Mercado Pago',
+        ];
+        $stream = "BT /F1 9 Tf\n";
+        $y = 750;
+
+        foreach ($lines as $line) {
+            $escaped = str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $line);
+            $stream .= sprintf("1 0 0 1 24 %d Tm (%s) Tj\n", $y, $escaped);
+            $y -= 14;
+        }
+
+        $stream .= 'ET';
+        $length = strlen($stream);
+
+        return <<<PDF
+        %PDF-1.4
+        1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+        2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj
+        3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj
+        4 0 obj<</Length {$length}>>stream
+        {$stream}
+        endstream
+        endobj
+        5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Courier>>endobj
+        trailer<</Root 1 0 R>>
+        %%EOF
+        PDF;
     }
 
     /** @return array{User, Workspace} */

@@ -398,7 +398,7 @@ export default function Dashboard() {
                     />
                 </section>
 
-                <section className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(18rem,1fr)]">
+                <section className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(18rem,1fr)]">
                     <Card>
                         <CardHeader className="flex-row items-start justify-between gap-4">
                             <div>

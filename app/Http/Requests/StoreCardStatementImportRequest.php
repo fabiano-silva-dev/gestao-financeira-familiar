@@ -35,6 +35,14 @@ class StoreCardStatementImportRequest extends FormRequest
             ],
             'reference_month' => ['required', 'date_format:Y-m'],
             'amount_sign' => ['required', Rule::in(['positive', 'negative', 'auto'])],
+            'pdf_layout' => [
+                Rule::requiredIf(
+                    strtolower((string) $this->file('file')?->getClientOriginalExtension()) === 'pdf',
+                ),
+                'nullable',
+                'string',
+                Rule::in(['mercado_pago_credit_card']),
+            ],
             'file' => ['required', 'file', 'max:10240', new CardStatementFile],
         ];
     }
@@ -46,6 +54,7 @@ class StoreCardStatementImportRequest extends FormRequest
             'credit_card_id' => 'cartão',
             'reference_month' => 'mês da fatura',
             'amount_sign' => 'sinal das compras',
+            'pdf_layout' => 'layout do PDF',
             'file' => 'arquivo da fatura',
         ];
     }

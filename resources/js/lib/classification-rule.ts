@@ -73,7 +73,25 @@ export function classificationRuleCreateQuery(
         params.set('counterpart_account_id', String(prompt.counterpart_account_id));
     }
 
+    if (prompt.return_to) {
+        params.set('return_to', toInternalPath(prompt.return_to));
+    }
+
     const query = params.toString();
 
     return query === '' ? '' : `?${query}`;
+}
+
+function toInternalPath(url: string): string {
+    if (url.startsWith('/')) {
+        return url;
+    }
+
+    try {
+        const parsed = new URL(url, 'http://localhost');
+
+        return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    } catch {
+        return url;
+    }
 }

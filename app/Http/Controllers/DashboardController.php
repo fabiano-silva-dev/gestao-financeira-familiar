@@ -387,7 +387,7 @@ class DashboardController extends Controller
         $grandTotal = array_sum(array_column($totals, 'amount'));
         $items = [];
 
-        foreach (array_slice($totals, 0, 5, true) as $group) {
+        foreach ($totals as $group) {
             $items[] = [
                 'id' => $group['id'],
                 'name' => $group['name'],

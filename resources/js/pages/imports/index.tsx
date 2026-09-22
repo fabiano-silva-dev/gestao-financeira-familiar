@@ -109,7 +109,7 @@ function formatLabel(extension: string) {
 }
 
 function inferKind(extension: string): UnifiedImportKind | '' {
-    if (['ofx', 'qfx', 'pdf'].includes(extension)) {
+    if (['ofx', 'qfx'].includes(extension)) {
         return 'statement';
     }
 
@@ -118,6 +118,13 @@ function inferKind(extension: string): UnifiedImportKind | '' {
     }
 
     return '';
+}
+
+function kindFromPdfLayout(
+    layouts: PdfLayoutOption[],
+    layoutValue: string,
+): UnifiedImportKind | '' {
+    return layouts.find((layout) => layout.value === layoutValue)?.kind ?? '';
 }
 
 export default function ImportsIndex({
@@ -169,7 +176,11 @@ export default function ImportsIndex({
         ).toLowerCase();
         setFileName(file.name);
         setExtension(nextExtension);
-        setKind(inferKind(nextExtension));
+        setKind(
+            nextExtension === 'pdf'
+                ? kindFromPdfLayout(pdfLayouts, pdfLayout)
+                : inferKind(nextExtension),
+        );
     };
 
     return (
@@ -187,8 +198,8 @@ export default function ImportsIndex({
                         </h1>
                         <p className="text-muted-foreground mt-1 text-sm">
                             Envie o arquivo primeiro. O formato sai da
-                            extensão; o PDF pede o layout do banco. Depois,
-                            tudo segue para a conciliação.
+                            extensão; o PDF pede o layout da instituição.
+                            Depois, tudo segue para a conciliação.
                         </p>
                     </div>
 
@@ -320,14 +331,22 @@ export default function ImportsIndex({
                                                 <Select
                                                     name="pdf_layout"
                                                     value={pdfLayout}
-                                                    onValueChange={setPdfLayout}
+                                                    onValueChange={(value) => {
+                                                        setPdfLayout(value);
+                                                        setKind(
+                                                            kindFromPdfLayout(
+                                                                pdfLayouts,
+                                                                value,
+                                                            ),
+                                                        );
+                                                    }}
                                                     required
                                                 >
                                                     <SelectTrigger
                                                         id="pdf_layout"
                                                         className="w-full"
                                                     >
-                                                        <SelectValue placeholder="Selecione o banco e o layout" />
+                                                        <SelectValue placeholder="Selecione a instituição e o layout" />
                                                     </SelectTrigger>
                                                     <SelectContent>
                                                         {pdfLayouts.map(
@@ -581,8 +600,9 @@ export default function ImportsIndex({
                             <AlertDescription>
                                 <p>
                                     OFX e CSV já dizem o formato. No PDF,
-                                    escolha o layout Banrisul de conta corrente
-                                    — outros bancos entram depois.
+                                    escolha o layout: Banrisul para extrato
+                                    de conta corrente ou Mercado Pago para
+                                    fatura de cartão.
                                 </p>
                             </AlertDescription>
                         </Alert>

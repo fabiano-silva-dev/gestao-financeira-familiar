@@ -97,10 +97,15 @@ final class CardStatementParser
         'credit card payment',
     ];
 
+    public function __construct(
+        private readonly MercadoPagoCardStatementParser $mercadoPagoParser,
+    ) {}
+
     public function parse(
         string $contents,
         string $extension,
         string $amountSign,
+        ?string $pdfLayout = null,
     ): CardStatement {
         if (! in_array($amountSign, ['positive', 'negative', 'auto'], true)) {
             throw new CardStatementParseException(
@@ -113,12 +118,27 @@ final class CardStatementParser
             'csv' => [$this->readCsv($contents), 'csv'],
             'xlsx' => [$this->readXlsx($contents), 'xlsx'],
             'xls' => $this->readLegacyXls($contents),
+            'pdf' => $this->readPdf($contents, $pdfLayout),
             default => throw new CardStatementParseException(
-                'O arquivo deve estar nos formatos CSV, XLS ou XLSX.',
+                'O arquivo deve estar nos formatos CSV, XLS, XLSX ou PDF.',
             ),
         };
 
         return $this->normalizeTable($table, $sourceFormat, $amountSign);
+    }
+
+    /**
+     * @return array{array<int, array<int, string>>, string}
+     */
+    private function readPdf(string $contents, ?string $pdfLayout): array
+    {
+        if ($pdfLayout !== null && $pdfLayout !== 'mercado_pago_credit_card') {
+            throw new CardStatementParseException(
+                'O layout de PDF selecionado não é válido para fatura de cartão.',
+            );
+        }
+
+        return [$this->mercadoPagoParser->parse($contents), 'pdf-mercado-pago'];
     }
 
     /**

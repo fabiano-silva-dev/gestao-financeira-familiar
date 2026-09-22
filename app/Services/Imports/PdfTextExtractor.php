@@ -35,7 +35,7 @@ final class PdfTextExtractor
         }
 
         throw new BankStatementParseException(
-            'Não foi possível ler o texto do PDF. Por enquanto, o PDF suportado é o extrato de conta corrente do Banrisul.',
+            'Não foi possível ler o texto do PDF.',
         );
     }
 

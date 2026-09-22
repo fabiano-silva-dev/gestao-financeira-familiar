@@ -175,6 +175,50 @@ class DashboardTest extends TestCase
             );
     }
 
+    public function test_dashboard_lists_all_expense_categories_for_the_month(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-20 12:00:00'));
+
+        $user = User::factory()->create();
+        $workspace = Workspace::factory()->create();
+        $user->workspaces()->attach($workspace, ['role' => 'owner']);
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $service = app(FinancialEntryService::class);
+        $amounts = [
+            'Moradia' => '300.00',
+            'Alimentação' => '250.00',
+            'Transporte' => '200.00',
+            'Saúde' => '150.00',
+            'Educação' => '100.00',
+            'Lazer' => '50.00',
+        ];
+
+        foreach ($amounts as $name => $amount) {
+            $category = Category::factory()->for($workspace)->create([
+                'name' => $name,
+            ]);
+            $this->createEntry($service, $workspace, $account, [
+                'transaction_date' => '2026-09-10',
+                'description' => $name,
+                'amount' => $amount,
+                'category_id' => $category->id,
+            ]);
+        }
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('dashboard')
+                ->has('categoryExpenses', 6)
+                ->where('categoryExpenses.0.name', 'Moradia')
+                ->where('categoryExpenses.0.amount', '300.00')
+                ->where('categoryExpenses.5.name', 'Lazer')
+                ->where('categoryExpenses.5.amount', '50.00')
+            );
+    }
+
     public function test_dashboard_groups_subcategory_expenses_under_the_parent(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-09-20 12:00:00'));

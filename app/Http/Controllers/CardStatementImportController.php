@@ -36,6 +36,7 @@ class CardStatementImportController extends Controller
             $request->file('file'),
             $request->string('reference_month')->toString(),
             $request->string('amount_sign')->toString(),
+            $this->optionalPdfLayout($request->input('pdf_layout')),
         );
 
         Inertia::flash('toast', [
@@ -56,5 +57,10 @@ class CardStatementImportController extends Controller
         abort_if($workspace === null, 403);
 
         return $workspace;
+    }
+
+    private function optionalPdfLayout(mixed $value): ?string
+    {
+        return is_string($value) && $value !== '' ? $value : null;
     }
 }

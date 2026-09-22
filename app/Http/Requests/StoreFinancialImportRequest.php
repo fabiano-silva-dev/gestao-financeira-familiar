@@ -11,7 +11,6 @@ use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Validator;
 
 class StoreFinancialImportRequest extends FormRequest
 {
@@ -24,10 +23,17 @@ class StoreFinancialImportRequest extends FormRequest
     {
         $extension = strtolower((string) $this->file('file')?->getClientOriginalExtension());
         $kind = $this->input('kind');
+        $pdfLayout = $this->input('pdf_layout');
 
-        if (! in_array($kind, ['statement', 'invoice'], true)) {
+        if ($extension === 'pdf') {
+            $kind = match ($pdfLayout) {
+                'mercado_pago_credit_card' => 'invoice',
+                'banrisul_current_account' => 'statement',
+                default => $kind,
+            };
+        } elseif (! in_array($kind, ['statement', 'invoice'], true)) {
             $kind = match (true) {
-                in_array($extension, ['ofx', 'qfx', 'pdf'], true) => 'statement',
+                in_array($extension, ['ofx', 'qfx'], true) => 'statement',
                 in_array($extension, ['xls', 'xlsx'], true) => 'invoice',
                 default => $kind,
             };
@@ -63,10 +69,10 @@ class StoreFinancialImportRequest extends FormRequest
                 $isInvoice ? new CardStatementFile : new BankStatementFile,
             ],
             'pdf_layout' => [
-                Rule::requiredIf($isPdf && ! $isInvoice),
+                Rule::requiredIf($isPdf),
                 'nullable',
                 'string',
-                Rule::in(['banrisul_current_account']),
+                Rule::in(['banrisul_current_account', 'mercado_pago_credit_card']),
             ],
             'financial_account_id' => [
                 Rule::requiredIf(! $isInvoice),
@@ -90,23 +96,6 @@ class StoreFinancialImportRequest extends FormRequest
                 'nullable',
                 Rule::in(['positive', 'negative', 'auto']),
             ],
-        ];
-    }
-
-    public function after(): array
-    {
-        return [
-            function (Validator $validator): void {
-                if (
-                    $this->input('kind') === 'invoice'
-                    && $this->input('extension') === 'pdf'
-                ) {
-                    $validator->errors()->add(
-                        'file',
-                        'Ainda não há layout de PDF para fatura de cartão. Use CSV ou planilha.',
-                    );
-                }
-            },
         ];
     }
 

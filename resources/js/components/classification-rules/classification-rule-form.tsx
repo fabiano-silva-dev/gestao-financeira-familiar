@@ -32,6 +32,7 @@ type Props = {
     actionTypeOptions: ClassificationRuleActionTypeOption[];
     categoryOptions: ReconciliationCategoryOption[];
     accountOptions: ReconciliationAccountOption[];
+    returnTo?: string | null;
 };
 
 export default function ClassificationRuleForm({
@@ -41,6 +42,7 @@ export default function ClassificationRuleForm({
     actionTypeOptions,
     categoryOptions,
     accountOptions,
+    returnTo = null,
 }: Props) {
     const [name, setName] = useState(rule?.name ?? draft?.name ?? '');
     const [matchType, setMatchType] = useState<ClassificationRuleMatchType>(
@@ -154,6 +156,13 @@ export default function ClassificationRuleForm({
         >
             {({ processing, errors }) => (
                 <>
+                    {returnTo !== null && returnTo !== '' && (
+                        <input
+                            type="hidden"
+                            name="return_to"
+                            value={returnTo}
+                        />
+                    )}
                     <div className="grid gap-4 sm:grid-cols-2">
                         <div className="grid gap-2">
                             <Label htmlFor="name">Nome da regra</Label>
@@ -451,7 +460,7 @@ export default function ClassificationRuleForm({
                             className="w-full sm:w-auto"
                             asChild
                         >
-                            <Link href={index()}>Cancelar</Link>
+                            <Link href={returnTo || index()}>Cancelar</Link>
                         </Button>
                         <Button
                             className="w-full sm:w-auto"

@@ -35,6 +35,7 @@ final class CardStatementMaterializationService
         CreditCardInvoice $invoice,
         CardStatementEntry $entry,
         User $user,
+        bool $requireClassification = false,
     ): void {
         if ($entry->is_reconciled || $this->moneyToCents($entry->amount) <= 0) {
             return;
@@ -63,13 +64,18 @@ final class CardStatementMaterializationService
             );
 
             if ($installment instanceof TransactionInstallment) {
-                $this->reconciliationService->reconcile(
-                    $workspace,
-                    $invoice,
-                    $entry,
-                    $installment,
-                    $user,
-                );
+                if (
+                    ! $requireClassification
+                    || $this->isClassifiedForAutoLink($workspace, $entry, $installment)
+                ) {
+                    $this->reconciliationService->reconcile(
+                        $workspace,
+                        $invoice,
+                        $entry,
+                        $installment,
+                        $user,
+                    );
+                }
 
                 return;
             }
@@ -80,6 +86,13 @@ final class CardStatementMaterializationService
         }
 
         if ($invoice->status !== CreditCardInvoiceStatus::Open) {
+            return;
+        }
+
+        if (
+            $requireClassification
+            && ! $this->entryHasClassification($workspace, $entry)
+        ) {
             return;
         }
 
@@ -152,6 +165,35 @@ final class CardStatementMaterializationService
             $currentInstallment,
             $user,
         );
+    }
+
+    private function isClassifiedForAutoLink(
+        Workspace $workspace,
+        CardStatementEntry $entry,
+        TransactionInstallment $installment,
+    ): bool {
+        if ($this->entryHasClassification($workspace, $entry)) {
+            return true;
+        }
+
+        $categoryId = $installment->transaction?->getAttribute('category_id');
+
+        return $categoryId !== null;
+    }
+
+    private function entryHasClassification(
+        Workspace $workspace,
+        CardStatementEntry $entry,
+    ): bool {
+        if ($entry->suggested_category_id !== null) {
+            return true;
+        }
+
+        $rule = $this->ruleMatcher->match($workspace, $entry->description);
+
+        return is_array($rule)
+            && $rule['action_type'] !== FinancialTransactionType::Transfer->value
+            && $rule['category_id'] !== null;
     }
 
     /**

@@ -133,6 +133,44 @@ class CardStatementParserTest extends TestCase
         $this->assertSame('supermercado', $statement->rows[1]->sourceCategory);
     }
 
+    public function test_parses_mercado_pago_pdf_skipping_payments_and_extracting_installments(): void
+    {
+        $statement = app(CardStatementParser::class)->parse(
+            $this->mercadoPagoPdf(),
+            'pdf',
+            'auto',
+            'mercado_pago_credit_card',
+        );
+
+        $this->assertSame('pdf-mercado-pago', $statement->sourceFormat);
+        $this->assertSame(2, $statement->ignoredRows);
+        $this->assertCount(3, $statement->rows);
+        $this->assertSame('2026-07-09', $statement->rows[0]->purchasedOn);
+        $this->assertSame('Smhigienizacoes Parcela 2 de 3', $statement->rows[0]->description);
+        $this->assertSame('93.33', $statement->rows[0]->amount);
+        $this->assertSame(2, $statement->rows[0]->installmentNumber);
+        $this->assertSame(3, $statement->rows[0]->totalInstallments);
+        $this->assertSame('Visa · 3736', $statement->rows[0]->rawData['Cartão']);
+        $this->assertSame('2026-08-05', $statement->rows[1]->purchasedOn);
+        $this->assertSame(1, $statement->rows[1]->installmentNumber);
+        $this->assertSame(6, $statement->rows[1]->totalInstallments);
+        $this->assertSame('8.60', $statement->rows[2]->amount);
+        $this->assertSame('Visa · 3759', $statement->rows[2]->rawData['Cartão']);
+    }
+
+    public function test_rejects_unsupported_card_pdf_layout(): void
+    {
+        $this->expectException(CardStatementParseException::class);
+        $this->expectExceptionMessage('não é válido para fatura de cartão');
+
+        app(CardStatementParser::class)->parse(
+            $this->mercadoPagoPdf(),
+            'pdf',
+            'auto',
+            'banrisul_current_account',
+        );
+    }
+
     public function test_rejects_files_without_required_headers(): void
     {
         $this->expectException(CardStatementParseException::class);
@@ -199,5 +237,55 @@ class CardStatementParserTest extends TestCase
         $this->assertIsString($contents);
 
         return $contents;
+    }
+
+    private function mercadoPagoPdf(): string
+    {
+        return $this->pdfWithLines([
+            'Pague sua fatura pelo app Mercado Pago',
+            'Vencimento: 08/09/2026',
+            'Detalhes de consumo',
+            'Movimentações na fatura',
+            '04/08 Pagamento da fatura de agosto/2026 R$ 1.500,00',
+            '07/08 Pagamento da fatura de agosto/2026 R$ 2.108,26',
+            'Cartão Visa [************3736]',
+            '09/07 Smhigienizacoes Parcela 2 de 3 R$ 93,33',
+            '05/08 VEST COMPANHIA Parcela 1 de 6 R$ 91,80',
+            'Cartão Visa [************3759]',
+            '04/08 DL*99 RIDE R$ 8,60',
+            'Parcele a fatura do seu Cartão de Crédito Mercado Pago',
+        ]);
+    }
+
+    /**
+     * @param  array<int, string>  $lines
+     */
+    private function pdfWithLines(array $lines): string
+    {
+        $stream = "BT /F1 9 Tf\n";
+        $y = 750;
+
+        foreach ($lines as $line) {
+            $escaped = str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $line);
+            $stream .= sprintf("1 0 0 1 24 %d Tm (%s) Tj\n", $y, $escaped);
+            $y -= 14;
+        }
+
+        $stream .= 'ET';
+        $length = strlen($stream);
+
+        return <<<PDF
+        %PDF-1.4
+        1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+        2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj
+        3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj
+        4 0 obj<</Length {$length}>>stream
+        {$stream}
+        endstream
+        endobj
+        5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Courier>>endobj
+        trailer<</Root 1 0 R>>
+        %%EOF
+        PDF;
     }
 }

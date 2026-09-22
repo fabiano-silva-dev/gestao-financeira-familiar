@@ -29,6 +29,12 @@ export default defineConfig({
         }),
     ]),
     server: {
+        hmr: {
+            host: process.env.VITE_HMR_HOST ?? 'localhost',
+        },
+        cors: {
+            origin: true,
+        },
         watch: {
             ignored: [
                 '**/.agents/**',

@@ -36,8 +36,9 @@ class OfxImportTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('imports/index')
-                ->has('pdfLayouts', 1)
+                ->has('pdfLayouts', 2)
                 ->where('pdfLayouts.0.value', 'banrisul_current_account')
+                ->where('pdfLayouts.1.value', 'mercado_pago_credit_card')
             );
     }
 

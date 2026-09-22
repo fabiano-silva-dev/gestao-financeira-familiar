@@ -26,8 +26,14 @@ import {
 } from '@/components/ui/select';
 import { classificationRuleCreateQuery } from '@/lib/classification-rule';
 import { listingUrl } from '@/lib/listing';
+import {
+    candidateMatchId,
+    formatReconciliationDate,
+    reconciliationEntryElementId,
+} from '@/lib/reconciliation';
 import { cn } from '@/lib/utils';
 import { create as createRule } from '@/routes/classification-rules';
+import { index as reconciliationIndex } from '@/routes/reconciliation';
 import type {
     ClassificationRulePrompt,
     ListingQueryState,
@@ -41,36 +47,6 @@ const currency = new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
 });
-
-const date = new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    timeZone: 'UTC',
-});
-
-export function formatReconciliationDate(value: string) {
-    return date.format(new Date(`${value}T00:00:00Z`));
-}
-
-export function candidateMatchId(
-    entry: ReconciliationPendingEntry,
-    candidate: ReconciliationCandidate,
-): string {
-    if (entry.kind === 'statement') {
-        if (candidate.movement_id) {
-            return String(candidate.movement_id);
-        }
-
-        if (candidate.invoice_id) {
-            return `invoice:${candidate.invoice_id}`;
-        }
-
-        return '';
-    }
-
-    return String(candidate.installment_id ?? '');
-}
 
 function isOutflow(entry: ReconciliationPendingEntry): boolean {
     if (entry.kind === 'invoice') {
@@ -322,6 +298,10 @@ export function ReconciliationRow({
                     ? Number(counterpartId)
                     : (entry.matcher_counterpart_account_id ?? null)
                 : null,
+            return_to: listingUrl(reconciliationIndex.url(), {
+                ...query,
+                focus: `${entry.kind}-${entry.id}`,
+            }),
         };
     };
 
@@ -476,8 +456,9 @@ export function ReconciliationRow({
 
     return (
         <article
+            id={reconciliationEntryElementId(entry.kind, entry.id)}
             className={cn(
-                'grid gap-4 px-4 py-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1.2fr)_auto] lg:items-start',
+                'scroll-mt-24 grid gap-4 px-4 py-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1.2fr)_auto] lg:items-start',
                 entry.is_possible_duplicate && 'bg-warning-muted',
                 entry.is_reconciled && 'bg-muted/40',
             )}

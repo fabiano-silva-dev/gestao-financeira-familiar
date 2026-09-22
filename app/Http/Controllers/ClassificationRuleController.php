@@ -12,6 +12,7 @@ use App\Models\ClassificationRule;
 use App\Models\FinancialAccount;
 use App\Models\Workspace;
 use App\Services\Finance\ClassificationRuleMatcher;
+use App\Support\InternalReturnUrl;
 use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
 use Illuminate\Http\RedirectResponse;
@@ -101,6 +102,7 @@ class ClassificationRuleController extends Controller
             'actionTypeOptions' => FinancialTransactionType::options(),
             'categoryOptions' => $this->categoryOptions(),
             'accountOptions' => $this->accountOptions(),
+            'returnTo' => InternalReturnUrl::fromRequest($request, 'reconciliation.index'),
         ]);
     }
 
@@ -112,6 +114,12 @@ class ClassificationRuleController extends Controller
             'type' => 'success',
             'message' => 'Regra cadastrada. Os próximos movimentos parecidos já podem ser classificados com ela.',
         ]);
+
+        $returnTo = InternalReturnUrl::fromRequest($request, 'reconciliation.index');
+
+        if ($returnTo !== null) {
+            return redirect()->to($returnTo);
+        }
 
         return to_route('classification-rules.index');
     }

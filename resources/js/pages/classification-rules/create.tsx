@@ -19,6 +19,7 @@ export default function ClassificationRulesCreate({
     actionTypeOptions,
     categoryOptions,
     accountOptions,
+    returnTo,
 }: {
     draft: ClassificationRuleDraft;
     matchingRule: ClassificationRuleMatchHint | null;
@@ -26,6 +27,7 @@ export default function ClassificationRulesCreate({
     actionTypeOptions: ClassificationRuleActionTypeOption[];
     categoryOptions: ReconciliationCategoryOption[];
     accountOptions: ReconciliationAccountOption[];
+    returnTo: string | null;
 }) {
     return (
         <>
@@ -72,6 +74,7 @@ export default function ClassificationRulesCreate({
                             actionTypeOptions={actionTypeOptions}
                             categoryOptions={categoryOptions}
                             accountOptions={accountOptions}
+                            returnTo={returnTo}
                         />
                     </CardContent>
                 </Card>
@@ -80,9 +83,11 @@ export default function ClassificationRulesCreate({
     );
 }
 
-ClassificationRulesCreate.layout = {
+ClassificationRulesCreate.layout = (props: { returnTo?: string | null }) => ({
     breadcrumbs: [
-        { title: 'Regras', href: index() },
+        props.returnTo
+            ? { title: 'Conciliação', href: props.returnTo }
+            : { title: 'Regras', href: index() },
         { title: 'Nova regra', href: create() },
     ],
-};
+});

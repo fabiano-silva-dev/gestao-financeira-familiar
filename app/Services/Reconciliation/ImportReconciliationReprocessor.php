@@ -174,6 +174,7 @@ final class ImportReconciliationReprocessor
             $invoice,
             $entry,
             $user,
+            requireClassification: true,
         );
         $this->entryActions->applyDraftToRelatedCard(
             $entry->refresh()->load('transactionInstallment.transaction'),

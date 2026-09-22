@@ -16,8 +16,8 @@ class CardStatementFile implements ValidationRule
             return;
         }
 
-        if (! in_array(strtolower($value->getClientOriginalExtension()), ['csv', 'xls', 'xlsx'], true)) {
-            $fail('A fatura deve possuir a extensão .csv, .xls ou .xlsx.');
+        if (! in_array(strtolower($value->getClientOriginalExtension()), ['csv', 'xls', 'xlsx', 'pdf'], true)) {
+            $fail('A fatura deve possuir a extensão .csv, .xls, .xlsx ou .pdf.');
         }
     }
 }
