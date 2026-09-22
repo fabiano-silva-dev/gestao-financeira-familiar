@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState, type ChangeEvent } from 'react';
 import InputError from '@/components/input-error';
+import { ImportsNavigation } from '@/components/imports/imports-navigation';
 import { ListingEmpty } from '@/components/listing/listing-empty';
 import { ListingToolbar } from '@/components/listing/listing-toolbar';
 import { SortableColumn } from '@/components/listing/sortable-column';
@@ -127,6 +128,51 @@ function detectedDocumentLabel(item: UnifiedImportHistoryItem) {
         : null;
 
     return [holder, identifier, reference].filter(Boolean).join(' · ') || null;
+}
+
+function importReference(item: UnifiedImportHistoryItem) {
+    if (item.reference_month) {
+        const [year, month] = item.reference_month.split('-');
+
+        return month + '/' + year;
+    }
+
+    if (item.statement_start_on && item.statement_end_on) {
+        return formatDate(item.statement_start_on) + ' a ' + formatDate(item.statement_end_on);
+    }
+
+    return '—';
+}
+
+function ImportHistorySummary({ item }: { item: UnifiedImportHistoryItem }) {
+    if (item.status === 'completed' && item.processing_summary) {
+        return (
+            <div className="space-y-0.5 tabular-nums">
+                <p>
+                    {item.processing_summary.automatically_reconciled} conciliados ·{' '}
+                    {item.processing_summary.remaining_exceptions} pendências
+                </p>
+                <p className="text-muted-foreground text-xs">
+                    {item.imported_records} novos · {item.duplicate_records} duplicados ·{' '}
+                    {item.processing_summary.categorized_automatically} categorizados automaticamente
+                </p>
+            </div>
+        );
+    }
+
+    if (item.status === 'completed') {
+        return (
+            <p className="tabular-nums">
+                {item.imported_records} novos · {item.duplicate_records} duplicados
+            </p>
+        );
+    }
+
+    return (
+        <p className="text-muted-foreground text-xs">
+            {item.error_message ?? 'Aguardando processamento ou confirmação.'}
+        </p>
+    );
 }
 
 function PendingImportResolver({
@@ -380,6 +426,8 @@ export default function ImportsIndex({
                     </div>
                 </div>
 
+                <ImportsNavigation active="upload" />
+
                 <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
                     <Card>
                         <CardHeader>
@@ -512,14 +560,14 @@ export default function ImportsIndex({
                     <ListingToolbar
                         url={listUrl}
                         query={filters}
-                        searchPlaceholder="Buscar arquivo ou movimento…"
+                        searchPlaceholder="Buscar arquivo, conta, cartão ou instituição…"
                         selects={[
                             {
                                 key: 'kind',
-                                label: 'Origem',
+                                label: 'Tipo',
                                 value: filters.kind,
                                 options: kindOptions,
-                                allLabel: 'Todas',
+                                allLabel: 'Todos',
                             },
                             {
                                 key: 'status',
@@ -527,6 +575,34 @@ export default function ImportsIndex({
                                 value: filters.status,
                                 options: statusOptions,
                                 allLabel: 'Todas',
+                            },
+                            {
+                                key: 'account',
+                                label: 'Conta',
+                                value: filters.account,
+                                options: accountOptions.map((account) => ({
+                                    value: String(account.id),
+                                    label: account.name,
+                                })),
+                                allLabel: 'Todas',
+                            },
+                            {
+                                key: 'card',
+                                label: 'Cartão',
+                                value: filters.card,
+                                options: cardOptions.map((card) => ({
+                                    value: String(card.id),
+                                    label: card.name,
+                                })),
+                                allLabel: 'Todos',
+                            },
+                        ]}
+                        dates={[
+                            {
+                                key: 'period',
+                                label: 'Período',
+                                value: filters.period,
+                                type: 'month',
                             },
                         ]}
                     />
@@ -656,122 +732,227 @@ export default function ImportsIndex({
                     </CardContent>
                 </Card>
 
-                <Card>
+                <Card id="historico">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <History className="size-5" />
                             Histórico de arquivos
                         </CardTitle>
+                        <CardDescription>
+                            Confira origem, instituição, referência e resultado. Clique nos cabeçalhos para ordenar.
+                        </CardDescription>
                     </CardHeader>
                     <CardContent>
                         {imports.length === 0 ? (
                             <p className="text-muted-foreground py-6 text-center text-sm">
-                                Nenhum arquivo processado até agora.
+                                Nenhum arquivo corresponde aos filtros selecionados.
                             </p>
                         ) : (
-                            <div className="overflow-hidden rounded-lg border">
-                                <div className="text-muted-foreground hidden grid-cols-[minmax(0,1.6fr)_minmax(7rem,0.6fr)_minmax(7rem,0.5fr)_minmax(8rem,0.7fr)] gap-3 border-b px-4 py-3 text-xs font-medium tracking-wide uppercase md:grid">
-                                    <SortableColumn
-                                        column="filename"
-                                        label="Arquivo"
-                                        sort={filters.sort}
-                                        direction={filters.direction}
-                                        onSort={onSort}
-                                    />
-                                    <SortableColumn
-                                        column="kind"
-                                        label="Tipo"
-                                        sort={filters.sort}
-                                        direction={filters.direction}
-                                        onSort={onSort}
-                                    />
-                                    <SortableColumn
-                                        column="status"
-                                        label="Situação"
-                                        sort={filters.sort}
-                                        direction={filters.direction}
-                                        onSort={onSort}
-                                    />
-                                    <span className="text-right">Resumo</span>
-                                </div>
-                            <div className="divide-y">
-                                {imports.map((item) => (
-                                    <div
-                                        key={`${item.kind}-${item.id}`}
-                                        className="grid grid-cols-1 gap-2 px-4 py-3 md:grid-cols-[minmax(0,1.6fr)_minmax(7rem,0.6fr)_minmax(7rem,0.5fr)_minmax(8rem,0.7fr)] md:items-center md:gap-3"
-                                    >
-                                        <div className="min-w-0">
-                                            <p className="truncate font-medium">
-                                                {item.source_filename}
-                                            </p>
-                                            <p className="text-muted-foreground mt-1 text-xs">
-                                                {item.target_name ?? 'Sem destino'}
-                                                {item.created_at
-                                                    ? ` · ${dateTime.format(new Date(item.created_at))}`
-                                                    : ''}
-                                            </p>
-                                        </div>
-                                        <p className="text-muted-foreground hidden text-sm md:block md:text-foreground">
-                                            {item.kind_label}
-                                        </p>
-                                        <Badge
-                                            variant={
-                                                item.status === 'completed'
-                                                    ? 'secondary'
-                                                    : item.status === 'failed'
-                                                      ? 'destructive'
-                                                      : 'outline'
-                                            }
-                                            className="w-fit"
-                                        >
-                                            {item.status_label}
-                                        </Badge>
-                                        <div className="text-right text-sm">
-                                            {item.status === 'completed' ? (
-                                                item.processing_summary ? (
-                                                    <div className="space-y-0.5 tabular-nums">
-                                                        <p>
-                                                            {item.processing_summary.automatically_reconciled}{' '}
-                                                            conciliados ·{' '}
-                                                            {item.processing_summary.new_transactions_created}{' '}
-                                                            lançamentos
-                                                        </p>
-                                                        <p className="text-muted-foreground text-xs">
-                                                            {item.processing_summary.transfers_identified}{' '}
-                                                            transferências ·{' '}
-                                                            {item.processing_summary.invoice_payments_identified}{' '}
-                                                            pgto. fatura ·{' '}
-                                                            {item.processing_summary.refunds_identified}{' '}
-                                                            reembolsos ·{' '}
-                                                            {item.processing_summary.categorized_automatically}{' '}
-                                                            categorizados
-                                                        </p>
-                                                        <p className="text-muted-foreground text-xs">
-                                                            {item.processing_summary.pending_categorization}{' '}
-                                                            sem categoria ·{' '}
-                                                            {item.processing_summary.pending_confirmation}{' '}
-                                                            confirmações ·{' '}
-                                                            {item.processing_summary.duplicates_ignored}{' '}
-                                                            duplicados
-                                                        </p>
-                                                    </div>
-                                                ) : (
-                                                    <p className="tabular-nums">
-                                                        {item.imported_records} novos
-                                                        · {item.duplicate_records}{' '}
-                                                        duplicados
+                            <>
+                                <div className="space-y-3 md:hidden">
+                                    {imports.map((item) => (
+                                        <div key={item.id} className="rounded-lg border p-4">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <p className="truncate font-medium">{item.source_filename}</p>
+                                                    <p className="text-muted-foreground mt-1 text-xs">
+                                                        {item.target_name ?? 'Origem a confirmar'}
                                                     </p>
-                                                )
-                                            ) : item.error_message ? (
-                                                <p className="text-destructive text-xs">
-                                                    {item.error_message}
+                                                </div>
+                                                <Badge
+                                                    variant={
+                                                        item.status === 'completed'
+                                                            ? 'secondary'
+                                                            : item.status === 'failed'
+                                                              ? 'destructive'
+                                                              : 'outline'
+                                                    }
+                                                >
+                                                    {item.status_label}
+                                                </Badge>
+                                            </div>
+                                            <div className="text-muted-foreground mt-3 grid grid-cols-2 gap-2 text-xs">
+                                                <p>{item.institution ?? 'Instituição não informada'}</p>
+                                                <p>{item.kind_label}</p>
+                                                <p>Referência: {importReference(item)}</p>
+                                                <p>
+                                                    Importado:{' '}
+                                                    {item.imported_at || item.created_at
+                                                        ? dateTime.format(new Date(item.imported_at ?? item.created_at ?? ''))
+                                                        : '—'}
                                                 </p>
-                                            ) : null}
+                                            </div>
+                                            <div className="mt-3 text-sm">
+                                                <ImportHistorySummary item={item} />
+                                            </div>
+                                            <details className="mt-3 rounded-md bg-muted/40 px-3 py-2">
+                                                <summary className="cursor-pointer text-xs font-medium">
+                                                    Ver detalhes
+                                                </summary>
+                                                <div className="text-muted-foreground mt-2 space-y-1 text-xs">
+                                                    <p>
+                                                        Período do documento: {importReference(item)}
+                                                    </p>
+                                                    <p>
+                                                        {item.total_records} registros · {item.imported_records} importados ·{' '}
+                                                        {item.duplicate_records} duplicados
+                                                    </p>
+                                                    {item.status === 'completed' && item.kind !== 'document' && (
+                                                        <div className="mt-2 flex flex-wrap gap-2">
+                                                            <Button size="sm" variant="outline" asChild>
+                                                                <Link href={'/conciliacao?import=' + item.id}>
+                                                                    <ListChecks />
+                                                                    Abrir conciliação
+                                                                </Link>
+                                                            </Button>
+                                                            <Form
+                                                                action={'/conciliacao/importacoes/' + item.id + '/reprocessar'}
+                                                                method="post"
+                                                                options={{ preserveScroll: true }}
+                                                            >
+                                                                {({ processing }) => (
+                                                                    <Button size="sm" variant="outline" disabled={processing}>
+                                                                        <History />
+                                                                        Reprocessar
+                                                                    </Button>
+                                                                )}
+                                                            </Form>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </details>
                                         </div>
+                                    ))}
+                                </div>
+
+                                <div className="hidden overflow-x-auto rounded-lg border md:block">
+                                    <div className="min-w-[1180px]">
+                                        <div className="text-muted-foreground grid grid-cols-[minmax(14rem,1.5fr)_minmax(12rem,1.1fr)_minmax(9rem,0.8fr)_minmax(7rem,0.6fr)_minmax(9rem,0.8fr)_minmax(9rem,0.8fr)_minmax(10rem,0.9fr)_minmax(14rem,1.2fr)] gap-3 border-b px-4 py-3 text-xs font-medium tracking-wide uppercase">
+                                            <SortableColumn
+                                                column="filename"
+                                                label="Arquivo"
+                                                sort={filters.sort}
+                                                direction={filters.direction}
+                                                onSort={onSort}
+                                            />
+                                            <SortableColumn
+                                                column="target"
+                                                label="Conta / cartão"
+                                                sort={filters.sort}
+                                                direction={filters.direction}
+                                                onSort={onSort}
+                                            />
+                                            <SortableColumn
+                                                column="institution"
+                                                label="Instituição"
+                                                sort={filters.sort}
+                                                direction={filters.direction}
+                                                onSort={onSort}
+                                            />
+                                            <SortableColumn
+                                                column="kind"
+                                                label="Tipo"
+                                                sort={filters.sort}
+                                                direction={filters.direction}
+                                                onSort={onSort}
+                                            />
+                                            <SortableColumn
+                                                column="reference"
+                                                label="Referência"
+                                                sort={filters.sort}
+                                                direction={filters.direction}
+                                                onSort={onSort}
+                                            />
+                                            <SortableColumn
+                                                column="status"
+                                                label="Situação"
+                                                sort={filters.sort}
+                                                direction={filters.direction}
+                                                onSort={onSort}
+                                            />
+                                            <SortableColumn
+                                                column="date"
+                                                label="Importado em"
+                                                sort={filters.sort}
+                                                direction={filters.direction}
+                                                onSort={onSort}
+                                            />
+                                            <SortableColumn
+                                                column="summary"
+                                                label="Resumo"
+                                                sort={filters.sort}
+                                                direction={filters.direction}
+                                                onSort={onSort}
+                                            />
+                                        </div>
+                                        {imports.map((item) => (
+                                            <div
+                                                key={item.id}
+                                                className="grid grid-cols-[minmax(14rem,1.5fr)_minmax(12rem,1.1fr)_minmax(9rem,0.8fr)_minmax(7rem,0.6fr)_minmax(9rem,0.8fr)_minmax(9rem,0.8fr)_minmax(10rem,0.9fr)_minmax(14rem,1.2fr)] gap-3 border-b px-4 py-3 text-sm last:border-b-0"
+                                            >
+                                                <div className="min-w-0">
+                                                    <p className="truncate font-medium">{item.source_filename}</p>
+                                                    <details className="mt-1">
+                                                        <summary className="text-primary cursor-pointer text-xs">
+                                                            Ver detalhes
+                                                        </summary>
+                                                        <div className="text-muted-foreground mt-2 space-y-1 text-xs">
+                                                            <p>
+                                                                {item.total_records} registros · {item.imported_records} importados ·{' '}
+                                                                {item.duplicate_records} duplicados
+                                                            </p>
+                                                            {item.status === 'completed' && item.kind !== 'document' && (
+                                                                <div className="mt-2 flex flex-wrap gap-2">
+                                                                    <Button size="sm" variant="outline" asChild>
+                                                                        <Link href={'/conciliacao?import=' + item.id}>
+                                                                            <ListChecks />
+                                                                            Abrir conciliação
+                                                                        </Link>
+                                                                    </Button>
+                                                                    <Form
+                                                                        action={'/conciliacao/importacoes/' + item.id + '/reprocessar'}
+                                                                        method="post"
+                                                                        options={{ preserveScroll: true }}
+                                                                    >
+                                                                        {({ processing }) => (
+                                                                            <Button size="sm" variant="outline" disabled={processing}>
+                                                                                <History />
+                                                                                Reprocessar
+                                                                            </Button>
+                                                                        )}
+                                                                    </Form>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </details>
+                                                </div>
+                                                <p className="min-w-0 truncate">{item.target_name ?? 'A confirmar'}</p>
+                                                <p className="min-w-0 truncate">{item.institution ?? '—'}</p>
+                                                <p>{item.kind_label}</p>
+                                                <p className="tabular-nums">{importReference(item)}</p>
+                                                <Badge
+                                                    variant={
+                                                        item.status === 'completed'
+                                                            ? 'secondary'
+                                                            : item.status === 'failed'
+                                                              ? 'destructive'
+                                                              : 'outline'
+                                                    }
+                                                    className="w-fit"
+                                                >
+                                                    {item.status_label}
+                                                </Badge>
+                                                <p className="tabular-nums">
+                                                    {item.imported_at || item.created_at
+                                                        ? dateTime.format(new Date(item.imported_at ?? item.created_at ?? ''))
+                                                        : '—'}
+                                                </p>
+                                                <ImportHistorySummary item={item} />
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
-                            </div>
-                            </div>
+                                </div>
+                            </>
                         )}
                     </CardContent>
                 </Card>

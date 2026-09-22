@@ -16,6 +16,7 @@ use App\Models\Workspace;
 use App\Services\Imports\FinancialDocumentImportService;
 use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -33,19 +34,51 @@ class FinancialImportController extends Controller
         $workspace = $this->workspace();
         $listing = ListingQuery::from(
             $request,
-            ['description', 'date', 'target', 'status', 'amount', 'filename', 'kind'],
+            [
+                'description',
+                'date',
+                'target',
+                'institution',
+                'reference',
+                'status',
+                'amount',
+                'filename',
+                'kind',
+                'summary',
+            ],
             'date',
             'desc',
-            ['kind', 'status'],
+            ['kind', 'status', 'account', 'card', 'period'],
         );
+        $kind = $listing->filter('kind');
+        $accountId = $listing->intFilter('account');
+        $cardId = $listing->intFilter('card');
+        $period = $this->normalizePeriod($listing->filter('period'));
+        $periodStart = $period !== null
+            ? CarbonImmutable::parse($period.'-01')->startOfMonth()
+            : null;
+        $periodEnd = $periodStart?->endOfMonth();
+
         $importQuery = $workspace->financialImports()
             ->with([
-                'financialAccount:id,name',
-                'creditCard:id,name,last_four',
+                'financialAccount:id,name,institution',
+                'creditCard:id,name,institution,last_four',
             ]);
-        $listing->applySearch($importQuery, ['source_filename']);
 
-        $kind = $listing->filter('kind');
+        if ($listing->search !== '') {
+            $term = $listing->searchTerm();
+            $importQuery->where(function ($query) use ($term): void {
+                $query->where('source_filename', 'ilike', $term)
+                    ->orWhereHas('financialAccount', function ($account) use ($term): void {
+                        $account->where('name', 'ilike', $term)
+                            ->orWhere('institution', 'ilike', $term);
+                    })
+                    ->orWhereHas('creditCard', function ($card) use ($term): void {
+                        $card->where('name', 'ilike', $term)
+                            ->orWhere('institution', 'ilike', $term);
+                    });
+            });
+        }
 
         if ($kind === 'statement') {
             $importQuery->where('type', FinancialImportType::Ofx);
@@ -61,20 +94,49 @@ class FinancialImportController extends Controller
             $importQuery->where('status', $importStatus);
         }
 
-        if (in_array($listing->sort, ['filename', 'kind', 'status'], true)) {
-            $listing->applySort($importQuery, [
-                'filename' => 'source_filename',
-                'kind' => 'type',
-                'status' => 'status',
-            ]);
-        } else {
-            $importQuery->latest('id');
+        if ($accountId !== null) {
+            $importQuery->where('financial_account_id', $accountId);
+        }
+
+        if ($cardId !== null) {
+            $importQuery->where('credit_card_id', $cardId);
+        }
+
+        if ($period !== null && $periodStart !== null && $periodEnd !== null) {
+            $importQuery->where(function ($query) use ($period, $periodStart, $periodEnd): void {
+                $query->where(function ($bank) use ($periodStart, $periodEnd): void {
+                    $bank->where('type', FinancialImportType::Ofx->value)
+                        ->whereDate('statement_start_on', '<=', $periodEnd->toDateString())
+                        ->whereDate('statement_end_on', '>=', $periodStart->toDateString());
+                })->orWhere(function ($card) use ($period): void {
+                    $card->where('type', FinancialImportType::CardStatement->value)
+                        ->where('metadata->reference_month', $period);
+                })->orWhere(function ($document) use ($period): void {
+                    $document->where('type', FinancialImportType::Document->value)
+                        ->where('metadata->autodetection->reference_month', $period);
+                });
+            });
         }
 
         $imports = $importQuery
-            ->limit(20)
+            ->latest('id')
+            ->limit(100)
             ->get()
             ->map(fn (FinancialImport $import): array => $this->importData($import));
+        $imports = $listing->sortMapped($imports, [
+            'filename' => fn (array $import): string => $import['source_filename'],
+            'kind' => fn (array $import): string => $import['kind'],
+            'status' => fn (array $import): string => $import['status'],
+            'target' => fn (array $import): string => $import['target_name'] ?? '',
+            'institution' => fn (array $import): string => $import['institution'] ?? '',
+            'reference' => fn (array $import): string => $import['reference_month']
+                ?? $import['statement_start_on']
+                ?? '',
+            'date' => fn (array $import): string => $import['imported_at']
+                ?? $import['created_at']
+                ?? '',
+            'summary' => fn (array $import): int => $import['total_records'],
+        ])->values();
 
         $bankQuery = $workspace->bankStatementEntries()->with('financialAccount:id,name');
         $cardQuery = $workspace->cardStatementEntries()->with([
@@ -95,6 +157,25 @@ class FinancialImportController extends Controller
         } elseif ($kind === 'document') {
             $bankQuery->whereRaw('1 = 0');
             $cardQuery->whereRaw('1 = 0');
+        }
+
+        if ($accountId !== null) {
+            $bankQuery->where('financial_account_id', $accountId);
+            $cardQuery->whereRaw('1 = 0');
+        }
+
+        if ($cardId !== null) {
+            $cardQuery->where('credit_card_id', $cardId);
+            $bankQuery->whereRaw('1 = 0');
+        }
+
+        if ($periodStart !== null && $periodEnd !== null) {
+            $bankQuery->whereBetween('occurred_on', [
+                $periodStart->toDateString(),
+                $periodEnd->toDateString(),
+            ]);
+            $cardQuery->whereHas('invoice', fn ($invoice) => $invoice
+                ->whereDate('reference_month', $periodStart->toDateString()));
         }
 
         $entryStatus = $listing->filter('status');
@@ -135,49 +216,52 @@ class FinancialImportController extends Controller
             ],
         )->take(50)->values();
 
+        $accountOptions = $workspace->financialAccounts()
+            ->orderByDesc('is_active')
+            ->orderBy('name')
+            ->get(['id', 'name', 'institution', 'agency', 'account_number', 'is_active'])
+            ->map(fn (FinancialAccount $account): array => [
+                'id' => $account->id,
+                'name' => $account->name,
+                'institution' => $account->institution,
+                'agency' => $account->agency,
+                'account_number' => $account->account_number,
+                'is_active' => $account->is_active,
+            ])
+            ->all();
+        $cardOptions = $workspace->creditCards()
+            ->with([
+                'holder:id,name',
+                'paymentAccount:id,name,institution,agency,account_number',
+            ])
+            ->orderByDesc('is_active')
+            ->orderBy('name')
+            ->get([
+                'id',
+                'name',
+                'institution',
+                'last_four',
+                'holder_id',
+                'payment_account_id',
+                'is_active',
+            ])
+            ->map(fn (CreditCard $card): array => [
+                'id' => $card->id,
+                'name' => $card->name,
+                'institution' => $card->institution,
+                'last_four' => $card->last_four,
+                'holder_name' => $card->holder?->name,
+                'payment_account_name' => $card->paymentAccount?->name,
+                'payment_account_institution' => $card->paymentAccount?->institution,
+                'payment_account_agency' => $card->paymentAccount?->agency,
+                'payment_account_number' => $card->paymentAccount?->account_number,
+                'is_active' => $card->is_active,
+            ])
+            ->all();
+
         return Inertia::render('imports/index', [
-            'accountOptions' => $workspace->financialAccounts()
-                ->orderByDesc('is_active')
-                ->orderBy('name')
-                ->get(['id', 'name', 'institution', 'agency', 'account_number', 'is_active'])
-                ->map(fn (FinancialAccount $account): array => [
-                    'id' => $account->id,
-                    'name' => $account->name,
-                    'institution' => $account->institution,
-                    'agency' => $account->agency,
-                    'account_number' => $account->account_number,
-                    'is_active' => $account->is_active,
-                ])
-                ->all(),
-            'cardOptions' => $workspace->creditCards()
-                ->with([
-                    'holder:id,name',
-                    'paymentAccount:id,name,institution,agency,account_number',
-                ])
-                ->orderByDesc('is_active')
-                ->orderBy('name')
-                ->get([
-                    'id',
-                    'name',
-                    'institution',
-                    'last_four',
-                    'holder_id',
-                    'payment_account_id',
-                    'is_active',
-                ])
-                ->map(fn (CreditCard $card): array => [
-                    'id' => $card->id,
-                    'name' => $card->name,
-                    'institution' => $card->institution,
-                    'last_four' => $card->last_four,
-                    'holder_name' => $card->holder?->name,
-                    'payment_account_name' => $card->paymentAccount?->name,
-                    'payment_account_institution' => $card->paymentAccount?->institution,
-                    'payment_account_agency' => $card->paymentAccount?->agency,
-                    'payment_account_number' => $card->paymentAccount?->account_number,
-                    'is_active' => $card->is_active,
-                ])
-                ->all(),
+            'accountOptions' => $accountOptions,
+            'cardOptions' => $cardOptions,
             'pdfLayouts' => [
                 [
                     'value' => 'banrisul_current_account',
@@ -190,19 +274,26 @@ class FinancialImportController extends Controller
                     'kind' => 'invoice',
                 ],
             ],
-            'imports' => $imports,
+            'imports' => $imports->all(),
             'entries' => $entries->all(),
             'pendingEntriesCount' => $workspace->bankStatementEntries()
                 ->where('is_reconciled', false)
+                ->where('is_ignored', false)
                 ->count()
                 + $workspace->cardStatementEntries()
                     ->where('is_reconciled', false)
+                    ->where('is_ignored', false)
                     ->count()
                 + $workspace->financialImports()
                     ->where('status', FinancialImportStatus::NeedsConfirmation->value)
                     ->count(),
             'defaultReferenceMonth' => now()->format('Y-m'),
-            'filters' => $listing->toArray(),
+            'filters' => [
+                ...$listing->toArray(),
+                'account' => $accountId !== null ? (string) $accountId : null,
+                'card' => $cardId !== null ? (string) $cardId : null,
+                'period' => $period,
+            ],
             'hasRecords' => $workspace->financialImports()->exists()
                 || $workspace->bankStatementEntries()->exists()
                 || $workspace->cardStatementEntries()->exists(),
@@ -291,6 +382,13 @@ class FinancialImportController extends Controller
         return $workspace;
     }
 
+    private function normalizePeriod(?string $period): ?string
+    {
+        return is_string($period) && preg_match('/^\\d{4}-(0[1-9]|1[0-2])$/', $period)
+            ? $period
+            : null;
+    }
+
     /** @return array<string, mixed> */
     private function importData(FinancialImport $import): array
     {
@@ -299,6 +397,9 @@ class FinancialImportController extends Controller
         $metadata = $import->metadata ?? [];
         $detection = is_array($metadata['autodetection'] ?? null)
             ? $metadata['autodetection']
+            : null;
+        $detectionInstitution = is_string($detection['institution'] ?? null)
+            ? ucfirst(str_replace('_', ' ', $detection['institution']))
             : null;
 
         return [
@@ -311,6 +412,13 @@ class FinancialImportController extends Controller
                 : ($isInvoice
                     ? "{$import->creditCard?->name} · final {$import->creditCard?->last_four}"
                     : $import->financialAccount?->name),
+            'target_id' => $isDocument
+                ? null
+                : ($isInvoice ? $import->credit_card_id : $import->financial_account_id),
+            'target_type' => $isDocument ? null : ($isInvoice ? 'card' : 'account'),
+            'institution' => $isDocument
+                ? $detectionInstitution
+                : ($isInvoice ? $import->creditCard?->institution : $import->financialAccount?->institution),
             'status' => $import->status->value,
             'status_label' => $import->status->label(),
             'total_records' => $import->total_records,
@@ -320,7 +428,8 @@ class FinancialImportController extends Controller
             'statement_end_on' => $import->statement_end_on?->toDateString(),
             'statement_amount' => $metadata['statement_amount'] ?? null,
             'statement_amount_applied' => $metadata['statement_amount_applied'] ?? null,
-            'reference_month' => $metadata['reference_month'] ?? null,
+            'reference_month' => $metadata['reference_month']
+                ?? (is_array($detection) ? ($detection['reference_month'] ?? null) : null),
             'source_format' => $metadata['source_format'] ?? null,
             'processing_summary' => is_array($metadata['processing_summary'] ?? null)
                 ? $metadata['processing_summary']
@@ -330,6 +439,7 @@ class FinancialImportController extends Controller
                 ? $metadata['missing_fields']
                 : [],
             'error_message' => $import->error_message,
+            'imported_at' => $import->imported_at?->toIso8601String(),
             'created_at' => $import->created_at?->toIso8601String(),
         ];
     }

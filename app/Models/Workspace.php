@@ -131,6 +131,14 @@ class Workspace extends Model
     }
 
     /**
+     * @return HasMany<FinancialPeriodClosure, $this>
+     */
+    public function financialPeriodClosures(): HasMany
+    {
+        return $this->hasMany(FinancialPeriodClosure::class);
+    }
+
+    /**
      * @return HasMany<BankStatementEntry, $this>
      */
     public function bankStatementEntries(): HasMany
