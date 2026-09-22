@@ -8,7 +8,7 @@ use App\Models\FinancialImport;
 use App\Models\Workspace;
 use App\Support\Workspaces\CurrentWorkspace;
 use Illuminate\Http\Request;
-use Illuminate\Support\CarbonImmutable;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
