@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\AccountMovementType;
 use App\Enums\CategoryType;
+use App\Enums\ClassificationRuleAutomationLevel;
 use App\Enums\ClassificationRuleMatchType;
 use App\Enums\FinancialImportStatus;
 use App\Enums\FinancialImportType;
@@ -1075,6 +1076,7 @@ class BankReconciliationTest extends TestCase
             'match_type' => ClassificationRuleMatchType::Contains,
             'pattern' => 'CEEE',
             'action_type' => FinancialTransactionType::Expense,
+            'automation_level' => ClassificationRuleAutomationLevel::CreateAndReconcile,
             'payee_name' => 'RGE Sul',
             'category_id' => $category->id,
         ]);
