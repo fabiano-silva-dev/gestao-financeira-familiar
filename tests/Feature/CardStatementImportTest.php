@@ -135,7 +135,7 @@ class CardStatementImportTest extends TestCase
                 ->component('imports/index')
                 ->has('imports', 1)
                 ->where('imports.0.statement_amount', '79.90')
-                ->has('entries', 2)
+                ->missing('entries')
                 ->where('pendingEntriesCount', 1)
             );
 

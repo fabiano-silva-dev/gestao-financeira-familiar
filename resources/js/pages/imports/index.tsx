@@ -1,7 +1,5 @@
 import { Form, Head, Link } from '@inertiajs/react';
 import {
-    ArrowDownCircle,
-    ArrowUpCircle,
     FileUp,
     History,
     ListChecks,
@@ -10,7 +8,6 @@ import {
 } from 'lucide-react';
 import { useMemo, useState, type ChangeEvent } from 'react';
 import InputError from '@/components/input-error';
-import { ListingEmpty } from '@/components/listing/listing-empty';
 import { ListingToolbar } from '@/components/listing/listing-toolbar';
 import { SortableColumn } from '@/components/listing/sortable-column';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -43,10 +40,10 @@ import {
 import { sortListing } from '@/lib/listing';
 import { index, store } from '@/routes/imports';
 import { index as reconciliationIndex } from '@/routes/reconciliation';
+import { index as transactionsIndex } from '@/routes/transactions';
 import type {
     CardStatementCardOption,
     FinancialImportAccountOption,
-    UnifiedImportEntry,
     UnifiedImportHistoryItem,
     ListingFilterOption,
     ListingQueryState,
@@ -56,7 +53,6 @@ type Props = {
     accountOptions: FinancialImportAccountOption[];
     cardOptions: CardStatementCardOption[];
     imports: UnifiedImportHistoryItem[];
-    entries: UnifiedImportEntry[];
     pendingEntriesCount: number;
     defaultReferenceMonth: string;
     filters: ListingQueryState;
@@ -65,10 +61,8 @@ type Props = {
     statusOptions: ListingFilterOption[];
 };
 
-const currency = new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-});
+const historyGridClass =
+    'md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_7.25rem_7.25rem_minmax(7rem,0.55fr)_11.5rem_minmax(0,1.15fr)_10.75rem]';
 
 const date = new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
@@ -85,8 +79,43 @@ const dateTime = new Intl.DateTimeFormat('pt-BR', {
     minute: '2-digit',
 });
 
-function formatDate(value: string) {
-    return date.format(new Date(`${value}T00:00:00Z`));
+function formatDate(value: string | null) {
+    return value ? date.format(new Date(`${value}T00:00:00Z`)) : '—';
+}
+
+function periodLabel(item: UnifiedImportHistoryItem) {
+    if (!item.statement_start_on && !item.statement_end_on) {
+        return null;
+    }
+
+    return `${formatDate(item.statement_start_on)} a ${formatDate(item.statement_end_on)}`;
+}
+
+function reconciliationHref(item: UnifiedImportHistoryItem) {
+    const query: Record<string, string> = {
+        import: String(item.id),
+        kind: item.kind === 'invoice' ? 'invoice' : 'statement',
+    };
+
+    if (item.kind === 'invoice' && item.credit_card_id) {
+        query.card = String(item.credit_card_id);
+    }
+
+    if (item.kind !== 'invoice' && item.financial_account_id) {
+        query.account = String(item.financial_account_id);
+    }
+
+    if (item.reference_month) {
+        query.period = item.reference_month;
+    }
+
+    return reconciliationIndex({ query });
+}
+
+function entriesHref(item: UnifiedImportHistoryItem) {
+    return transactionsIndex({
+        query: { import: String(item.id) },
+    });
 }
 
 function accountOptionLabel(account: FinancialImportAccountOption) {
@@ -620,11 +649,51 @@ function DestinationDialog({
     );
 }
 
+function ImportSummary({ item }: { item: UnifiedImportHistoryItem }) {
+    if (item.status === 'completed' && item.processing_summary) {
+        const summary = item.processing_summary;
+
+        return (
+            <div className="space-y-0.5 text-sm tabular-nums">
+                <p>
+                    {summary.automatically_reconciled} conciliados ·{' '}
+                    {summary.new_transactions_created} lançamentos
+                </p>
+                <p className="text-muted-foreground text-xs">
+                    {summary.transfers_identified} transferências ·{' '}
+                    {summary.invoice_payments_identified} pgto. fatura ·{' '}
+                    {summary.refunds_identified} reembolsos ·{' '}
+                    {summary.categorized_automatically} categorizados
+                </p>
+                <p className="text-muted-foreground text-xs">
+                    {summary.pending_categorization} sem categoria ·{' '}
+                    {summary.pending_confirmation} confirmações ·{' '}
+                    {summary.duplicates_ignored} duplicados
+                </p>
+            </div>
+        );
+    }
+
+    if (item.status === 'completed') {
+        return (
+            <p className="text-sm tabular-nums">
+                {item.imported_records} novos · {item.duplicate_records}{' '}
+                duplicados
+            </p>
+        );
+    }
+
+    if (item.error_message) {
+        return <p className="text-destructive text-xs">{item.error_message}</p>;
+    }
+
+    return <p className="text-muted-foreground text-sm">—</p>;
+}
+
 export default function ImportsIndex({
     accountOptions,
     cardOptions,
     imports,
-    entries,
     pendingEntriesCount,
     defaultReferenceMonth,
     filters,
@@ -634,12 +703,7 @@ export default function ImportsIndex({
 }: Props) {
     const listUrl = index.url();
     const onSort = (column: string) =>
-        sortListing(
-            listUrl,
-            filters,
-            column,
-            column === 'amount' || column === 'date' ? 'desc' : 'asc',
-        );
+        sortListing(listUrl, filters, column, 'asc');
     const [fileNames, setFileNames] = useState<string[]>([]);
     const [destination, setDestination] =
         useState<UnifiedImportHistoryItem | null>(null);
@@ -825,7 +889,7 @@ export default function ImportsIndex({
                     <ListingToolbar
                         url={listUrl}
                         query={filters}
-                        searchPlaceholder="Buscar arquivo ou movimento…"
+                        searchPlaceholder="Buscar arquivo…"
                         selects={[
                             {
                                 key: 'kind',
@@ -847,130 +911,6 @@ export default function ImportsIndex({
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Movimentos importados</CardTitle>
-                        <CardDescription>
-                            Extratos e faturas recentes, prontos para
-                            conciliar.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        {entries.length === 0 ? (
-                            hasRecords ? (
-                                <ListingEmpty />
-                            ) : (
-                            <div className="flex flex-col items-center gap-3 py-10 text-center">
-                                <Upload className="text-muted-foreground size-8" />
-                                <p className="font-medium">
-                                    Nenhum movimento importado
-                                </p>
-                            </div>
-                            )
-                        ) : (
-                            <div className="overflow-hidden rounded-lg border">
-                                <div className="text-muted-foreground hidden grid-cols-[minmax(0,1.5fr)_minmax(7rem,0.6fr)_minmax(8rem,0.7fr)_minmax(7rem,0.5fr)_minmax(7rem,0.6fr)] gap-3 border-b px-4 py-3 text-xs font-medium tracking-wide uppercase md:grid">
-                                    <SortableColumn
-                                        column="description"
-                                        label="Movimento"
-                                        sort={filters.sort}
-                                        direction={filters.direction}
-                                        onSort={onSort}
-                                    />
-                                    <SortableColumn
-                                        column="date"
-                                        label="Data"
-                                        sort={filters.sort}
-                                        direction={filters.direction}
-                                        onSort={onSort}
-                                    />
-                                    <SortableColumn
-                                        column="target"
-                                        label="Origem"
-                                        sort={filters.sort}
-                                        direction={filters.direction}
-                                        onSort={onSort}
-                                    />
-                                    <SortableColumn
-                                        column="status"
-                                        label="Situação"
-                                        sort={filters.sort}
-                                        direction={filters.direction}
-                                        onSort={onSort}
-                                    />
-                                    <SortableColumn
-                                        column="amount"
-                                        label="Valor"
-                                        sort={filters.sort}
-                                        direction={filters.direction}
-                                        onSort={onSort}
-                                        align="right"
-                                    />
-                                </div>
-                            <div className="divide-y">
-                                {entries.map((entry) => {
-                                    const amount = Number(entry.amount);
-                                    const isDebit = amount < 0;
-                                    const AmountIcon = isDebit
-                                        ? ArrowDownCircle
-                                        : ArrowUpCircle;
-
-                                    return (
-                                        <div
-                                            key={entry.id}
-                                            className="grid grid-cols-1 gap-2 px-4 py-3 md:grid-cols-[minmax(0,1.5fr)_minmax(7rem,0.6fr)_minmax(8rem,0.7fr)_minmax(7rem,0.5fr)_minmax(7rem,0.6fr)] md:items-center md:gap-3"
-                                        >
-                                            <div className="flex min-w-0 items-start gap-3">
-                                                <AmountIcon
-                                                    className={
-                                                        isDebit
-                                                            ? 'text-destructive mt-0.5 size-5 shrink-0'
-                                                            : 'text-positive mt-0.5 size-5 shrink-0'
-                                                    }
-                                                />
-                                                <div className="min-w-0">
-                                                    <p className="truncate font-medium">
-                                                        {entry.description}
-                                                    </p>
-                                                    {entry.installment_label && (
-                                                        <p className="text-muted-foreground mt-1 text-xs">
-                                                            {
-                                                                entry.installment_label
-                                                            }
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <p className="text-muted-foreground hidden text-sm md:block md:text-foreground">
-                                                {formatDate(entry.occurred_on)}
-                                            </p>
-                                            <p className="text-muted-foreground hidden truncate text-sm md:block md:text-foreground">
-                                                {entry.kind_label} ·{' '}
-                                                {entry.target_name}
-                                            </p>
-                                            <Badge variant="outline" className="w-fit">
-                                                {entry.is_reconciled
-                                                    ? 'Conciliado'
-                                                    : 'Pendente'}
-                                            </Badge>
-                                            <p
-                                                className={
-                                                    isDebit
-                                                        ? 'text-destructive text-right font-semibold tabular-nums'
-                                                        : 'text-positive text-right font-semibold tabular-nums'
-                                                }
-                                            >
-                                                {currency.format(amount)}
-                                            </p>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <History className="size-5" />
                             Histórico de arquivos
@@ -978,12 +918,17 @@ export default function ImportsIndex({
                     </CardHeader>
                     <CardContent>
                         {imports.length === 0 ? (
-                            <p className="text-muted-foreground py-6 text-center text-sm">
-                                Nenhum arquivo processado até agora.
-                            </p>
+                            <div className="flex flex-col items-center gap-3 py-10 text-center">
+                                <Upload className="text-muted-foreground size-8" />
+                                <p className="font-medium">
+                                    Nenhum arquivo processado até agora.
+                                </p>
+                            </div>
                         ) : (
-                            <div className="overflow-hidden rounded-lg border">
-                                <div className="text-muted-foreground hidden grid-cols-[minmax(0,1.6fr)_minmax(7rem,0.6fr)_minmax(7rem,0.5fr)_minmax(8rem,0.7fr)] gap-3 border-b px-4 py-3 text-xs font-medium tracking-wide uppercase md:grid">
+                            <div className="overflow-x-auto rounded-lg border">
+                                <div
+                                    className={`text-muted-foreground hidden min-w-[1180px] gap-3 border-b px-4 py-3 text-xs font-medium tracking-wide uppercase md:grid ${historyGridClass}`}
+                                >
                                     <SortableColumn
                                         column="filename"
                                         label="Arquivo"
@@ -991,6 +936,9 @@ export default function ImportsIndex({
                                         direction={filters.direction}
                                         onSort={onSort}
                                     />
+                                    <span>Conta / cartão</span>
+                                    <span>Data inicial</span>
+                                    <span>Data final</span>
                                     <SortableColumn
                                         column="kind"
                                         label="Tipo"
@@ -1005,99 +953,123 @@ export default function ImportsIndex({
                                         direction={filters.direction}
                                         onSort={onSort}
                                     />
-                                    <span className="text-right">Resumo</span>
+                                    <span>Resumo</span>
+                                    <span className="text-right">Ações</span>
                                 </div>
-                            <div className="divide-y">
-                                {imports.map((item) => (
-                                    <div
-                                        key={`${item.kind}-${item.id}`}
-                                        className="grid grid-cols-1 gap-2 px-4 py-3 md:grid-cols-[minmax(0,1.6fr)_minmax(7rem,0.6fr)_minmax(7rem,0.5fr)_minmax(8rem,0.7fr)] md:items-center md:gap-3"
-                                    >
-                                        <div className="min-w-0">
-                                            <p className="truncate font-medium">
-                                                {item.source_filename}
-                                            </p>
-                                            <p className="text-muted-foreground mt-1 text-xs">
-                                                {item.target_name ?? 'Sem destino'}
-                                                {item.created_at
-                                                    ? ` · ${dateTime.format(new Date(item.created_at))}`
-                                                    : ''}
-                                            </p>
-                                        </div>
-                                        <p className="text-muted-foreground hidden text-sm md:block md:text-foreground">
-                                            {item.kind_label}
-                                        </p>
-                                        <Badge
-                                            variant={
-                                                item.status === 'completed'
-                                                    ? 'secondary'
-                                                    : item.status === 'failed'
-                                                      ? 'destructive'
-                                                      : 'outline'
-                                            }
-                                            className="w-fit"
+                                <div className="divide-y">
+                                    {imports.map((item) => (
+                                        <div
+                                            key={`${item.kind}-${item.id}`}
+                                            className={`grid grid-cols-1 gap-2 px-4 py-3 md:min-w-[1180px] md:items-start md:gap-3 ${historyGridClass}`}
                                         >
-                                            {item.status_label}
-                                        </Badge>
-                                        <div className="text-right text-sm">
-                                            {item.can_reassign && (
-                                                <div className="mb-2">
+                                            <div className="min-w-0">
+                                                <p className="truncate font-medium">
+                                                    {item.source_filename}
+                                                </p>
+                                                <p className="text-muted-foreground mt-1 text-xs">
+                                                    {item.created_at
+                                                        ? dateTime.format(
+                                                              new Date(
+                                                                  item.created_at,
+                                                              ),
+                                                          )
+                                                        : '—'}
+                                                </p>
+                                            </div>
+                                            <div className="min-w-0">
+                                                <p className="truncate text-sm">
+                                                    {item.target_name ??
+                                                        'Sem destino'}
+                                                </p>
+                                                {periodLabel(item) && (
+                                                    <p className="text-muted-foreground mt-1 text-xs md:hidden">
+                                                        {periodLabel(item)}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <p className="hidden text-sm tabular-nums md:block">
+                                                {formatDate(
+                                                    item.statement_start_on,
+                                                )}
+                                            </p>
+                                            <p className="hidden text-sm tabular-nums md:block">
+                                                {formatDate(
+                                                    item.statement_end_on,
+                                                )}
+                                            </p>
+                                            <p className="text-muted-foreground hidden min-w-0 text-sm md:block md:text-foreground">
+                                                {item.kind_label}
+                                            </p>
+                                            <div className="min-w-0">
+                                                <Badge
+                                                    variant={
+                                                        item.status ===
+                                                        'completed'
+                                                            ? 'secondary'
+                                                            : item.status ===
+                                                                'failed'
+                                                              ? 'destructive'
+                                                              : 'outline'
+                                                    }
+                                                    className="max-w-full whitespace-normal"
+                                                >
+                                                    {item.status_label}
+                                                </Badge>
+                                            </div>
+                                            <div className="min-w-0">
+                                                <ImportSummary item={item} />
+                                            </div>
+                                            <div className="flex min-w-0 flex-col items-stretch gap-1.5">
+                                                {item.can_reassign && (
                                                     <Button
                                                         type="button"
                                                         variant="outline"
                                                         size="sm"
                                                         onClick={() =>
-                                                            setDestination(item)
+                                                            setDestination(
+                                                                item,
+                                                            )
                                                         }
                                                     >
                                                         Alterar destino
                                                     </Button>
-                                                </div>
-                                            )}
-                                            {item.status === 'completed' ? (
-                                                item.processing_summary ? (
-                                                    <div className="space-y-0.5 tabular-nums">
-                                                        <p>
-                                                            {item.processing_summary.automatically_reconciled}{' '}
-                                                            conciliados ·{' '}
-                                                            {item.processing_summary.new_transactions_created}{' '}
-                                                            lançamentos
-                                                        </p>
-                                                        <p className="text-muted-foreground text-xs">
-                                                            {item.processing_summary.transfers_identified}{' '}
-                                                            transferências ·{' '}
-                                                            {item.processing_summary.invoice_payments_identified}{' '}
-                                                            pgto. fatura ·{' '}
-                                                            {item.processing_summary.refunds_identified}{' '}
-                                                            reembolsos ·{' '}
-                                                            {item.processing_summary.categorized_automatically}{' '}
-                                                            categorizados
-                                                        </p>
-                                                        <p className="text-muted-foreground text-xs">
-                                                            {item.processing_summary.pending_categorization}{' '}
-                                                            sem categoria ·{' '}
-                                                            {item.processing_summary.pending_confirmation}{' '}
-                                                            confirmações ·{' '}
-                                                            {item.processing_summary.duplicates_ignored}{' '}
-                                                            duplicados
-                                                        </p>
-                                                    </div>
-                                                ) : (
-                                                    <p className="tabular-nums">
-                                                        {item.imported_records} novos
-                                                        · {item.duplicate_records}{' '}
-                                                        duplicados
-                                                    </p>
-                                                )
-                                            ) : item.error_message ? (
-                                                <p className="text-destructive text-xs">
-                                                    {item.error_message}
-                                                </p>
-                                            ) : null}
+                                                )}
+                                                {item.kind !== 'document' &&
+                                                    item.status ===
+                                                        'completed' && (
+                                                        <>
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                asChild
+                                                            >
+                                                                <Link
+                                                                    href={reconciliationHref(
+                                                                        item,
+                                                                    )}
+                                                                >
+                                                                    Conciliar
+                                                                </Link>
+                                                            </Button>
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                asChild
+                                                            >
+                                                                <Link
+                                                                    href={entriesHref(
+                                                                        item,
+                                                                    )}
+                                                                >
+                                                                    Lançamentos
+                                                                </Link>
+                                                            </Button>
+                                                        </>
+                                                    )}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
-                            </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </CardContent>

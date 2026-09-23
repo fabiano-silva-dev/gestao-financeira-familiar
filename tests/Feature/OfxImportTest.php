@@ -118,7 +118,7 @@ class OfxImportTest extends TestCase
                 ->has('imports', 1)
                 ->where('imports.0.imported_records', 2)
                 ->where('imports.0.processing_summary.automatically_reconciled', 0)
-                ->has('entries', 2)
+                ->missing('entries')
                 ->where('pendingEntriesCount', 2)
             );
     }

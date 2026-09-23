@@ -15,7 +15,9 @@ use App\Models\Category;
 use App\Models\CreditCard;
 use App\Models\FamilyMember;
 use App\Models\FinancialAccount;
+use App\Models\FinancialImport;
 use App\Models\FinancialTransaction;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Finance\ExpenseRefundService;
 use App\Services\Finance\FinancialEntryService;
@@ -45,7 +47,7 @@ class FinancialTransactionController extends Controller
             ['description', 'date', 'category', 'status', 'amount'],
             'date',
             'desc',
-            ['type', 'status', 'settlement', 'category', 'account', 'from', 'to'],
+            ['type', 'status', 'settlement', 'category', 'account', 'from', 'to', 'import'],
         );
         $query = $workspace
             ->financialTransactions()
@@ -134,6 +136,37 @@ class FinancialTransactionController extends Controller
             });
         }
 
+        $importId = $listing->intFilter('import');
+        $importScope = null;
+
+        if ($importId !== null) {
+            $import = $workspace->financialImports()->find($importId);
+
+            if ($import instanceof FinancialImport) {
+                $importScope = [
+                    'id' => $import->id,
+                    'filename' => $import->source_filename,
+                ];
+                $query->where(function (Builder $inner) use ($importId): void {
+                    $inner->whereHas(
+                        'accountMovements.bankStatementEntry',
+                        fn (Builder $entries) => $entries->where(
+                            'financial_import_id',
+                            $importId,
+                        ),
+                    )->orWhereHas(
+                        'installments.cardStatementEntry',
+                        fn (Builder $entries) => $entries->where(
+                            'financial_import_id',
+                            $importId,
+                        ),
+                    );
+                });
+            } else {
+                $query->whereRaw('1 = 0');
+            }
+        }
+
         $from = $listing->filter('from');
         $to = $listing->filter('to');
 
@@ -203,6 +236,7 @@ class FinancialTransactionController extends Controller
                 ->get()
                 ->map(fn (FinancialTransaction $entry): array => $this->entryData($entry)),
             'filters' => $listing->toArray(),
+            'importScope' => $importScope,
             'hasRecords' => $workspace->financialTransactions()
                 ->whereIn('type', [
                     FinancialTransactionType::Income,
@@ -338,7 +372,7 @@ class FinancialTransactionController extends Controller
         int $entry,
     ): RedirectResponse {
         $user = $request->user();
-        abort_unless($user instanceof \App\Models\User, 403);
+        abort_unless($user instanceof User, 403);
         $financialEntry = $this->findEntry($entry);
 
         $this->refundService->register(

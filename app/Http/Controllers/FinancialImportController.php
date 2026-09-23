@@ -7,8 +7,6 @@ use App\Enums\FinancialImportType;
 use App\Http\Requests\ReassignFinancialImportRequest;
 use App\Http\Requests\ResolveFinancialImportRequest;
 use App\Http\Requests\StoreFinancialImportRequest;
-use App\Models\BankStatementEntry;
-use App\Models\CardStatementEntry;
 use App\Models\CreditCard;
 use App\Models\FinancialAccount;
 use App\Models\FinancialImport;
@@ -37,8 +35,8 @@ class FinancialImportController extends Controller
         $workspace = $this->workspace();
         $listing = ListingQuery::from(
             $request,
-            ['description', 'date', 'target', 'status', 'amount', 'filename', 'kind'],
-            'date',
+            ['filename', 'kind', 'status'],
+            'recent',
             'desc',
             ['kind', 'status'],
         );
@@ -86,65 +84,6 @@ class FinancialImportController extends Controller
 
                 return $this->importData($import);
             });
-
-        $bankQuery = $workspace->bankStatementEntries()->with('financialAccount:id,name');
-        $cardQuery = $workspace->cardStatementEntries()->with([
-            'creditCard:id,name,last_four',
-            'invoice:id,reference_month',
-        ]);
-
-        if ($listing->search !== '') {
-            $term = $listing->searchTerm();
-            $bankQuery->where('description', 'ilike', $term);
-            $cardQuery->where('description', 'ilike', $term);
-        }
-
-        if ($kind === 'invoice') {
-            $bankQuery->whereRaw('1 = 0');
-        } elseif ($kind === 'statement') {
-            $cardQuery->whereRaw('1 = 0');
-        } elseif ($kind === 'document') {
-            $bankQuery->whereRaw('1 = 0');
-            $cardQuery->whereRaw('1 = 0');
-        }
-
-        $entryStatus = $listing->filter('status');
-
-        if ($entryStatus === 'completed') {
-            $bankQuery->where('is_reconciled', true);
-            $cardQuery->where('is_reconciled', true);
-        } elseif ($entryStatus === 'processing') {
-            $bankQuery->where('is_reconciled', false);
-            $cardQuery->where('is_reconciled', false);
-        } elseif (in_array($entryStatus, ['failed', 'needs_confirmation'], true)) {
-            $bankQuery->whereRaw('1 = 0');
-            $cardQuery->whereRaw('1 = 0');
-        }
-
-        $bankEntries = $bankQuery
-            ->latest('occurred_on')
-            ->latest('id')
-            ->limit(30)
-            ->get()
-            ->map(fn (BankStatementEntry $entry): array => $this->bankEntryData($entry));
-        $cardEntries = $cardQuery
-            ->latest('purchased_on')
-            ->latest('id')
-            ->limit(30)
-            ->get()
-            ->map(fn (CardStatementEntry $entry): array => $this->cardEntryData($entry));
-
-        $entries = $listing->sortMapped(
-            $bankEntries->concat($cardEntries),
-            [
-                'description' => fn (array $entry): string => $entry['description'],
-                'date' => fn (array $entry): string => $entry['occurred_on'],
-                'target' => fn (array $entry): string => $entry['target_name'],
-                'status' => fn (array $entry): string => $entry['is_reconciled'] ? '1' : '0',
-                'amount' => fn (array $entry): int => ListingQuery::moneyToCents($entry['amount']),
-                'kind' => fn (array $entry): string => $entry['kind'],
-            ],
-        )->take(50)->values();
 
         return Inertia::render('imports/index', [
             'accountOptions' => $workspace->financialAccounts()
@@ -202,7 +141,6 @@ class FinancialImportController extends Controller
                 ],
             ],
             'imports' => $imports,
-            'entries' => $entries->all(),
             'pendingEntriesCount' => $workspace->bankStatementEntries()
                 ->where('is_reconciled', false)
                 ->count()
@@ -214,9 +152,7 @@ class FinancialImportController extends Controller
                     ->count(),
             'defaultReferenceMonth' => now()->format('Y-m'),
             'filters' => $listing->toArray(),
-            'hasRecords' => $workspace->financialImports()->exists()
-                || $workspace->bankStatementEntries()->exists()
-                || $workspace->cardStatementEntries()->exists(),
+            'hasRecords' => $workspace->financialImports()->exists(),
             'kindOptions' => [
                 ['value' => 'statement', 'label' => 'Extrato'],
                 ['value' => 'invoice', 'label' => 'Fatura'],
@@ -395,41 +331,5 @@ class FinancialImportController extends Controller
         };
 
         return ucfirst($institution).' · '.$type;
-    }
-
-    /** @return array<string, mixed> */
-    private function bankEntryData(BankStatementEntry $entry): array
-    {
-        return [
-            'id' => 'statement-'.$entry->id,
-            'kind' => 'statement',
-            'kind_label' => 'Extrato',
-            'target_name' => $entry->financialAccount->name,
-            'occurred_on' => $entry->occurred_on->toDateString(),
-            'description' => $entry->description,
-            'amount' => $entry->amount,
-            'is_reconciled' => $entry->is_reconciled,
-            'installment_label' => null,
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    private function cardEntryData(CardStatementEntry $entry): array
-    {
-        $installmentLabel = $entry->installment_number !== null && $entry->total_installments !== null
-            ? "Parcela {$entry->installment_number}/{$entry->total_installments}"
-            : null;
-
-        return [
-            'id' => 'invoice-'.$entry->id,
-            'kind' => 'invoice',
-            'kind_label' => 'Fatura',
-            'target_name' => "{$entry->creditCard->name} · final {$entry->creditCard->last_four}",
-            'occurred_on' => $entry->purchased_on->toDateString(),
-            'description' => $entry->description,
-            'amount' => $entry->amount,
-            'is_reconciled' => $entry->is_reconciled,
-            'installment_label' => $installmentLabel,
-        ];
     }
 }

@@ -138,18 +138,6 @@ export type UnifiedImportHistoryItem = {
     created_at: string | null;
 };
 
-export type UnifiedImportEntry = {
-    id: string;
-    kind: UnifiedImportKind;
-    kind_label: string;
-    target_name: string;
-    occurred_on: string;
-    description: string;
-    amount: string;
-    is_reconciled: boolean;
-    installment_label: string | null;
-};
-
 export type CardStatementEntry = {
     id: number;
     card_name: string;

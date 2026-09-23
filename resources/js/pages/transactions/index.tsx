@@ -31,6 +31,10 @@ import type {
 type Props = {
     entries: FinancialEntry[];
     filters: ListingQueryState;
+    importScope: {
+        id: number;
+        filename: string;
+    } | null;
     hasRecords: boolean;
     typeOptions: ListingFilterOption[];
     statusOptions: ListingFilterOption[];
@@ -173,6 +177,7 @@ export default function TransactionsIndex() {
     const {
         entries,
         filters,
+        importScope,
         hasRecords,
         typeOptions,
         statusOptions,
@@ -204,11 +209,31 @@ export default function TransactionsIndex() {
                             Lançamentos
                         </h1>
                         <p className="text-muted-foreground mt-1 text-sm">
-                            Lista das receitas, despesas e transferências de{' '}
-                            <span className="text-foreground font-medium">
-                                {workspace.current?.name}
-                            </span>
-                            . Abra uma linha para ver e ajustar o lançamento.
+                            {importScope ? (
+                                <>
+                                    Lançamentos originados do arquivo{' '}
+                                    <span className="text-foreground font-medium">
+                                        {importScope.filename}
+                                    </span>
+                                    .{' '}
+                                    <Link
+                                        href={index()}
+                                        className="text-primary font-medium"
+                                    >
+                                        Ver todos
+                                    </Link>
+                                </>
+                            ) : (
+                                <>
+                                    Lista das receitas, despesas e
+                                    transferências de{' '}
+                                    <span className="text-foreground font-medium">
+                                        {workspace.current?.name}
+                                    </span>
+                                    . Abra uma linha para ver e ajustar o
+                                    lançamento.
+                                </>
+                            )}
                         </p>
                     </div>
 
