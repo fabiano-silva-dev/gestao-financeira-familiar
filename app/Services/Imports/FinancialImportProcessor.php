@@ -184,6 +184,8 @@ final class FinancialImportProcessor
         array &$counters,
     ): void {
         try {
+            $this->clearRuleAutomation($entry);
+
             if ($this->tryInvoicePayment($workspace, $entry, $user)) {
                 $counters['invoice_payments_identified']++;
 
@@ -303,6 +305,9 @@ final class FinancialImportProcessor
                     $level,
                     'reconciled_existing',
                     'Um lançamento existente compatível foi encontrado e conciliado.',
+                    (int) ($candidates[0]['score'] ?? 0),
+                    'account_movement',
+                    $movement->id,
                 );
 
                 return;
@@ -310,12 +315,17 @@ final class FinancialImportProcessor
         }
 
         if ($this->hasRelevantCandidate($candidates, 72)) {
+            [$relatedType, $relatedId] = $this->candidateAuditRelation($candidates[0]);
+
             $this->recordRuleAutomation(
                 $entry,
                 $rule['rule_id'],
                 $level,
                 'pending_ambiguous_match',
                 'Há candidato existente relevante, mas a correspondência não é segura o suficiente para concluir automaticamente.',
+                (int) ($candidates[0]['score'] ?? 0),
+                $relatedType,
+                $relatedId,
             );
 
             return;
@@ -361,6 +371,9 @@ final class FinancialImportProcessor
                     $level,
                     'created_and_reconciled',
                     'Não havia lançamento existente compatível; a transferência foi criada pelo serviço do domínio e conciliada.',
+                    null,
+                    'account_movement',
+                    $processed->account_movement_id,
                 );
             }
 
@@ -393,24 +406,78 @@ final class FinancialImportProcessor
                 $level,
                 'created_and_reconciled',
                 'Não havia lançamento existente compatível; o lançamento foi criado pelo serviço do domínio e conciliado.',
+                null,
+                'account_movement',
+                $processed->account_movement_id,
             );
         }
     }
 
     private function recordRuleAutomation(
-        BankStatementEntry $entry,
+        BankStatementEntry|CardStatementEntry $entry,
         int $ruleId,
         ClassificationRuleAutomationLevel $level,
         string $result,
         string $reason,
+        ?int $score = null,
+        ?string $relatedType = null,
+        ?int $relatedId = null,
     ): void {
         $entry->update([
             'matched_classification_rule_id' => $ruleId,
             'automation_level_applied' => $level->value,
             'automation_result' => $result,
+            'automation_score' => $score,
+            'automation_related_type' => $relatedType,
+            'automation_related_id' => $relatedId,
             'automation_reason' => $reason,
             'automation_processed_at' => now(),
         ]);
+    }
+
+    private function clearRuleAutomation(
+        BankStatementEntry|CardStatementEntry $entry,
+    ): void {
+        if (
+            $entry->getAttribute('matched_classification_rule_id') === null
+            && $entry->getAttribute('automation_result') === null
+        ) {
+            return;
+        }
+
+        $entry->update([
+            'matched_classification_rule_id' => null,
+            'automation_level_applied' => null,
+            'automation_result' => null,
+            'automation_score' => null,
+            'automation_related_type' => null,
+            'automation_related_id' => null,
+            'automation_reason' => null,
+            'automation_processed_at' => null,
+        ]);
+        $entry->refresh();
+    }
+
+    /**
+     * @param  array<string, mixed>  $candidate
+     * @return array{0: string|null, 1: int|null}
+     */
+    private function candidateAuditRelation(array $candidate): array
+    {
+        foreach ([
+            'movement_id' => 'account_movement',
+            'planned_transaction_id' => 'financial_transaction',
+            'transaction_id' => 'financial_transaction',
+            'installment_id' => 'transaction_installment',
+        ] as $key => $type) {
+            $id = $candidate[$key] ?? null;
+
+            if (is_int($id) || (is_string($id) && ctype_digit($id))) {
+                return [$type, (int) $id];
+            }
+        }
+
+        return [null, null];
     }
 
     /** @param array<string, int> $counters */
@@ -422,11 +489,16 @@ final class FinancialImportProcessor
     ): void {
         $invoice = $entry->invoice;
 
-        if (! $invoice instanceof CreditCardInvoice) {
+        if (
+            ! $invoice instanceof CreditCardInvoice
+            || $this->interpreter->moneyToCents($entry->amount) <= 0
+        ) {
             return;
         }
 
         try {
+            $this->clearRuleAutomation($entry);
+
             $availableInstallments = $invoice->installments()
                 ->with(['transaction', 'cardStatementEntry'])
                 ->get()
@@ -437,6 +509,132 @@ final class FinancialImportProcessor
             $candidates = $this->cardSuggestions->candidates($entry, $availableInstallments);
             $matchesExisting = $this->canAutoReconcile($candidates);
             $hasRelevantCandidate = $this->hasRelevantCandidate($candidates, 75);
+            $rule = $this->ruleMatcher->match($workspace, $entry->description);
+
+            if (is_array($rule)) {
+                $level = ClassificationRuleAutomationLevel::tryFrom($rule['automation_level'])
+                    ?? ClassificationRuleAutomationLevel::ClassifyOnly;
+
+                if ($rule['action_type'] !== FinancialTransactionType::Expense->value) {
+                    $this->recordRuleAutomation(
+                        $entry,
+                        $rule['rule_id'],
+                        $level,
+                        'pending_incompatible_rule',
+                        'Linhas de compra da fatura só podem usar regra do tipo despesa.',
+                    );
+
+                    return;
+                }
+
+                $updates = [];
+
+                if (is_string($rule['payee_name']) && trim($rule['payee_name']) !== '') {
+                    $updates['suggested_payee_name'] = trim($rule['payee_name']);
+                }
+
+                if ($rule['category_id'] !== null) {
+                    $updates['suggested_category_id'] = $rule['category_id'];
+                }
+
+                if ($updates !== []) {
+                    $entry->update($updates);
+                    $entry->refresh();
+                }
+
+                if (! $level->canReconcile()) {
+                    $this->recordRuleAutomation(
+                        $entry,
+                        $rule['rule_id'],
+                        $level,
+                        'classified_pending',
+                        'A regra está configurada para somente classificar.',
+                    );
+
+                    return;
+                }
+
+                $this->cardMaterialization->materialize(
+                    $workspace,
+                    $entry->creditCard,
+                    $invoice,
+                    $entry,
+                    $user,
+                    requireClassification: true,
+                    allowCreate: $level->canCreate(),
+                );
+
+                $entry->refresh();
+
+                if ($entry->is_reconciled) {
+                    if ($matchesExisting) {
+                        [$relatedType, $relatedId] = $this->candidateAuditRelation($candidates[0]);
+                        $counters['matched_existing']++;
+                        $this->recordRuleAutomation(
+                            $entry,
+                            $rule['rule_id'],
+                            $level,
+                            'reconciled_existing',
+                            'Uma compra ou parcela existente compatível foi encontrada e conciliada.',
+                            (int) ($candidates[0]['score'] ?? 0),
+                            $relatedType,
+                            $relatedId,
+                        );
+                    } else {
+                        $counters['new_transactions_created']++;
+                        $this->recordRuleAutomation(
+                            $entry,
+                            $rule['rule_id'],
+                            $level,
+                            'created_and_reconciled',
+                            'Não havia compra existente compatível; a compra foi criada pelo serviço do domínio e conciliada.',
+                            null,
+                            'transaction_installment',
+                            $entry->transaction_installment_id,
+                        );
+                    }
+
+                    return;
+                }
+
+                if ($hasRelevantCandidate) {
+                    [$relatedType, $relatedId] = $this->candidateAuditRelation($candidates[0]);
+                    $this->recordRuleAutomation(
+                        $entry,
+                        $rule['rule_id'],
+                        $level,
+                        'pending_ambiguous_match',
+                        'Há compra ou parcela existente relevante, mas a correspondência não é segura o suficiente para concluir automaticamente.',
+                        (int) ($candidates[0]['score'] ?? 0),
+                        $relatedType,
+                        $relatedId,
+                    );
+
+                    return;
+                }
+
+                if (! $level->canCreate()) {
+                    $this->recordRuleAutomation(
+                        $entry,
+                        $rule['rule_id'],
+                        $level,
+                        'pending_no_existing_match',
+                        'Nenhuma compra ou parcela existente compatível foi encontrada e este nível não permite criar uma nova.',
+                    );
+
+                    return;
+                }
+
+                $this->recordRuleAutomation(
+                    $entry,
+                    $rule['rule_id'],
+                    $level,
+                    'pending_rule_not_applied',
+                    'A regra permitia criar, mas a linha não pôde ser concluída automaticamente.',
+                );
+
+                return;
+            }
 
             $this->cardMaterialization->materialize(
                 $workspace,
@@ -445,18 +643,13 @@ final class FinancialImportProcessor
                 $entry,
                 $user,
                 requireClassification: true,
+                allowCreate: false,
             );
 
             $entry->refresh();
 
-            if (! $entry->is_reconciled) {
-                return;
-            }
-
-            if ($matchesExisting) {
+            if ($entry->is_reconciled && $matchesExisting) {
                 $counters['matched_existing']++;
-            } elseif (! $hasRelevantCandidate) {
-                $counters['new_transactions_created']++;
             }
         } catch (ValidationException) {
             // Linhas ambíguas permanecem pendentes sem interromper a importação.
