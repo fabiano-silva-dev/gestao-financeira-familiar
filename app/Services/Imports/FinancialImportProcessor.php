@@ -2,6 +2,7 @@
 
 namespace App\Services\Imports;
 
+use App\Enums\ClassificationRuleAutomationLevel;
 use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\FinancialImportStatus;
 use App\Enums\FinancialTransactionType;
@@ -183,6 +184,30 @@ final class FinancialImportProcessor
         array &$counters,
     ): void {
         try {
+            if ($this->tryInvoicePayment($workspace, $entry, $user)) {
+                $counters['invoice_payments_identified']++;
+
+                return;
+            }
+
+            if ($this->tryRefund($workspace, $entry, $user)) {
+                $counters['refunds_identified']++;
+
+                return;
+            }
+
+            $rule = $this->ruleMatcher->match(
+                $workspace,
+                $entry->description,
+                $entry->financial_account_id,
+            );
+
+            if (is_array($rule)) {
+                $this->processMatchedRule($workspace, $entry, $user, $rule, $counters);
+
+                return;
+            }
+
             $movements = $this->unmatchedMovements($workspace, $entry->financial_account_id);
             $candidates = $this->bankSuggestions->candidates($entry, $movements);
 
@@ -199,38 +224,193 @@ final class FinancialImportProcessor
                 }
             }
 
-            if ($this->tryInvoicePayment($workspace, $entry, $user)) {
-                $counters['invoice_payments_identified']++;
-
-                return;
-            }
-
             if ($this->tryTransfer($workspace, $entry, $user)) {
                 $counters['transfers_identified']++;
-
-                return;
-            }
-
-            if ($this->tryRefund($workspace, $entry, $user)) {
-                $counters['refunds_identified']++;
-
-                return;
-            }
-
-            $processed = $this->entryActions->createBankTransaction(
-                $workspace,
-                $entry->refresh(),
-                $user,
-            );
-
-            if ($processed->is_reconciled) {
-                $counters['new_transactions_created']++;
             }
         } catch (ValidationException) {
             // Ambiguidades ou exceções reais permanecem na caixa de entrada.
         } catch (Throwable $exception) {
             report($exception);
         }
+    }
+
+    /**
+     * @param  array{
+     *     rule_id: int,
+     *     action_type: string,
+     *     automation_level: string,
+     *     payee_name: string|null,
+     *     category_id: int|null,
+     *     counterpart_account_id: int|null
+     * }  $rule
+     * @param  array<string, int>  $counters
+     */
+    private function processMatchedRule(
+        Workspace $workspace,
+        BankStatementEntry $entry,
+        User $user,
+        array $rule,
+        array &$counters,
+    ): void {
+        $level = ClassificationRuleAutomationLevel::tryFrom($rule['automation_level'])
+            ?? ClassificationRuleAutomationLevel::ClassifyOnly;
+
+        $updates = [];
+
+        if (is_string($rule['payee_name']) && trim($rule['payee_name']) !== '') {
+            $updates['suggested_payee_name'] = trim($rule['payee_name']);
+        }
+
+        if (
+            $rule['action_type'] !== FinancialTransactionType::Transfer->value
+            && $rule['category_id'] !== null
+        ) {
+            $updates['suggested_category_id'] = $rule['category_id'];
+        }
+
+        if ($updates !== []) {
+            $entry->update($updates);
+            $entry->refresh();
+        }
+
+        if (! $level->canReconcile()) {
+            $this->recordRuleAutomation(
+                $entry,
+                $rule['rule_id'],
+                $level,
+                'classified_pending',
+                'A regra está configurada para somente classificar.',
+            );
+
+            return;
+        }
+
+        $movements = $this->unmatchedMovements($workspace, $entry->financial_account_id);
+        $candidates = $this->bankSuggestions->candidates($entry, $movements);
+
+        if ($this->canAutoReconcile($candidates)) {
+            $movement = $movements->firstWhere('id', $candidates[0]['movement_id']);
+
+            if (
+                $movement instanceof AccountMovement
+                && $this->entryActions->acceptsAutomaticBankLink($workspace, $entry, $movement)
+            ) {
+                $this->bankReconciliation->reconcile($workspace, $entry, $movement, $user);
+                $counters['matched_existing']++;
+                $this->recordRuleAutomation(
+                    $entry->refresh(),
+                    $rule['rule_id'],
+                    $level,
+                    'reconciled_existing',
+                    'Um lançamento existente compatível foi encontrado e conciliado.',
+                );
+
+                return;
+            }
+        }
+
+        if ($this->hasRelevantCandidate($candidates, 72)) {
+            $this->recordRuleAutomation(
+                $entry,
+                $rule['rule_id'],
+                $level,
+                'pending_ambiguous_match',
+                'Há candidato existente relevante, mas a correspondência não é segura o suficiente para concluir automaticamente.',
+            );
+
+            return;
+        }
+
+        if (! $level->canCreate()) {
+            $this->recordRuleAutomation(
+                $entry,
+                $rule['rule_id'],
+                $level,
+                'pending_no_existing_match',
+                'Nenhum lançamento existente compatível foi encontrado e este nível não permite criar um novo.',
+            );
+
+            return;
+        }
+
+        if ($rule['action_type'] === FinancialTransactionType::Transfer->value) {
+            if ($rule['counterpart_account_id'] === null) {
+                $this->recordRuleAutomation(
+                    $entry,
+                    $rule['rule_id'],
+                    $level,
+                    'pending_missing_counterpart',
+                    'A regra de transferência não possui a outra conta definida.',
+                );
+
+                return;
+            }
+
+            $processed = $this->entryActions->createBankTransfer(
+                $workspace,
+                $entry,
+                $user,
+                $rule['counterpart_account_id'],
+            );
+
+            if ($processed->is_reconciled) {
+                $counters['transfers_identified']++;
+                $this->recordRuleAutomation(
+                    $processed,
+                    $rule['rule_id'],
+                    $level,
+                    'created_and_reconciled',
+                    'Não havia lançamento existente compatível; a transferência foi criada pelo serviço do domínio e conciliada.',
+                );
+            }
+
+            return;
+        }
+
+        if ($rule['category_id'] === null) {
+            $this->recordRuleAutomation(
+                $entry,
+                $rule['rule_id'],
+                $level,
+                'pending_missing_category',
+                'A regra não possui uma categoria válida para criar o lançamento.',
+            );
+
+            return;
+        }
+
+        $processed = $this->entryActions->createBankTransaction(
+            $workspace,
+            $entry->refresh(),
+            $user,
+        );
+
+        if ($processed->is_reconciled) {
+            $counters['new_transactions_created']++;
+            $this->recordRuleAutomation(
+                $processed,
+                $rule['rule_id'],
+                $level,
+                'created_and_reconciled',
+                'Não havia lançamento existente compatível; o lançamento foi criado pelo serviço do domínio e conciliado.',
+            );
+        }
+    }
+
+    private function recordRuleAutomation(
+        BankStatementEntry $entry,
+        int $ruleId,
+        ClassificationRuleAutomationLevel $level,
+        string $result,
+        string $reason,
+    ): void {
+        $entry->update([
+            'matched_classification_rule_id' => $ruleId,
+            'automation_level_applied' => $level->value,
+            'automation_result' => $result,
+            'automation_reason' => $reason,
+            'automation_processed_at' => now(),
+        ]);
     }
 
     /** @param array<string, int> $counters */
@@ -401,27 +581,6 @@ final class FinancialImportProcessor
         BankStatementEntry $entry,
         User $user,
     ): bool {
-        $rule = $this->ruleMatcher->match(
-            $workspace,
-            $entry->description,
-            $entry->financial_account_id,
-        );
-
-        if (is_array($rule) && $rule['action_type'] === FinancialTransactionType::Transfer->value) {
-            if ($rule['counterpart_account_id'] === null) {
-                return false;
-            }
-
-            $this->entryActions->createBankTransfer(
-                $workspace,
-                $entry,
-                $user,
-                $rule['counterpart_account_id'],
-            );
-
-            return $entry->refresh()->is_reconciled;
-        }
-
         if (! $this->interpreter->isLikelyTransfer($entry->description, $entry->transaction_type)) {
             return false;
         }
