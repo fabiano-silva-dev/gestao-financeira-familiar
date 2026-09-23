@@ -80,7 +80,7 @@ export default function ClassificationRulesIndex() {
                             Regras de classificação
                         </h1>
                         <p className="text-muted-foreground text-sm">
-                            Classifique automaticamente movimentos parecidos de{' '}
+                            Defina como movimentos parecidos serão classificados e automatizados em{' '}
                             <span className="font-medium">
                                 {workspace.current?.name}
                             </span>
