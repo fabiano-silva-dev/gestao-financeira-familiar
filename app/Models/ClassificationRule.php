@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ClassificationRuleAutomationLevel;
 use App\Enums\ClassificationRuleMatchType;
 use App\Enums\FinancialTransactionType;
 use Database\Factories\ClassificationRuleFactory;
@@ -13,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * @property ClassificationRuleMatchType $match_type
  * @property FinancialTransactionType $action_type
+ * @property ClassificationRuleAutomationLevel $automation_level
  * @property-read Category|null $category
  * @property-read FinancialAccount|null $financialAccount
  * @property-read FinancialAccount|null $counterpartAccount
@@ -22,6 +24,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'match_type',
     'pattern',
     'action_type',
+    'automation_level',
     'payee_name',
     'category_id',
     'financial_account_id',
@@ -73,6 +76,7 @@ class ClassificationRule extends Model
         return [
             'match_type' => ClassificationRuleMatchType::class,
             'action_type' => FinancialTransactionType::class,
+            'automation_level' => ClassificationRuleAutomationLevel::class,
             'is_active' => 'boolean',
         ];
     }
