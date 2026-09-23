@@ -284,6 +284,8 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::post('conciliacao/importacoes/{import}/reprocessar', [BankReconciliationController::class, 'reprocess'])
         ->whereNumber('import')
         ->name('reconciliation.reprocess');
+    Route::post('conciliacao/lote/regras', [BankReconciliationController::class, 'bulkConfirmRules'])
+        ->name('reconciliation.bulk-confirm-rules');
     Route::post('conciliacao/{entry}', [BankReconciliationController::class, 'store'])
         ->whereNumber('entry')
         ->name('reconciliation.store');

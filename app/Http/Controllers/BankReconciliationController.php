@@ -218,6 +218,78 @@ class BankReconciliationController extends Controller
         ]);
     }
 
+    public function bulkConfirmRules(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'entries' => ['required', 'array', 'min:1', 'max:250'],
+            'entries.*' => ['integer', 'distinct'],
+        ]);
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $workspace = $this->workspace();
+        $confirmed = 0;
+        $skipped = 0;
+
+        foreach ($validated['entries'] as $entryId) {
+            $entry = $workspace->bankStatementEntries()
+                ->where('is_reconciled', false)
+                ->where('is_ignored', false)
+                ->find((int) $entryId);
+
+            if (! $entry instanceof BankStatementEntry) {
+                $skipped++;
+
+                continue;
+            }
+
+            $rule = $this->ruleMatcher->match(
+                $workspace,
+                $entry->description,
+                $entry->financial_account_id,
+            );
+
+            if (
+                ! is_array($rule)
+                || ! in_array($rule['action_type'], [
+                    FinancialTransactionType::Expense->value,
+                    FinancialTransactionType::Income->value,
+                ], true)
+                || $rule['category_id'] === null
+            ) {
+                $skipped++;
+
+                continue;
+            }
+
+            try {
+                $this->entryActions->classifyBankEntry(
+                    $workspace,
+                    $entry,
+                    $rule['payee_name'],
+                    $rule['category_id'],
+                );
+                $this->entryActions->createBankTransaction(
+                    $workspace,
+                    $entry->refresh(),
+                    $user,
+                );
+                $confirmed++;
+            } catch (\Illuminate\Validation\ValidationException) {
+                $skipped++;
+            }
+        }
+
+        Inertia::flash('toast', [
+            'type' => $confirmed > 0 ? 'success' : 'warning',
+            'message' => $confirmed > 0
+                ? "{$confirmed} movimento(s) conciliado(s) pelas regras existentes."
+                    .($skipped > 0 ? " {$skipped} ficaram para revisão." : '')
+                : 'Nenhum movimento selecionado pôde ser conciliado automaticamente. Revise as exceções.',
+        ]);
+
+        return to_route('reconciliation.index', $this->filterQuery($request));
+    }
+
     public function store(
         StoreBankReconciliationRequest $request,
         int $entry,

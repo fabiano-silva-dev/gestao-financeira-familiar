@@ -1,5 +1,5 @@
-import { Head, Link } from '@inertiajs/react';
-import { BadgeCheck, FolderSearch, ListFilter } from 'lucide-react';
+import { Head, Link, router } from '@inertiajs/react';
+import { BadgeCheck, CheckCheck, FolderSearch, ListFilter, Rows3 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ListingEmpty } from '@/components/listing/listing-empty';
 import { ListingToolbar } from '@/components/listing/listing-toolbar';
@@ -69,8 +69,49 @@ export default function ReconciliationIndex({
         useState<ReconciliationPendingEntry | null>(null);
     const [rulePrompt, setRulePrompt] =
         useState<ClassificationRulePrompt | null>(null);
+    const [compact, setCompact] = useState(true);
+    const [selected, setSelected] = useState<number[]>([]);
     const listUrl = index.url();
     const currentView = filters.view ?? 'all';
+    const compactEntries = entries.filter(
+        (entry) => !entry.is_reconciled,
+    );
+    const ruleEligibleIds = compactEntries
+        .filter(
+            (entry) =>
+                entry.kind === 'statement' &&
+                entry.matcher_rule_id !== null &&
+                entry.matcher_category_id !== null,
+        )
+        .map((entry) => entry.id);
+
+    useEffect(() => {
+        setSelected((current) =>
+            current.filter((id) => ruleEligibleIds.includes(id)),
+        );
+    }, [entries]);
+
+    const confirmSelected = () => {
+        if (selected.length === 0) {
+            return;
+        }
+
+        router.post(
+            '/conciliacao/lote/regras',
+            {
+                entries: selected,
+                ...Object.fromEntries(
+                    Object.entries(filters).filter(
+                        ([, value]) => value !== null && value !== undefined,
+                    ),
+                ),
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () => setSelected([]),
+            },
+        );
+    };
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -210,11 +251,22 @@ export default function ReconciliationIndex({
                             ))}
                         </div>
 
-                        <ListingToolbar
-                            url={listUrl}
-                            query={filters}
-                            searchPlaceholder="Buscar descrição original…"
-                        />
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <ListingToolbar
+                                url={listUrl}
+                                query={filters}
+                                searchPlaceholder="Buscar descrição original…"
+                            />
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setCompact((value) => !value)}
+                            >
+                                <Rows3 />
+                                {compact ? 'Visão detalhada' : 'Visão compacta'}
+                            </Button>
+                        </div>
                     </>
                 )}
 
@@ -247,6 +299,122 @@ export default function ReconciliationIndex({
                             description={emptyCopy().description}
                         />
                     )
+                ) : compact ? (
+                    <Card className="gap-0 overflow-hidden py-0">
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2">
+                            <div className="text-muted-foreground text-xs">
+                                Revisão rápida: regras determinísticas já são aplicadas na importação. Marque apenas sugestões de regra que ainda ficaram pendentes.
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={ruleEligibleIds.length === 0}
+                                    onClick={() =>
+                                        setSelected(
+                                            selected.length === ruleEligibleIds.length
+                                                ? []
+                                                : ruleEligibleIds,
+                                        )
+                                    }
+                                >
+                                    {selected.length === ruleEligibleIds.length &&
+                                    ruleEligibleIds.length > 0
+                                        ? 'Desmarcar'
+                                        : 'Marcar regras'}
+                                </Button>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    disabled={selected.length === 0}
+                                    onClick={confirmSelected}
+                                >
+                                    <CheckCheck />
+                                    Conciliar {selected.length || ''} selecionado(s)
+                                </Button>
+                            </div>
+                        </div>
+                        <div className="text-muted-foreground hidden grid-cols-[2.5rem_7rem_minmax(0,1.5fr)_minmax(0,1fr)_8rem] gap-3 border-b px-3 py-2 text-[11px] font-medium tracking-wide uppercase md:grid">
+                            <span />
+                            <span>Data</span>
+                            <span>Lançamento</span>
+                            <span>Sugestão</span>
+                            <span className="text-right">Valor</span>
+                        </div>
+                        <div className="divide-y">
+                            {compactEntries.map((entry) => {
+                                const eligible =
+                                    entry.kind === 'statement' &&
+                                    entry.matcher_rule_id !== null &&
+                                    entry.matcher_category_id !== null;
+                                const category = [
+                                    entry.matcher_parent_category_name ??
+                                        entry.matcher_category_name,
+                                    entry.matcher_subcategory_name,
+                                ]
+                                    .filter(Boolean)
+                                    .join(' > ');
+                                const suggestion =
+                                    category ||
+                                    entry.suggestion_description ||
+                                    entry.related_description ||
+                                    'Revisar';
+
+                                return (
+                                    <div
+                                        key={`${entry.kind}-${entry.id}`}
+                                        className="grid gap-2 px-3 py-2 text-sm md:grid-cols-[2.5rem_7rem_minmax(0,1.5fr)_minmax(0,1fr)_8rem] md:items-center md:gap-3"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            className="size-4"
+                                            aria-label={`Selecionar ${entry.description}`}
+                                            disabled={!eligible}
+                                            checked={selected.includes(entry.id)}
+                                            onChange={(event) =>
+                                                setSelected((current) =>
+                                                    event.target.checked
+                                                        ? [...current, entry.id]
+                                                        : current.filter(
+                                                              (id) => id !== entry.id,
+                                                          ),
+                                                )
+                                            }
+                                        />
+                                        <span className="text-muted-foreground tabular-nums">
+                                            {entry.occurred_on}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            className="min-w-0 text-left"
+                                            onClick={() => setDetailsEntry(entry)}
+                                        >
+                                            <span className="block truncate font-medium">
+                                                {entry.description}
+                                            </span>
+                                            <span className="text-muted-foreground block truncate text-xs">
+                                                {entry.source_name}
+                                            </span>
+                                        </button>
+                                        <div className="min-w-0">
+                                            <span className="block truncate">
+                                                {suggestion}
+                                            </span>
+                                            {eligible && (
+                                                <span className="text-positive text-xs">
+                                                    Regra existente
+                                                </span>
+                                            )}
+                                        </div>
+                                        <span className="text-right font-medium tabular-nums">
+                                            R$ {entry.amount}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </Card>
                 ) : (
                     <Card className="gap-0 overflow-hidden py-0">
                         <div className="text-muted-foreground hidden gap-4 border-b px-4 py-3 text-xs font-medium tracking-wide uppercase lg:grid lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1.2fr)_13rem]">
