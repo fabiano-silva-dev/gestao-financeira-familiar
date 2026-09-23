@@ -234,10 +234,10 @@ export default function ClassificationRuleForm({
                                 </SelectContent>
                             </Select>
                             <p className="text-muted-foreground text-xs">
-                                Despesa e receita usam categoria e valem em
-                                qualquer extrato. Transferência vale só na conta
-                                do extrato e usa a outra conta, sem criar
-                                receita nem despesa.
+                                Despesa pode classificar extratos e compras
+                                da fatura; receita vale para extratos.
+                                Transferência vale só na conta do extrato e usa
+                                a outra conta, sem criar receita nem despesa.
                             </p>
                             <InputError message={errors.action_type} />
                         </div>
