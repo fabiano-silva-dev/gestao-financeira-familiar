@@ -210,15 +210,6 @@ class CardStatementReconciliationTest extends TestCase
         $invoice = $this->invoice($workspace, $card);
         $installment = $this->installment($workspace, $card, $invoice);
         $entry = $this->statementEntry($workspace, $card, $invoice);
-        $rule = ClassificationRule::factory()->for($workspace)->create([
-            'name' => 'Vôlei existente',
-            'match_type' => ClassificationRuleMatchType::Contains,
-            'pattern' => 'Vôlei Lidiane',
-            'action_type' => FinancialTransactionType::Expense,
-            'automation_level' => ClassificationRuleAutomationLevel::ReconcileExisting,
-            'payee_name' => 'Vôlei Lidiane',
-            'category_id' => $category->id,
-        ]);
         $request = $this->actingAs($user)
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
 
@@ -703,6 +694,15 @@ class CardStatementReconciliationTest extends TestCase
             categoryId: $category->id,
         );
         $entry = $this->statementEntry($workspace, $card, $invoice);
+        $rule = ClassificationRule::factory()->for($workspace)->create([
+            'name' => 'Vôlei existente',
+            'match_type' => ClassificationRuleMatchType::Contains,
+            'pattern' => 'Vôlei Lidiane',
+            'action_type' => FinancialTransactionType::Expense,
+            'automation_level' => ClassificationRuleAutomationLevel::ReconcileExisting,
+            'payee_name' => 'Vôlei Lidiane',
+            'category_id' => $category->id,
+        ]);
         $request = $this->actingAs($user)
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
 
