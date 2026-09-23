@@ -7,6 +7,11 @@ export type ClassificationRuleMatchType =
 
 export type ClassificationRuleActionType = 'income' | 'expense' | 'transfer';
 
+export type ClassificationRuleAutomationLevel =
+    | 'classify_only'
+    | 'reconcile_existing'
+    | 'create_and_reconcile';
+
 export type ClassificationRule = {
     id: number;
     name: string;
@@ -16,6 +21,9 @@ export type ClassificationRule = {
     pattern: string;
     action_type: ClassificationRuleActionType;
     action_type_label: string;
+    automation_level: ClassificationRuleAutomationLevel;
+    automation_level_label: string;
+    automation_level_help: string;
     payee_name: string | null;
     category_id: number | null;
     category_name: string | null;
@@ -31,6 +39,7 @@ export type ClassificationRuleDraft = {
     match_type: string;
     pattern: string;
     action_type: ClassificationRuleActionType | string;
+    automation_level: ClassificationRuleAutomationLevel | string;
     payee_name: string;
     category_id: number | null;
     financial_account_id: number | null;
@@ -47,6 +56,12 @@ export type ClassificationRuleMatchTypeOption = {
 export type ClassificationRuleActionTypeOption = {
     value: ClassificationRuleActionType;
     label: string;
+};
+
+export type ClassificationRuleAutomationLevelOption = {
+    value: ClassificationRuleAutomationLevel;
+    label: string;
+    help: string;
 };
 
 export type ClassificationRulePrompt = {

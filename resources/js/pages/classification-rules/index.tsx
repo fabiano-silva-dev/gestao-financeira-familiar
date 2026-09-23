@@ -12,6 +12,7 @@ import { create, edit, index } from '@/routes/classification-rules';
 import type {
     ClassificationRule,
     ClassificationRuleActionTypeOption,
+    ClassificationRuleAutomationLevelOption,
     ClassificationRuleMatchTypeOption,
     ListingFilterOption,
     ListingQueryState,
@@ -23,11 +24,12 @@ type Props = {
     hasRecords: boolean;
     matchTypeOptions: ClassificationRuleMatchTypeOption[];
     actionTypeOptions: ClassificationRuleActionTypeOption[];
+    automationLevelOptions: ClassificationRuleAutomationLevelOption[];
     statusOptions: ListingFilterOption[];
 };
 
 const rowGridClass =
-    'md:grid-cols-[minmax(0,1.3fr)_minmax(7rem,0.55fr)_minmax(0,0.9fr)_minmax(7rem,0.55fr)_minmax(12rem,0.8fr)]';
+    'md:grid-cols-[minmax(0,1.25fr)_minmax(7rem,0.5fr)_minmax(10rem,0.75fr)_minmax(0,0.85fr)_minmax(7rem,0.5fr)_minmax(12rem,0.8fr)]';
 
 function RuleActions({ rule }: { rule: ClassificationRule }) {
     return (
@@ -60,6 +62,7 @@ export default function ClassificationRulesIndex() {
         hasRecords,
         matchTypeOptions,
         actionTypeOptions,
+        automationLevelOptions,
         statusOptions,
         workspace,
     } = usePage<Props>().props;
@@ -77,7 +80,7 @@ export default function ClassificationRulesIndex() {
                             Regras de classificação
                         </h1>
                         <p className="text-muted-foreground text-sm">
-                            Classifique automaticamente movimentos parecidos de{' '}
+                            Defina como movimentos parecidos serão classificados e automatizados em{' '}
                             <span className="font-medium">
                                 {workspace.current?.name}
                             </span>
@@ -131,6 +134,13 @@ export default function ClassificationRulesIndex() {
                                     allLabel: 'Todos',
                                 },
                                 {
+                                    key: 'automation_level',
+                                    label: 'Automação',
+                                    value: filters.automation_level,
+                                    options: automationLevelOptions,
+                                    allLabel: 'Todas',
+                                },
+                                {
                                     key: 'match_type',
                                     label: 'Correspondência',
                                     value: filters.match_type,
@@ -164,6 +174,13 @@ export default function ClassificationRulesIndex() {
                                     <SortableColumn
                                         column="action_type"
                                         label="Tipo"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <SortableColumn
+                                        column="automation_level"
+                                        label="Automação"
                                         sort={filters.sort}
                                         direction={filters.direction}
                                         onSort={onSort}
@@ -219,6 +236,12 @@ export default function ClassificationRulesIndex() {
                                                 className="w-fit"
                                             >
                                                 {rule.action_type_label}
+                                            </Badge>
+                                            <Badge
+                                                variant="secondary"
+                                                className="w-fit"
+                                            >
+                                                {rule.automation_level_label}
                                             </Badge>
                                             <Badge
                                                 variant="outline"

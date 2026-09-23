@@ -36,6 +36,7 @@ final class CardStatementMaterializationService
         CardStatementEntry $entry,
         User $user,
         bool $requireClassification = false,
+        bool $allowCreate = true,
     ): void {
         if ($entry->is_reconciled || $this->moneyToCents($entry->amount) <= 0) {
             return;
@@ -87,6 +88,10 @@ final class CardStatementMaterializationService
         }
 
         if ($this->hasRelevantCandidate($candidates)) {
+            return;
+        }
+
+        if (! $allowCreate) {
             return;
         }
 

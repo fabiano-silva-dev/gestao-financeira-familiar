@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\ClassificationRuleAutomationLevel;
 use App\Enums\ClassificationRuleMatchType;
 use App\Enums\FinancialTransactionType;
 use App\Models\ClassificationRule;
@@ -24,6 +25,7 @@ class ClassificationRuleFactory extends Factory
             'match_type' => ClassificationRuleMatchType::Contains,
             'pattern' => fake()->unique()->word(),
             'action_type' => FinancialTransactionType::Expense,
+            'automation_level' => ClassificationRuleAutomationLevel::ClassifyOnly,
             'payee_name' => fake()->company(),
             'category_id' => null,
             'financial_account_id' => null,

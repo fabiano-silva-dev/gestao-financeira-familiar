@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\CategoryType;
+use App\Enums\ClassificationRuleAutomationLevel;
 use App\Enums\ClassificationRuleMatchType;
 use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\FinancialImportStatus;
@@ -247,6 +248,7 @@ class OfxImportTest extends TestCase
             'match_type' => ClassificationRuleMatchType::Contains->value,
             'pattern' => 'POSTO IPIRANGA',
             'action_type' => FinancialTransactionType::Expense->value,
+            'automation_level' => ClassificationRuleAutomationLevel::CreateAndReconcile,
             'payee_name' => 'Posto Ipiranga',
             'category_id' => $category->id,
         ]);
@@ -280,9 +282,105 @@ class OfxImportTest extends TestCase
         $this->assertDatabaseHas('bank_statement_entries', [
             'external_id' => 'posto-001',
             'is_reconciled' => true,
+            'automation_level_applied' => ClassificationRuleAutomationLevel::CreateAndReconcile->value,
+            'automation_result' => 'created_and_reconciled',
         ]);
         $this->assertSame(1, $summary['categorized_automatically']);
         $this->assertSame(0, $summary['pending_categorization']);
+    }
+
+    public function test_rule_can_only_classify_and_leave_imported_entry_pending(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $category = Category::factory()->for($workspace)->create([
+            'name' => 'Mercado',
+            'type' => CategoryType::Expense->value,
+        ]);
+        $rule = ClassificationRule::factory()->for($workspace)->create([
+            'match_type' => ClassificationRuleMatchType::Contains,
+            'pattern' => 'SUPERMERCADO TESTE',
+            'action_type' => FinancialTransactionType::Expense,
+            'automation_level' => ClassificationRuleAutomationLevel::ClassifyOnly,
+            'payee_name' => 'Supermercado Teste',
+            'category_id' => $category->id,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.ofx.store'), [
+                'financial_account_id' => $account->id,
+                'file' => UploadedFile::fake()->createWithContent(
+                    'mercado.ofx',
+                    $this->ofxFile([[
+                        'type' => 'DEBIT',
+                        'date' => '20260913120000[-3:BRT]',
+                        'amount' => '-50.00',
+                        'fitid' => 'mercado-001',
+                        'name' => 'SUPERMERCADO TESTE',
+                        'memo' => 'Compra',
+                    ]]),
+                ),
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseCount('financial_transactions', 0);
+        $this->assertDatabaseHas('bank_statement_entries', [
+            'external_id' => 'mercado-001',
+            'is_reconciled' => false,
+            'suggested_payee_name' => 'Supermercado Teste',
+            'suggested_category_id' => $category->id,
+            'matched_classification_rule_id' => $rule->id,
+            'automation_level_applied' => ClassificationRuleAutomationLevel::ClassifyOnly->value,
+            'automation_result' => 'classified_pending',
+        ]);
+    }
+
+    public function test_reconcile_existing_rule_never_creates_a_new_transaction(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $category = Category::factory()->for($workspace)->create([
+            'name' => 'Serviços',
+            'type' => CategoryType::Expense->value,
+        ]);
+        $rule = ClassificationRule::factory()->for($workspace)->create([
+            'match_type' => ClassificationRuleMatchType::Contains,
+            'pattern' => 'SERVICO SEM LANCAMENTO',
+            'action_type' => FinancialTransactionType::Expense,
+            'automation_level' => ClassificationRuleAutomationLevel::ReconcileExisting,
+            'payee_name' => 'Serviço Teste',
+            'category_id' => $category->id,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.ofx.store'), [
+                'financial_account_id' => $account->id,
+                'file' => UploadedFile::fake()->createWithContent(
+                    'servico.ofx',
+                    $this->ofxFile([[
+                        'type' => 'DEBIT',
+                        'date' => '20260914120000[-3:BRT]',
+                        'amount' => '-75.00',
+                        'fitid' => 'servico-001',
+                        'name' => 'SERVICO SEM LANCAMENTO',
+                        'memo' => 'Pagamento',
+                    ]]),
+                ),
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseCount('financial_transactions', 0);
+        $this->assertDatabaseHas('bank_statement_entries', [
+            'external_id' => 'servico-001',
+            'is_reconciled' => false,
+            'matched_classification_rule_id' => $rule->id,
+            'automation_level_applied' => ClassificationRuleAutomationLevel::ReconcileExisting->value,
+            'automation_result' => 'pending_no_existing_match',
+        ]);
     }
 
     public function test_import_identifies_invoice_payment_without_creating_expense(): void

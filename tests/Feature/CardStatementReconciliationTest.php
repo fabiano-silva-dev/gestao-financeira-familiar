@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\CategoryType;
+use App\Enums\ClassificationRuleAutomationLevel;
 use App\Enums\ClassificationRuleMatchType;
 use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\FinancialImportStatus;
@@ -647,6 +648,7 @@ class CardStatementReconciliationTest extends TestCase
             'match_type' => ClassificationRuleMatchType::Contains,
             'pattern' => 'Porto Garibaldi',
             'action_type' => FinancialTransactionType::Expense,
+            'automation_level' => ClassificationRuleAutomationLevel::CreateAndReconcile,
             'payee_name' => 'Porto Garibaldi',
             'category_id' => $category->id,
         ]);
@@ -671,6 +673,11 @@ class CardStatementReconciliationTest extends TestCase
             'Porto Garibaldi',
             $entry->transactionInstallment?->transaction?->payee_name,
         );
+        $this->assertSame(
+            ClassificationRuleAutomationLevel::CreateAndReconcile->value,
+            $entry->automation_level_applied,
+        );
+        $this->assertSame('created_and_reconciled', $entry->automation_result);
         $this->assertDatabaseCount('financial_transactions', 1);
     }
 
@@ -687,6 +694,15 @@ class CardStatementReconciliationTest extends TestCase
             categoryId: $category->id,
         );
         $entry = $this->statementEntry($workspace, $card, $invoice);
+        $rule = ClassificationRule::factory()->for($workspace)->create([
+            'name' => 'Vôlei existente',
+            'match_type' => ClassificationRuleMatchType::Contains,
+            'pattern' => 'Vôlei Lidiane',
+            'action_type' => FinancialTransactionType::Expense,
+            'automation_level' => ClassificationRuleAutomationLevel::ReconcileExisting,
+            'payee_name' => 'Vôlei Lidiane',
+            'category_id' => $category->id,
+        ]);
         $request = $this->actingAs($user)
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
 
@@ -704,6 +720,15 @@ class CardStatementReconciliationTest extends TestCase
         $entry->refresh();
         $this->assertTrue($entry->is_reconciled);
         $this->assertSame($installment->id, $entry->transaction_installment_id);
+        $this->assertSame($rule->id, $entry->matched_classification_rule_id);
+        $this->assertSame(
+            ClassificationRuleAutomationLevel::ReconcileExisting->value,
+            $entry->automation_level_applied,
+        );
+        $this->assertSame('reconciled_existing', $entry->automation_result);
+        $this->assertSame('transaction_installment', $entry->automation_related_type);
+        $this->assertSame($installment->id, $entry->automation_related_id);
+        $this->assertNotNull($entry->automation_score);
         $this->assertDatabaseCount('financial_transactions', 1);
     }
 

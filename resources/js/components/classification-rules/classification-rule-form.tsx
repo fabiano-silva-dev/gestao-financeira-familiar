@@ -18,6 +18,8 @@ import type {
     ClassificationRule,
     ClassificationRuleActionType,
     ClassificationRuleActionTypeOption,
+    ClassificationRuleAutomationLevel,
+    ClassificationRuleAutomationLevelOption,
     ClassificationRuleDraft,
     ClassificationRuleMatchType,
     ClassificationRuleMatchTypeOption,
@@ -30,6 +32,7 @@ type Props = {
     draft?: ClassificationRuleDraft;
     matchTypeOptions: ClassificationRuleMatchTypeOption[];
     actionTypeOptions: ClassificationRuleActionTypeOption[];
+    automationLevelOptions: ClassificationRuleAutomationLevelOption[];
     categoryOptions: ReconciliationCategoryOption[];
     accountOptions: ReconciliationAccountOption[];
     returnTo?: string | null;
@@ -40,6 +43,7 @@ export default function ClassificationRuleForm({
     draft,
     matchTypeOptions,
     actionTypeOptions,
+    automationLevelOptions,
     categoryOptions,
     accountOptions,
     returnTo = null,
@@ -58,6 +62,12 @@ export default function ClassificationRuleForm({
             draft?.action_type ??
             'expense') as ClassificationRuleActionType,
     );
+    const [automationLevel, setAutomationLevel] =
+        useState<ClassificationRuleAutomationLevel>(
+            (rule?.automation_level ??
+                draft?.automation_level ??
+                'classify_only') as ClassificationRuleAutomationLevel,
+        );
     const [payee, setPayee] = useState(
         rule?.payee_name ?? draft?.payee_name ?? '',
     );
@@ -65,6 +75,10 @@ export default function ClassificationRuleForm({
     const selectedHelp =
         matchTypeOptions.find((option) => option.value === matchType)?.help ??
         '';
+    const selectedAutomationHelp =
+        automationLevelOptions.find(
+            (option) => option.value === automationLevel,
+        )?.help ?? '';
     const parents = useMemo(
         () =>
             categoryOptions.filter(
@@ -220,13 +234,53 @@ export default function ClassificationRuleForm({
                                 </SelectContent>
                             </Select>
                             <p className="text-muted-foreground text-xs">
-                                Despesa e receita usam categoria e valem em
-                                qualquer extrato. Transferência vale só na conta
-                                do extrato e usa a outra conta, sem criar
-                                receita nem despesa.
+                                Despesa pode classificar extratos e compras
+                                da fatura; receita vale para extratos.
+                                Transferência vale só na conta do extrato e usa
+                                a outra conta, sem criar receita nem despesa.
                             </p>
                             <InputError message={errors.action_type} />
                         </div>
+                    </div>
+
+                    <div className="grid gap-2">
+                        <Label htmlFor="automation_level">
+                            Nível de automação
+                        </Label>
+                        <input
+                            type="hidden"
+                            name="automation_level"
+                            value={automationLevel}
+                        />
+                        <Select
+                            value={automationLevel}
+                            onValueChange={(value) =>
+                                setAutomationLevel(
+                                    value as ClassificationRuleAutomationLevel,
+                                )
+                            }
+                        >
+                            <SelectTrigger
+                                id="automation_level"
+                                className="w-full"
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {automationLevelOptions.map((option) => (
+                                    <SelectItem
+                                        key={option.value}
+                                        value={option.value}
+                                    >
+                                        {option.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <p className="text-muted-foreground text-xs">
+                            {selectedAutomationHelp}
+                        </p>
+                        <InputError message={errors.automation_level} />
                     </div>
 
                     <div className="grid gap-4 sm:grid-cols-2">

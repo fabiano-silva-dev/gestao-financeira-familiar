@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { create, edit, index } from '@/routes/classification-rules';
 import type {
     ClassificationRuleActionTypeOption,
+    ClassificationRuleAutomationLevelOption,
     ClassificationRuleDraft,
     ClassificationRuleMatchHint,
     ClassificationRuleMatchTypeOption,
@@ -17,6 +18,7 @@ export default function ClassificationRulesCreate({
     matchingRule,
     matchTypeOptions,
     actionTypeOptions,
+    automationLevelOptions,
     categoryOptions,
     accountOptions,
     returnTo,
@@ -25,6 +27,7 @@ export default function ClassificationRulesCreate({
     matchingRule: ClassificationRuleMatchHint | null;
     matchTypeOptions: ClassificationRuleMatchTypeOption[];
     actionTypeOptions: ClassificationRuleActionTypeOption[];
+    automationLevelOptions: ClassificationRuleAutomationLevelOption[];
     categoryOptions: ReconciliationCategoryOption[];
     accountOptions: ReconciliationAccountOption[];
     returnTo: string | null;
@@ -72,6 +75,7 @@ export default function ClassificationRulesCreate({
                             draft={draft}
                             matchTypeOptions={matchTypeOptions}
                             actionTypeOptions={actionTypeOptions}
+                            automationLevelOptions={automationLevelOptions}
                             categoryOptions={categoryOptions}
                             accountOptions={accountOptions}
                             returnTo={returnTo}

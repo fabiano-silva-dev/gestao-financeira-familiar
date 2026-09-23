@@ -44,6 +44,7 @@ final class ClassificationRuleMatcher
      * @return array{
      *     rule_id: int,
      *     action_type: string,
+     *     automation_level: string,
      *     payee_name: string|null,
      *     category_id: int|null,
      *     counterpart_account_id: int|null
@@ -73,6 +74,7 @@ final class ClassificationRuleMatcher
                 'match_type',
                 'pattern',
                 'action_type',
+                'automation_level',
                 'payee_name',
                 'category_id',
                 'counterpart_account_id',
@@ -96,6 +98,7 @@ final class ClassificationRuleMatcher
         return [
             'rule_id' => $matched->id,
             'action_type' => $matched->action_type->value,
+            'automation_level' => $matched->automation_level->value,
             'payee_name' => $payee,
             'category_id' => $this->nullableId($matched->category_id),
             'counterpart_account_id' => $this->nullableId($matched->counterpart_account_id),
