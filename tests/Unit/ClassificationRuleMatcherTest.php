@@ -95,6 +95,7 @@ class ClassificationRuleMatcherTest extends TestCase
         $this->assertSame('Fabiano Carvalho', $match['payee_name']);
         $this->assertSame($category->id, $match['category_id']);
         $this->assertSame('expense', $match['action_type']);
+        $this->assertSame('classify_only', $match['automation_level']);
     }
 
     public function test_matches_a_transfer_rule_only_on_its_statement_account(): void
