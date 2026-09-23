@@ -226,11 +226,15 @@ class FinancialImportAutoDetectionTest extends TestCase
                         $this->simplePdf([
                             'Mercado Pago',
                             'EXTRATO DE CONTA',
+                            'Lidiane Ribeiro Ferro da Silva',
+                            'CPF/CNPJ: 97775975091 Agencia: 1 Conta: 59404058338',
+                            'Periodo: De 01-06-2026 al 30-06-2026',
                             'Saldo inicial: R$ 0,00',
                             'Entradas: R$ 1.000,00',
                             'Saidas: R$ -1.000,00',
                             'DETALHE DOS MOVIMENTOS',
-                            '08-06-2026 Pagamento de fatura R$ -768,95',
+                            'Data Descricao ID da operacao Valor Saldo',
+                            '08-06-2026 Pagamento de fatura 166802160620 R$ -768,95 R$ 231,05',
                             'Saldo final: R$ 231,05',
                         ]),
                     ),
@@ -246,8 +250,84 @@ class FinancialImportAutoDetectionTest extends TestCase
             'bank_statement',
             data_get($pending->metadata, 'autodetection.document_type'),
         );
-        $this->assertContains('parser', data_get($pending->metadata, 'missing_fields'));
-        $this->assertNotContains('credit_card_id', data_get($pending->metadata, 'missing_fields'));
+        $this->assertSame(
+            'mercado_pago_account_statement',
+            data_get($pending->metadata, 'autodetection.parser_key'),
+        );
+        $this->assertSame(
+            'account_number',
+            data_get($pending->metadata, 'autodetection.identifier_type'),
+        );
+        $this->assertSame(
+            '59404058338',
+            data_get($pending->metadata, 'autodetection.identifier_value'),
+        );
+        $this->assertSame('2026-06', data_get($pending->metadata, 'autodetection.reference_month'));
+        $this->assertSame(
+            'Lidiane Ribeiro Ferro da Silva',
+            data_get($pending->metadata, 'autodetection.holder_name'),
+        );
+        $this->assertSame(['financial_account_id'], data_get($pending->metadata, 'missing_fields'));
+    }
+
+    public function test_mercado_pago_account_pdf_is_auto_imported_when_account_matches(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Mercado Pago Lidiane',
+            'institution' => 'Mercado Pago',
+            'account_number' => '59404058338',
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.store'), [
+                'files' => [
+                    UploadedFile::fake()->createWithContent(
+                        'extrato-mercado-pago-junho.pdf',
+                        $this->simplePdf([
+                            'Mercado Pago',
+                            'EXTRATO DE CONTA',
+                            'Lidiane Ribeiro Ferro da Silva',
+                            'CPF/CNPJ: 97775975091 Agencia: 1 Conta: 59404058338',
+                            'Periodo: De 01-06-2026 al 30-06-2026',
+                            'DETALHE DOS MOVIMENTOS',
+                            'Data Descricao ID da operacao Valor Saldo',
+                            'Reembolso de compra',
+                            '17-06-2026 Mercado Libre 162800502640 R$ 39,80 R$ 39,80',
+                            '18-06-2026 Rendimentos 1745432447364 R$ 0,03 R$ 39,83',
+                        ]),
+                    ),
+                ],
+            ])
+            ->assertRedirect(route('imports.index'))
+            ->assertSessionHasNoErrors();
+
+        $import = FinancialImport::query()->sole();
+
+        $this->assertSame(FinancialImportType::Ofx, $import->type);
+        $this->assertSame(FinancialImportStatus::Completed, $import->status);
+        $this->assertSame($account->id, $import->financial_account_id);
+        $this->assertSame(2, $import->total_records);
+        $this->assertSame('2026-06-01', $import->statement_start_on?->toDateString());
+        $this->assertSame('2026-06-30', $import->statement_end_on?->toDateString());
+        $this->assertSame(
+            'mercado_pago_account_statement',
+            data_get($import->metadata, 'autodetection.parser_key'),
+        );
+        $this->assertDatabaseHas('bank_statement_entries', [
+            'financial_account_id' => $account->id,
+            'external_id' => '162800502640',
+            'description' => 'Reembolso de compra Mercado Libre',
+            'amount' => '39.80',
+        ]);
+        $this->assertDatabaseHas('bank_statement_entries', [
+            'financial_account_id' => $account->id,
+            'external_id' => '1745432447364',
+            'description' => 'Rendimentos',
+            'amount' => '0.03',
+        ]);
     }
 
     public function test_mercado_pago_pdf_detects_card_holder_name(): void

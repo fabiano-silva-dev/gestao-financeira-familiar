@@ -48,9 +48,10 @@ class OfxImportTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('imports/index')
-                ->has('pdfLayouts', 2)
+                ->has('pdfLayouts', 3)
                 ->where('pdfLayouts.0.value', 'banrisul_current_account')
-                ->where('pdfLayouts.1.value', 'mercado_pago_credit_card')
+                ->where('pdfLayouts.1.value', 'mercado_pago_account_statement')
+                ->where('pdfLayouts.2.value', 'mercado_pago_credit_card')
             );
     }
 
@@ -622,6 +623,52 @@ class OfxImportTest extends TestCase
         ]);
     }
 
+    public function test_user_can_import_mercado_pago_pdf_statement(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Mercado Pago Lidiane',
+            'institution' => 'Mercado Pago',
+            'account_number' => '59404058338',
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.ofx.store'), [
+                'financial_account_id' => $account->id,
+                'pdf_layout' => 'mercado_pago_account_statement',
+                'file' => UploadedFile::fake()->createWithContent(
+                    'extrato-mercado-pago.pdf',
+                    $this->mercadoPagoAccountPdf(),
+                ),
+            ])
+            ->assertRedirect(route('imports.index'))
+            ->assertSessionHasNoErrors();
+
+        $financialImport = FinancialImport::query()->sole();
+
+        $this->assertSame(FinancialImportStatus::Completed, $financialImport->status);
+        $this->assertSame(2, $financialImport->total_records);
+        $this->assertSame('59404058338', $financialImport->external_account_identifier);
+        $this->assertSame('2026-06-01', $financialImport->statement_start_on?->toDateString());
+        $this->assertSame('2026-06-30', $financialImport->statement_end_on?->toDateString());
+        $this->assertSame(
+            'mercado_pago_account_statement',
+            data_get($financialImport->metadata, 'pdf_layout'),
+        );
+        $this->assertDatabaseHas('bank_statement_entries', [
+            'external_id' => '162800502640',
+            'description' => 'Reembolso de compra Mercado Libre',
+            'amount' => '39.80',
+        ]);
+        $this->assertDatabaseHas('bank_statement_entries', [
+            'external_id' => '1745432447364',
+            'description' => 'Rendimentos',
+            'amount' => '0.03',
+        ]);
+    }
+
     public function test_header_only_bank_csv_is_recorded_as_no_movement(): void
     {
         Storage::fake('local');
@@ -777,6 +824,47 @@ class OfxImportTest extends TestCase
             '03   RESGATE CDB                             000006   10.000,00',
             '     PIX ENVIADO                             065918      354,00-',
             '      NOME: VOLMIR JAQUES CECHIN',
+        ];
+        $stream = "BT /F1 9 Tf\n";
+        $y = 750;
+
+        foreach ($lines as $line) {
+            $escaped = str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $line);
+            $stream .= sprintf("1 0 0 1 24 %d Tm (%s) Tj\n", $y, $escaped);
+            $y -= 14;
+        }
+
+        $stream .= 'ET';
+        $length = strlen($stream);
+
+        return <<<PDF
+        %PDF-1.4
+        1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+        2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj
+        3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj
+        4 0 obj<</Length {$length}>>stream
+        {$stream}
+        endstream
+        endobj
+        5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Courier>>endobj
+        trailer<</Root 1 0 R>>
+        %%EOF
+        PDF;
+    }
+
+    private function mercadoPagoAccountPdf(): string
+    {
+        $lines = [
+            'Mercado Pago',
+            'EXTRATO DE CONTA',
+            'Lidiane Ribeiro Ferro da Silva',
+            'CPF/CNPJ: 97775975091 Agencia: 1 Conta: 59404058338',
+            'Periodo: De 01-06-2026 al 30-06-2026',
+            'DETALHE DOS MOVIMENTOS',
+            'Data Descricao ID da operacao Valor Saldo',
+            'Reembolso de compra',
+            '17-06-2026 Mercado Libre 162800502640 R$ 39,80 R$ 39,80',
+            '18-06-2026 Rendimentos 1745432447364 R$ 0,03 R$ 39,83',
         ];
         $stream = "BT /F1 9 Tf\n";
         $y = 750;

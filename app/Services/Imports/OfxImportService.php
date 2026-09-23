@@ -32,6 +32,7 @@ final class OfxImportService
         FinancialAccount $account,
         User $user,
         UploadedFile $file,
+        ?string $pdfLayout = null,
     ): OfxImportResult {
         $contents = $file->get();
 
@@ -92,7 +93,7 @@ final class OfxImportService
         $financialImport->save();
 
         try {
-            $statement = $this->parser->parse($contents, $extension);
+            $statement = $this->parser->parse($contents, $extension, $pdfLayout);
             [$statementStartOn, $statementEndOn] = $this->statementPeriod(
                 $statement,
                 $sourceFilename,
@@ -106,6 +107,7 @@ final class OfxImportService
                 $extension,
                 $statementStartOn,
                 $statementEndOn,
+                $pdfLayout,
             ): void {
                 $lockedImport = FinancialImport::query()
                     ->whereKey($financialImport->id)
@@ -125,6 +127,7 @@ final class OfxImportService
                             'bank_id' => $statement->bankId,
                             'currency' => $statement->currency,
                             'source_format' => $extension,
+                            'pdf_layout' => $pdfLayout,
                         ], static fn (mixed $value): bool => $value !== null),
                         'error_message' => null,
                         'imported_at' => now(),
@@ -170,6 +173,7 @@ final class OfxImportService
                         'bank_id' => $statement->bankId,
                         'currency' => $statement->currency,
                         'source_format' => $extension,
+                        'pdf_layout' => $pdfLayout,
                     ], static fn (mixed $value): bool => $value !== null),
                     'error_message' => null,
                     'imported_at' => now(),

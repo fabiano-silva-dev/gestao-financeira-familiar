@@ -34,6 +34,9 @@ class OfxImportController extends Controller
             $account,
             $user,
             $request->file('file'),
+            $request->filled('pdf_layout')
+                ? $request->string('pdf_layout')->toString()
+                : null,
         );
 
         Inertia::flash('toast', [

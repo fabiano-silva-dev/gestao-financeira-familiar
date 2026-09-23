@@ -161,7 +161,13 @@ final class FinancialDocumentImportService
         if ($detection->importKind() === 'statement') {
             $account = $workspace->financialAccounts()
                 ->findOrFail((int) $data['financial_account_id']);
-            $result = $this->bankImports->import($workspace, $account, $user, $file);
+            $result = $this->bankImports->import(
+                $workspace,
+                $account,
+                $user,
+                $file,
+                $this->pdfLayout($detection),
+            );
             $this->targets->learnAccount($workspace, $detection, $account);
             $finalImport = $result->import;
         } else {
@@ -221,7 +227,13 @@ final class FinancialDocumentImportService
                 return null;
             }
 
-            $result = $this->bankImports->import($workspace, $account, $user, $file);
+            $result = $this->bankImports->import(
+                $workspace,
+                $account,
+                $user,
+                $file,
+                $this->pdfLayout($detection),
+            );
             $this->targets->learnAccount($workspace, $detection, $account);
             $this->attachDetection($result->import, $detection, false);
 
@@ -506,9 +518,11 @@ final class FinancialDocumentImportService
             'bank_statement', 'payment_account_statement' => match ($detection->format) {
                 'ofx', 'qfx' => 'ofx',
                 'csv' => 'bank_csv',
-                'pdf' => $detection->institution === 'banrisul'
-                    ? 'banrisul_current_account'
-                    : null,
+                'pdf' => match ($detection->institution) {
+                    'banrisul' => 'banrisul_current_account',
+                    'mercado_pago' => 'mercado_pago_account_statement',
+                    default => null,
+                },
                 default => null,
             },
             'credit_card_statement' => match ($detection->format) {
@@ -529,7 +543,7 @@ final class FinancialDocumentImportService
         return match ($detection->parserKey) {
             'ofx' => in_array($extension, ['ofx', 'qfx'], true),
             'bank_csv' => $extension === 'csv',
-            'banrisul_current_account' => $extension === 'pdf',
+            'banrisul_current_account', 'mercado_pago_account_statement' => $extension === 'pdf',
             'card_table' => in_array($extension, ['csv', 'xls', 'xlsx'], true),
             'mercado_pago_credit_card' => $extension === 'pdf',
             default => false,

@@ -139,6 +139,11 @@ class FinancialImportController extends Controller
                     'kind' => 'statement',
                 ],
                 [
+                    'value' => 'mercado_pago_account_statement',
+                    'label' => 'Mercado Pago · extrato de conta',
+                    'kind' => 'statement',
+                ],
+                [
                     'value' => 'mercado_pago_credit_card',
                     'label' => 'Mercado Pago · fatura de cartão',
                     'kind' => 'invoice',

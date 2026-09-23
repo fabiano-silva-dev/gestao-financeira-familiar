@@ -74,6 +74,35 @@ final class PdfDocumentDetector implements FinancialDocumentDetector
             );
         }
 
+        if ($this->isMercadoPagoAccountStatement($normalized)) {
+            $account = null;
+
+            if (preg_match('/\bConta:\s*([\d.\-]+)/iu', $text, $match) === 1) {
+                $account = preg_replace('/\D/', '', $match[1]) ?: null;
+            }
+
+            $agency = null;
+
+            if (preg_match('/Ag[eê]ncia:\s*(\d+)/iu', $text, $match) === 1) {
+                $agency = $match[1];
+            }
+
+            return new FinancialDocumentDetection(
+                documentType: 'bank_statement',
+                institution: 'mercado_pago',
+                confidence: 0.99,
+                format: 'pdf',
+                parserKey: 'mercado_pago_account_statement',
+                identifierType: $account !== null ? 'account_number' : null,
+                identifierValue: $account,
+                referenceMonth: $this->mercadoPagoAccountReferenceMonth($text),
+                holderName: $this->mercadoPagoAccountHolderName($text),
+                metadata: array_filter([
+                    'agency' => $agency,
+                ], static fn (mixed $value): bool => $value !== null),
+            );
+        }
+
         if (
             str_contains($normalized, 'MERCADO PAGO')
             && (
@@ -210,6 +239,43 @@ final class PdfDocumentDetector implements FinancialDocumentDetector
         }
 
         return preg_match('/B\s*A\s*N\s*R\s*I\s*S\s*U\s*L/', $normalized) === 1;
+    }
+
+    private function isMercadoPagoAccountStatement(string $normalized): bool
+    {
+        return str_contains($normalized, 'MERCADO PAGO')
+            && str_contains($normalized, 'EXTRATO DE CONTA')
+            && str_contains($normalized, 'DETALHE DOS MOVIMENTOS');
+    }
+
+    private function mercadoPagoAccountReferenceMonth(string $text): ?string
+    {
+        if (preg_match(
+            '/Per[ií]odo:\s*De\s*(\d{2}-\d{2}-\d{4})/iu',
+            $text,
+            $match,
+        ) !== 1) {
+            return null;
+        }
+
+        $date = DateTimeImmutable::createFromFormat('!d-m-Y', $match[1]);
+
+        return $date instanceof DateTimeImmutable ? $date->format('Y-m') : null;
+    }
+
+    private function mercadoPagoAccountHolderName(string $text): ?string
+    {
+        if (preg_match(
+            '/EXTRATO DE CONTA[^\S\r\n]*\R[^\S\r\n]*([^\r\n]{2,120})\R[^\S\r\n]*CPF\/CNPJ:/iu',
+            $text,
+            $match,
+        ) !== 1) {
+            return null;
+        }
+
+        $name = trim(preg_replace('/\s+/u', ' ', $match[1]) ?? $match[1]);
+
+        return $this->looksLikePersonName($name) ? $name : null;
     }
 
     private function banrisulReferenceMonth(string $normalized): ?string

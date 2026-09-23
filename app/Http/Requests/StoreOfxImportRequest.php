@@ -39,7 +39,10 @@ class StoreOfxImportRequest extends FormRequest
                 Rule::requiredIf($isPdf),
                 'nullable',
                 'string',
-                Rule::in(['banrisul_current_account']),
+                Rule::in([
+                    'banrisul_current_account',
+                    'mercado_pago_account_statement',
+                ]),
             ],
             'file' => ['required', 'file', 'max:10240', new BankStatementFile],
         ];
