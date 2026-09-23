@@ -332,13 +332,29 @@ final class FinancialImportProcessor
         }
 
         if (! $level->canCreate()) {
-            $this->recordRuleAutomation(
-                $entry,
-                $rule['rule_id'],
-                $level,
-                'pending_no_existing_match',
-                'Nenhum lançamento existente compatível foi encontrado e este nível não permite criar um novo.',
-            );
+            $firstCandidate = $candidates[0] ?? null;
+
+            if (is_array($firstCandidate)) {
+                [$relatedType, $relatedId] = $this->candidateAuditRelation($firstCandidate);
+                $this->recordRuleAutomation(
+                    $entry,
+                    $rule['rule_id'],
+                    $level,
+                    'pending_low_confidence',
+                    'Foi encontrado um candidato, mas a confiança é insuficiente para conciliar automaticamente.',
+                    (int) ($firstCandidate['score'] ?? 0),
+                    $relatedType,
+                    $relatedId,
+                );
+            } else {
+                $this->recordRuleAutomation(
+                    $entry,
+                    $rule['rule_id'],
+                    $level,
+                    'pending_no_existing_match',
+                    'Nenhum lançamento existente compatível foi encontrado e este nível não permite criar um novo.',
+                );
+            }
 
             return;
         }
@@ -614,13 +630,29 @@ final class FinancialImportProcessor
                 }
 
                 if (! $level->canCreate()) {
-                    $this->recordRuleAutomation(
-                        $entry,
-                        $rule['rule_id'],
-                        $level,
-                        'pending_no_existing_match',
-                        'Nenhuma compra ou parcela existente compatível foi encontrada e este nível não permite criar uma nova.',
-                    );
+                    $firstCandidate = $candidates[0] ?? null;
+
+                    if (is_array($firstCandidate)) {
+                        [$relatedType, $relatedId] = $this->candidateAuditRelation($firstCandidate);
+                        $this->recordRuleAutomation(
+                            $entry,
+                            $rule['rule_id'],
+                            $level,
+                            'pending_low_confidence',
+                            'Foi encontrada uma compra ou parcela candidata, mas a confiança é insuficiente para conciliar automaticamente.',
+                            (int) ($firstCandidate['score'] ?? 0),
+                            $relatedType,
+                            $relatedId,
+                        );
+                    } else {
+                        $this->recordRuleAutomation(
+                            $entry,
+                            $rule['rule_id'],
+                            $level,
+                            'pending_no_existing_match',
+                            'Nenhuma compra ou parcela existente compatível foi encontrada e este nível não permite criar uma nova.',
+                        );
+                    }
 
                     return;
                 }
