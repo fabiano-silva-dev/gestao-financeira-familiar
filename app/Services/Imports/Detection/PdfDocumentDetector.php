@@ -109,23 +109,52 @@ final class PdfDocumentDetector implements FinancialDocumentDetector
             );
         }
 
-        if (str_contains($normalized, 'FATURA')) {
+        $invoiceScore = $this->scoreSignals($normalized, [
+            'ESSA E SUA FATURA' => 5,
+            'RESUMO DA FATURA' => 4,
+            'DETALHES DE CONSUMO' => 4,
+            'MOVIMENTACOES NA FATURA' => 4,
+            'FECHAMENTO DA FATURA' => 3,
+            'PROXIMO FECHAMENTO' => 2,
+            'TOTAL A PAGAR' => 2,
+            'PAGAMENTO MINIMO' => 2,
+            'PARCELAMENTO DE FATURA' => 2,
+            'FATURA' => 1,
+        ]);
+        $statementScore = $this->scoreSignals($normalized, [
+            'EXTRATO DE CONTA' => 5,
+            'DETALHE DOS MOVIMENTOS' => 4,
+            'MOVIMENTOS DA CONTA CORRENTE' => 5,
+            'DIA HISTORICO DOCUMENTO' => 4,
+            'SALDO INICIAL' => 2,
+            'SALDO FINAL' => 2,
+            'SALDO DISPONIVEL' => 2,
+            'ID DA OPERACAO' => 2,
+            'ENTRADAS' => 1,
+            'SAIDAS' => 1,
+            'EXTRATO' => 1,
+        ]);
+
+        match ($this->filenameDocumentType($filename)) {
+            'credit_card_statement' => $invoiceScore += 3,
+            'bank_statement' => $statementScore += 3,
+            default => null,
+        };
+
+        if ($invoiceScore > $statementScore && $invoiceScore >= 2) {
             return new FinancialDocumentDetection(
                 documentType: 'credit_card_statement',
                 institution: $institution,
-                confidence: 0.68,
+                confidence: min(0.94, 0.65 + ($invoiceScore * 0.03)),
                 format: 'pdf',
             );
         }
 
-        if (
-            str_contains($normalized, 'EXTRATO')
-            || str_contains($normalized, 'MOVIMENTOS DA CONTA')
-        ) {
+        if ($statementScore > $invoiceScore && $statementScore >= 2) {
             return new FinancialDocumentDetection(
                 documentType: 'bank_statement',
                 institution: $institution,
-                confidence: 0.68,
+                confidence: min(0.94, 0.65 + ($statementScore * 0.03)),
                 format: 'pdf',
             );
         }
@@ -136,6 +165,42 @@ final class PdfDocumentDetector implements FinancialDocumentDetector
             confidence: $institution !== null ? 0.55 : 0.2,
             format: 'pdf',
         );
+    }
+
+    /** @param array<string, int> $signals */
+    private function scoreSignals(string $normalized, array $signals): int
+    {
+        $score = 0;
+
+        foreach ($signals as $signal => $weight) {
+            if (str_contains($normalized, $signal)) {
+                $score += $weight;
+            }
+        }
+
+        return $score;
+    }
+
+    private function filenameDocumentType(string $filename): ?string
+    {
+        $normalized = mb_strtoupper($this->ascii(
+            basename(str_replace('\\', '/', $filename)),
+        ));
+        $normalized = preg_replace('/[^A-Z0-9]+/', ' ', $normalized) ?? $normalized;
+
+        if (
+            str_contains($normalized, 'ACCOUNT STATEMENT')
+            || str_contains($normalized, 'BANK STATEMENT')
+            || str_contains($normalized, 'EXTRATO')
+        ) {
+            return 'bank_statement';
+        }
+
+        if (str_contains($normalized, 'FATURA')) {
+            return 'credit_card_statement';
+        }
+
+        return null;
     }
 
     private function isBanrisulCurrentAccount(string $normalized): bool

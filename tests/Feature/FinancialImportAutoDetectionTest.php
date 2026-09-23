@@ -145,6 +145,111 @@ class FinancialImportAutoDetectionTest extends TestCase
         $this->assertFalse(CardStatementEntry::query()->sole()->is_reconciled);
     }
 
+    public function test_bank_csv_history_disambiguates_statement_from_card_invoice(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.store'), [
+                'files' => [
+                    UploadedFile::fake()->createWithContent(
+                        'movimentos-junho.csv',
+                        "Data,Descrição,Valor\n"
+                        ."06/06/2026,Transferência recebida pelo Pix,768.95\n"
+                        ."08/06/2026,Pagamento de fatura,-768.95\n",
+                    ),
+                ],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $pending = FinancialImport::query()->sole();
+
+        $this->assertSame(FinancialImportStatus::NeedsConfirmation, $pending->status);
+        $this->assertSame(
+            'bank_statement',
+            data_get($pending->metadata, 'autodetection.document_type'),
+        );
+        $this->assertSame('bank_csv', data_get($pending->metadata, 'autodetection.parser_key'));
+        $this->assertContains('financial_account_id', data_get($pending->metadata, 'missing_fields'));
+        $this->assertNotContains('credit_card_id', data_get($pending->metadata, 'missing_fields'));
+    }
+
+    public function test_nubank_statement_filename_exposes_institution_and_account_number(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.store'), [
+                'files' => [
+                    UploadedFile::fake()->createWithContent(
+                        'NU_8407288736_01JUN2026_30JUN2026.csv',
+                        "Data,Valor,Identificador,Descrição\n",
+                    ),
+                ],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $pending = FinancialImport::query()->sole();
+
+        $this->assertSame(FinancialImportStatus::NeedsConfirmation, $pending->status);
+        $this->assertSame('nubank', data_get($pending->metadata, 'autodetection.institution'));
+        $this->assertSame(
+            'bank_statement',
+            data_get($pending->metadata, 'autodetection.document_type'),
+        );
+        $this->assertSame(
+            'account_number',
+            data_get($pending->metadata, 'autodetection.identifier_type'),
+        );
+        $this->assertSame(
+            '8407288736',
+            data_get($pending->metadata, 'autodetection.identifier_value'),
+        );
+        $this->assertSame('bank_csv', data_get($pending->metadata, 'autodetection.parser_key'));
+    }
+
+    public function test_pdf_statement_is_not_mistaken_for_invoice_by_payment_history(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.store'), [
+                'files' => [
+                    UploadedFile::fake()->createWithContent(
+                        'account_statement-2026-06.pdf',
+                        $this->simplePdf([
+                            'Mercado Pago',
+                            'EXTRATO DE CONTA',
+                            'Saldo inicial: R$ 0,00',
+                            'Entradas: R$ 1.000,00',
+                            'Saidas: R$ -1.000,00',
+                            'DETALHE DOS MOVIMENTOS',
+                            '08-06-2026 Pagamento de fatura R$ -768,95',
+                            'Saldo final: R$ 231,05',
+                        ]),
+                    ),
+                ],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $pending = FinancialImport::query()->sole();
+
+        $this->assertSame(FinancialImportStatus::NeedsConfirmation, $pending->status);
+        $this->assertSame('mercado_pago', data_get($pending->metadata, 'autodetection.institution'));
+        $this->assertSame(
+            'bank_statement',
+            data_get($pending->metadata, 'autodetection.document_type'),
+        );
+        $this->assertContains('parser', data_get($pending->metadata, 'missing_fields'));
+        $this->assertNotContains('credit_card_id', data_get($pending->metadata, 'missing_fields'));
+    }
+
     public function test_mercado_pago_pdf_detects_card_holder_name(): void
     {
         Storage::fake('local');
