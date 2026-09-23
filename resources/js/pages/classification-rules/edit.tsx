@@ -5,6 +5,7 @@ import { index } from '@/routes/classification-rules';
 import type {
     ClassificationRule,
     ClassificationRuleActionTypeOption,
+    ClassificationRuleAutomationLevelOption,
     ClassificationRuleMatchTypeOption,
     ReconciliationAccountOption,
     ReconciliationCategoryOption,
@@ -14,12 +15,14 @@ export default function ClassificationRulesEdit({
     rule,
     matchTypeOptions,
     actionTypeOptions,
+    automationLevelOptions,
     categoryOptions,
     accountOptions,
 }: {
     rule: ClassificationRule;
     matchTypeOptions: ClassificationRuleMatchTypeOption[];
     actionTypeOptions: ClassificationRuleActionTypeOption[];
+    automationLevelOptions: ClassificationRuleAutomationLevelOption[];
     categoryOptions: ReconciliationCategoryOption[];
     accountOptions: ReconciliationAccountOption[];
 }) {
@@ -46,6 +49,7 @@ export default function ClassificationRulesEdit({
                             rule={rule}
                             matchTypeOptions={matchTypeOptions}
                             actionTypeOptions={actionTypeOptions}
+                            automationLevelOptions={automationLevelOptions}
                             categoryOptions={categoryOptions}
                             accountOptions={accountOptions}
                         />
