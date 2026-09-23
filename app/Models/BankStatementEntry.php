@@ -16,6 +16,9 @@ use Illuminate\Support\Carbon;
  * @property string|null $suggested_payee_name
  * @property string|null $automation_level_applied
  * @property string|null $automation_result
+ * @property int|null $automation_score
+ * @property string|null $automation_related_type
+ * @property int|null $automation_related_id
  * @property Carbon|null $automation_processed_at
  * @property Carbon|null $reconciled_at
  * @property-read FinancialAccount $financialAccount
@@ -46,6 +49,9 @@ use Illuminate\Support\Carbon;
     'matched_classification_rule_id',
     'automation_level_applied',
     'automation_result',
+    'automation_score',
+    'automation_related_type',
+    'automation_related_id',
     'automation_reason',
     'automation_processed_at',
 ])]
@@ -103,6 +109,8 @@ class BankStatementEntry extends Model
             'is_reconciled' => 'boolean',
             'is_ignored' => 'boolean',
             'ignored_at' => 'datetime',
+            'automation_score' => 'integer',
+            'automation_related_id' => 'integer',
             'automation_processed_at' => 'datetime',
         ];
     }
