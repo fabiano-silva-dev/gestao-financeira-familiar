@@ -62,6 +62,7 @@ export type CreditCardInvoiceStatementEntry = {
     amount: string;
     installment_number: number | null;
     total_installments: number | null;
+    source: 'manual' | 'import';
     is_reconciled: boolean;
     reconciled_by_name: string | null;
     reconciled_at: string | null;
@@ -79,6 +80,7 @@ export type CreditCardInvoice = {
     due_date: string;
     calculated_amount: string;
     statement_amount: string | null;
+    statement_difference: string | null;
     net_invoice_amount: string;
     refund_amount: string;
     paid_amount: string;

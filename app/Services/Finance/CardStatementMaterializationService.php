@@ -341,6 +341,8 @@ final class CardStatementMaterializationService
             'suggested_category_id' => $resolvedCategoryId,
         ]);
 
+        $isManualEntry = $entry->financial_import_id === null;
+
         return $workspace->financialTransactions()->create([
             'type' => FinancialTransactionType::Expense,
             'transaction_date' => $entry->purchased_on->toDateString(),
@@ -357,14 +359,20 @@ final class CardStatementMaterializationService
             'due_date' => null,
             'settled_on' => null,
             'status' => FinancialTransactionStatus::Confirmed,
-            'origin' => FinancialTransactionOrigin::CardImport,
+            'origin' => $isManualEntry
+                ? FinancialTransactionOrigin::Manual
+                : FinancialTransactionOrigin::CardImport,
             'notes' => $totalInstallments > 1
                 ? sprintf(
-                    'Compra importada da fatura. Valor total estimado a partir de %d parcelas de %s.',
+                    $isManualEntry
+                        ? 'Compra lançada manualmente pela fatura. Valor total estimado a partir de %d parcelas de %s.'
+                        : 'Compra importada da fatura. Valor total estimado a partir de %d parcelas de %s.',
                     $totalInstallments,
                     $entry->amount,
                 )
-                : 'Compra criada automaticamente a partir da fatura importada.',
+                : ($isManualEntry
+                    ? 'Compra lançada manualmente a partir da fatura.'
+                    : 'Compra criada automaticamente a partir da fatura importada.'),
         ]);
     }
 

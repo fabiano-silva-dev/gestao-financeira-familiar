@@ -182,6 +182,26 @@ export default function CreditCardInvoiceShow() {
                     </Card>
                 </div>
 
+                {invoice.statement_difference !== null &&
+                    invoice.statement_difference !== '0.00' && (
+                        <div className="border-warning/30 bg-warning/5 rounded-lg border p-4">
+                            <p className="text-sm font-medium">
+                                Conferência da fatura
+                            </p>
+                            <p className="text-muted-foreground mt-1 text-sm">
+                                {Number(invoice.statement_difference) > 0
+                                    ? 'Ainda faltam compras ou ajustes no valor de '
+                                    : 'As compras conciliadas excedem o valor informado em '}
+                                {currency.format(
+                                    Math.abs(
+                                        Number(invoice.statement_difference),
+                                    ),
+                                )}
+                                .
+                            </p>
+                        </div>
+                    )}
+
                 {invoice.can_close && (
                     <Card>
                         <CardHeader>
@@ -208,6 +228,7 @@ export default function CreditCardInvoiceShow() {
                                                 step="0.01"
                                                 min="0.01"
                                                 defaultValue={
+                                                    invoice.statement_amount ??
                                                     invoice.calculated_amount
                                                 }
                                             />
@@ -284,7 +305,7 @@ export default function CreditCardInvoiceShow() {
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <FileSpreadsheet className="size-5" />
-                                Linhas importadas da operadora
+                                Linhas da fatura
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3">
@@ -314,6 +335,10 @@ export default function CreditCardInvoiceShow() {
                                                     entry.total_installments
                                                         ? ` · parcela ${entry.installment_number}/${entry.total_installments}`
                                                         : ''}
+                                                    {' · '}
+                                                    {entry.source === 'manual'
+                                                        ? 'lançamento manual'
+                                                        : 'importada'}
                                                 </p>
                                             </div>
                                             <div className="flex items-center gap-3">

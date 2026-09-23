@@ -4,10 +4,13 @@ namespace Tests\Feature;
 
 use App\Enums\AccountMovementType;
 use App\Enums\CreditCardInvoiceStatus;
+use App\Enums\FinancialTransactionOrigin;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
 use App\Enums\TransactionInstallmentStatus;
+use App\Models\CardStatementEntry;
+use App\Models\Category;
 use App\Models\CreditCard;
 use App\Models\CreditCardInvoice;
 use App\Models\FinancialAccount;
@@ -56,6 +59,141 @@ class CreditCardInvoiceTest extends TestCase
         $this->assertDatabaseCount('financial_transactions', 0);
         $this->assertDatabaseCount('transaction_installments', 0);
         $this->assertDatabaseCount('account_movements', 0);
+    }
+
+    public function test_manual_invoice_purchases_use_card_statement_materialization_without_cash_duplication(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create([
+            'closing_day' => 25,
+            'due_day' => 5,
+        ]);
+        $category = Category::factory()->for($workspace)->create();
+
+        $response = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('credit-card-invoices.store'), [
+                'credit_card_id' => $card->id,
+                'reference_month' => '2026-10',
+                'due_date' => '2026-10-05',
+                'statement_amount' => '189.90',
+                'purchases' => [[
+                    'purchased_on' => '2026-09-18',
+                    'description' => 'Mercado teste',
+                    'amount' => '189.90',
+                    'installment_number' => 1,
+                    'total_installments' => 1,
+                    'category_id' => $category->id,
+                ]],
+            ]);
+
+        $invoice = CreditCardInvoice::query()->sole();
+        $entry = CardStatementEntry::query()->sole();
+        $transaction = FinancialTransaction::query()->sole();
+
+        $response
+            ->assertRedirect(route('credit-card-invoices.show', $invoice))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(CreditCardInvoiceStatus::Open, $invoice->status);
+        $this->assertSame('189.90', $invoice->statement_amount);
+        $this->assertSame('189.90', $invoice->calculated_amount);
+        $this->assertNull($entry->financial_import_id);
+        $this->assertTrue($entry->is_reconciled);
+        $this->assertNotNull($entry->transaction_installment_id);
+        $this->assertSame(FinancialTransactionOrigin::Manual, $transaction->origin);
+        $this->assertSame($category->id, $transaction->category_id);
+        $this->assertSame('189.90', $transaction->amount);
+        $this->assertDatabaseCount('transaction_installments', 1);
+        $this->assertDatabaseCount('account_movements', 0);
+    }
+
+    public function test_manual_invoice_reuses_open_invoice_and_reconciles_existing_purchase(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create([
+            'closing_day' => 5,
+            'due_day' => 12,
+        ]);
+        $category = Category::factory()->for($workspace)->create();
+        $purchase = $this->createCardPurchase($user, $workspace, $card, '100.00');
+        $existingInvoice = $purchase->installments()->sole()->invoice;
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('credit-card-invoices.store'), [
+                'credit_card_id' => $card->id,
+                'reference_month' => '2026-10',
+                'due_date' => '2026-10-12',
+                'statement_amount' => '100.00',
+                'purchases' => [[
+                    'purchased_on' => '2026-09-20',
+                    'description' => 'Compra no cartão',
+                    'amount' => '100.00',
+                    'installment_number' => 1,
+                    'total_installments' => 1,
+                    'category_id' => $category->id,
+                ]],
+            ])
+            ->assertRedirect(route('credit-card-invoices.show', $existingInvoice))
+            ->assertSessionHasNoErrors();
+
+        $entry = CardStatementEntry::query()->sole();
+
+        $this->assertDatabaseCount('credit_card_invoices', 1);
+        $this->assertDatabaseCount('financial_transactions', 1);
+        $this->assertDatabaseCount('transaction_installments', 1);
+        $this->assertTrue($entry->is_reconciled);
+        $this->assertSame(
+            $purchase->installments()->sole()->id,
+            $entry->transaction_installment_id,
+        );
+        $this->assertSame($category->id, $purchase->fresh()->category_id);
+        $this->assertSame('100.00', $existingInvoice->fresh()->statement_amount);
+    }
+
+    public function test_manual_invoice_keeps_unclassified_purchase_pending_until_confirmation(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('credit-card-invoices.store'), [
+                'credit_card_id' => $card->id,
+                'reference_month' => '2026-10',
+                'due_date' => '2026-10-12',
+                'statement_amount' => '100.00',
+                'purchases' => [[
+                    'purchased_on' => '2026-09-20',
+                    'description' => 'Compra sem classificação conhecida',
+                    'amount' => '100.00',
+                    'installment_number' => 1,
+                    'total_installments' => 1,
+                    'category_id' => null,
+                ]],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $invoice = CreditCardInvoice::query()->sole();
+        $entry = CardStatementEntry::query()->sole();
+
+        $this->assertSame(CreditCardInvoiceStatus::Open, $invoice->status);
+        $this->assertSame('0.00', $invoice->calculated_amount);
+        $this->assertFalse($entry->is_reconciled);
+        $this->assertDatabaseCount('financial_transactions', 0);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->patch(route('credit-card-invoices.close', $invoice), [
+                'statement_amount' => '100.00',
+            ])
+            ->assertSessionHasErrors('statement_amount');
+
+        $this->assertSame(
+            CreditCardInvoiceStatus::Open,
+            $invoice->fresh()->status,
+        );
     }
 
     public function test_manual_invoice_rejects_duplicate_card_and_reference_month(): void

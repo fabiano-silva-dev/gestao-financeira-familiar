@@ -3,15 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Enums\CreditCardInvoiceStatus;
+use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
 use App\Http\Requests\CloseCreditCardInvoiceRequest;
 use App\Http\Requests\StoreCreditCardInvoicePaymentRequest;
 use App\Http\Requests\StoreCreditCardInvoiceRequest;
 use App\Models\CardStatementEntry;
+use App\Models\Category;
 use App\Models\CreditCardInvoice;
 use App\Models\CreditCardInvoicePayment;
 use App\Models\FinancialAccount;
 use App\Models\TransactionInstallment;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Finance\CreditCardInvoiceService;
 use App\Services\Reconciliation\CardStatementReconciliationSuggestionService;
@@ -117,7 +120,22 @@ class CreditCardInvoiceController extends Controller
                         .($card->is_active ? '' : ' (inativo)'),
                 ])
                 ->all(),
+            'categoryOptions' => $workspace->categories()
+                ->with('parent:id,name')
+                ->where('type', FinancialTransactionType::Expense->value)
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get()
+                ->map(fn (Category $category): array => [
+                    'id' => $category->id,
+                    'label' => $category->parent === null
+                        ? $category->name
+                        : "{$category->parent->name} / {$category->name}",
+                ])
+                ->values()
+                ->all(),
             'defaultReferenceMonth' => now()->format('Y-m'),
+            'defaultPurchaseDate' => now()->toDateString(),
         ]);
     }
 
@@ -126,15 +144,21 @@ class CreditCardInvoiceController extends Controller
         $workspace = $this->workspace();
         $card = $workspace->creditCards()
             ->findOrFail($request->integer('credit_card_id'));
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $data = $request->validated();
 
         $invoice = $this->invoiceService->createManual(
             $card,
-            $request->validated(),
+            $user,
+            $data,
         );
 
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => 'Fatura lançada manualmente sem criar uma nova despesa.',
+            'message' => ($data['purchases'] ?? []) === []
+                ? 'Fatura lançada manualmente sem criar uma nova despesa.'
+                : 'Fatura e compras processadas pelo motor de conciliação.',
         ]);
 
         return to_route('credit-card-invoices.show', $invoice);
@@ -316,6 +340,7 @@ class CreditCardInvoiceController extends Controller
             'due_date' => $invoice->due_date->toDateString(),
             'calculated_amount' => $invoice->calculated_amount,
             'statement_amount' => $invoice->statement_amount,
+            'statement_difference' => $this->invoiceService->statementDifference($invoice),
             'net_invoice_amount' => $this->invoiceService->totalAmount($invoice),
             'refund_amount' => $this->invoiceService->refundAmount($invoice),
             'paid_amount' => $invoice->paid_amount,
@@ -376,6 +401,7 @@ class CreditCardInvoiceController extends Controller
             'amount' => $entry->amount,
             'installment_number' => $entry->installment_number,
             'total_installments' => $entry->total_installments,
+            'source' => $entry->financial_import_id === null ? 'manual' : 'import',
             'is_reconciled' => $entry->is_reconciled,
             'reconciled_by_name' => $entry->reconciler?->name,
             'reconciled_at' => $entry->reconciled_at?->toIso8601String(),

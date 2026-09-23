@@ -6,9 +6,11 @@ use App\Enums\AccountMovementType;
 use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\ExpenseRefundStatus;
 use App\Enums\TransactionInstallmentStatus;
+use App\Models\CardStatementEntry;
 use App\Models\CreditCard;
 use App\Models\CreditCardInvoice;
 use App\Models\CreditCardInvoicePayment;
+use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -16,11 +18,18 @@ use Illuminate\Validation\ValidationException;
 
 class CreditCardInvoiceService
 {
+    public function __construct(
+        private readonly CardStatementMaterializationService $cardMaterialization,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $data
      */
-    public function createManual(CreditCard $card, array $data): CreditCardInvoice
-    {
+    public function createManual(
+        CreditCard $card,
+        User $user,
+        array $data,
+    ): CreditCardInvoice {
         $referenceMonth = CarbonImmutable::createFromFormat(
             'Y-m',
             (string) $data['reference_month'],
@@ -33,18 +42,10 @@ class CreditCardInvoiceService
             ]);
         }
 
-        $alreadyExists = CreditCardInvoice::query()
-            ->where('workspace_id', $card->workspace_id)
-            ->where('credit_card_id', $card->id)
-            ->whereDate('reference_month', $referenceMonth->toDateString())
-            ->exists();
-
-        if ($alreadyExists) {
-            throw ValidationException::withMessages([
-                'reference_month' => 'Já existe uma fatura para este cartão neste mês de referência.',
-            ]);
-        }
-
+        $purchases = array_values(array_filter(
+            (array) ($data['purchases'] ?? []),
+            fn (mixed $purchase): bool => is_array($purchase),
+        ));
         $sameMonthClosing = $this->dateInMonth(
             $referenceMonth,
             $card->closing_day,
@@ -56,21 +57,117 @@ class CreditCardInvoiceService
                 $card->closing_day,
             );
 
-        $invoice = CreditCardInvoice::query()->create([
-            'workspace_id' => $card->workspace_id,
-            'credit_card_id' => $card->id,
-            'reference_month' => $referenceMonth->toDateString(),
-            'closing_date' => $closingDate->toDateString(),
-            'due_date' => $dueDate->toDateString(),
-            'calculated_amount' => '0.00',
-            'statement_amount' => (string) $data['statement_amount'],
-            'paid_amount' => '0.00',
-            'status' => CreditCardInvoiceStatus::Closed->value,
-        ]);
+        return DB::transaction(function () use (
+            $card,
+            $user,
+            $data,
+            $purchases,
+            $referenceMonth,
+            $dueDate,
+            $closingDate,
+        ): CreditCardInvoice {
+            $invoice = CreditCardInvoice::query()
+                ->where('workspace_id', $card->workspace_id)
+                ->where('credit_card_id', $card->id)
+                ->whereDate('reference_month', $referenceMonth->toDateString())
+                ->lockForUpdate()
+                ->first();
 
-        $this->autoLinkPendingPayments($invoice);
+            if (
+                $invoice instanceof CreditCardInvoice
+                && $invoice->status !== CreditCardInvoiceStatus::Open
+            ) {
+                throw ValidationException::withMessages([
+                    'reference_month' => 'A fatura deste cartão e mês já está fechada ou possui pagamento.',
+                ]);
+            }
 
-        return $invoice->refresh();
+            if (! $invoice instanceof CreditCardInvoice) {
+                $invoice = CreditCardInvoice::query()->create([
+                    'workspace_id' => $card->workspace_id,
+                    'credit_card_id' => $card->id,
+                    'reference_month' => $referenceMonth->toDateString(),
+                    'closing_date' => $closingDate->toDateString(),
+                    'due_date' => $dueDate->toDateString(),
+                    'calculated_amount' => '0.00',
+                    'statement_amount' => (string) $data['statement_amount'],
+                    'paid_amount' => '0.00',
+                    'status' => CreditCardInvoiceStatus::Open->value,
+                ]);
+            } else {
+                $invoice->update([
+                    'closing_date' => $closingDate->toDateString(),
+                    'due_date' => $dueDate->toDateString(),
+                    'statement_amount' => (string) $data['statement_amount'],
+                ]);
+                $invoice->installments()
+                    ->where('status', '!=', TransactionInstallmentStatus::Cancelled->value)
+                    ->update([
+                        'due_date' => $dueDate->toDateString(),
+                        'expected_payment_date' => $dueDate->toDateString(),
+                    ]);
+            }
+
+            if ($purchases === []) {
+                return $this->close(
+                    $invoice,
+                    (string) $data['statement_amount'],
+                );
+            }
+
+            foreach ($purchases as $index => $purchase) {
+                $deduplicationKey = hash('sha256', implode('|', [
+                    'manual_card_statement',
+                    (string) $invoice->id,
+                    (string) $index,
+                    (string) $purchase['purchased_on'],
+                    trim((string) $purchase['description']),
+                    (string) $purchase['amount'],
+                    (string) $purchase['installment_number'],
+                    (string) $purchase['total_installments'],
+                ]));
+                $entry = CardStatementEntry::query()->firstOrCreate(
+                    [
+                        'workspace_id' => $card->workspace_id,
+                        'credit_card_id' => $card->id,
+                        'deduplication_key' => $deduplicationKey,
+                    ],
+                    [
+                        'financial_import_id' => null,
+                        'credit_card_invoice_id' => $invoice->id,
+                        'purchased_on' => $purchase['purchased_on'],
+                        'description' => trim((string) $purchase['description']),
+                        'amount' => (string) $purchase['amount'],
+                        'installment_number' => (int) $purchase['installment_number'],
+                        'total_installments' => (int) $purchase['total_installments'],
+                        'external_id' => null,
+                        'raw_data' => ['source' => 'manual_invoice'],
+                        'is_reconciled' => false,
+                        'is_ignored' => false,
+                        'suggested_payee_name' => isset($purchase['payee_name'])
+                            && trim((string) $purchase['payee_name']) !== ''
+                                ? trim((string) $purchase['payee_name'])
+                                : null,
+                        'suggested_category_id' => isset($purchase['category_id'])
+                            && $purchase['category_id'] !== null
+                            && $purchase['category_id'] !== ''
+                                ? (int) $purchase['category_id']
+                                : null,
+                    ],
+                );
+
+                $this->cardMaterialization->materialize(
+                    $invoice->workspace()->firstOrFail(),
+                    $card,
+                    $invoice,
+                    $entry,
+                    $user,
+                    requireClassification: true,
+                );
+            }
+
+            return $invoice->refresh();
+        });
     }
 
     public function close(CreditCardInvoice $invoice, ?string $statementAmount = null): CreditCardInvoice
@@ -81,12 +178,25 @@ class CreditCardInvoiceService
             ]);
         }
 
+        $hasPendingEntries = $invoice->statementEntries()
+            ->where('is_reconciled', false)
+            ->where('is_ignored', false)
+            ->exists();
+
+        if ($hasPendingEntries) {
+            throw ValidationException::withMessages([
+                'statement_amount' => 'Resolva as compras pendentes antes de fechar a fatura.',
+            ]);
+        }
+
         $invoice->update([
             'statement_amount' => $statementAmount,
             'status' => $invoice->status === CreditCardInvoiceStatus::Partial
                 ? CreditCardInvoiceStatus::Partial
                 : CreditCardInvoiceStatus::Closed,
         ]);
+
+        $this->autoLinkPendingPayments($invoice);
 
         return $invoice->refresh();
     }
@@ -389,6 +499,18 @@ class CreditCardInvoiceService
         return $this->centsToMoney($this->refundCents($invoice));
     }
 
+    public function statementDifference(CreditCardInvoice $invoice): ?string
+    {
+        if ($invoice->statement_amount === null) {
+            return null;
+        }
+
+        return $this->centsToMoney(
+            $this->moneyToCents((string) $invoice->statement_amount)
+            - $this->moneyToCents((string) $invoice->calculated_amount),
+        );
+    }
+
     public function findCompatibleUnreconciledPayment(
         CreditCardInvoice $invoice,
         int $accountId,
@@ -436,14 +558,20 @@ class CreditCardInvoiceService
 
     private function moneyToCents(string $amount): int
     {
+        $negative = str_starts_with($amount, '-');
+        $amount = ltrim($amount, '-');
         [$whole, $decimal] = array_pad(explode('.', $amount, 2), 2, '0');
         $decimal = str_pad(substr($decimal, 0, 2), 2, '0');
+        $cents = ((int) $whole * 100) + (int) $decimal;
 
-        return ((int) $whole * 100) + (int) $decimal;
+        return $negative ? -$cents : $cents;
     }
 
     private function centsToMoney(int $cents): string
     {
-        return sprintf('%d.%02d', intdiv($cents, 100), $cents % 100);
+        $sign = $cents < 0 ? '-' : '';
+        $cents = abs($cents);
+
+        return sprintf('%s%d.%02d', $sign, intdiv($cents, 100), $cents % 100);
     }
 }
