@@ -6,6 +6,7 @@ use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\PaymentMethod;
 use App\Http\Requests\CloseCreditCardInvoiceRequest;
 use App\Http\Requests\StoreCreditCardInvoicePaymentRequest;
+use App\Http\Requests\StoreCreditCardInvoiceRequest;
 use App\Models\CardStatementEntry;
 use App\Models\CreditCardInvoice;
 use App\Models\CreditCardInvoicePayment;
@@ -99,6 +100,44 @@ class CreditCardInvoiceController extends Controller
                     'label' => "{$card->name} · final {$card->last_four}",
                 ]),
         ]);
+    }
+
+    public function create(): Response
+    {
+        $workspace = $this->workspace();
+
+        return Inertia::render('credit-card-invoices/create', [
+            'cardOptions' => $workspace->creditCards()
+                ->orderByDesc('is_active')
+                ->orderBy('name')
+                ->get(['id', 'name', 'last_four', 'is_active'])
+                ->map(fn ($card): array => [
+                    'id' => $card->id,
+                    'label' => "{$card->name} · final {$card->last_four}"
+                        .($card->is_active ? '' : ' (inativo)'),
+                ])
+                ->all(),
+            'defaultReferenceMonth' => now()->format('Y-m'),
+        ]);
+    }
+
+    public function store(StoreCreditCardInvoiceRequest $request): RedirectResponse
+    {
+        $workspace = $this->workspace();
+        $card = $workspace->creditCards()
+            ->findOrFail($request->integer('credit_card_id'));
+
+        $invoice = $this->invoiceService->createManual(
+            $card,
+            $request->validated(),
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Fatura lançada manualmente sem criar uma nova despesa.',
+        ]);
+
+        return to_route('credit-card-invoices.show', $invoice);
     }
 
     public function show(int $invoice): Response

@@ -9,12 +9,70 @@ use App\Enums\TransactionInstallmentStatus;
 use App\Models\CreditCard;
 use App\Models\CreditCardInvoice;
 use App\Models\CreditCardInvoicePayment;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class CreditCardInvoiceService
 {
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function createManual(CreditCard $card, array $data): CreditCardInvoice
+    {
+        $referenceMonth = CarbonImmutable::createFromFormat(
+            'Y-m',
+            (string) $data['reference_month'],
+        )->startOfMonth();
+        $dueDate = CarbonImmutable::parse((string) $data['due_date'])->startOfDay();
+
+        if ($dueDate->format('Y-m') !== $referenceMonth->format('Y-m')) {
+            throw ValidationException::withMessages([
+                'due_date' => 'O vencimento deve pertencer ao mês de referência da fatura.',
+            ]);
+        }
+
+        $alreadyExists = CreditCardInvoice::query()
+            ->where('workspace_id', $card->workspace_id)
+            ->where('credit_card_id', $card->id)
+            ->whereDate('reference_month', $referenceMonth->toDateString())
+            ->exists();
+
+        if ($alreadyExists) {
+            throw ValidationException::withMessages([
+                'reference_month' => 'Já existe uma fatura para este cartão neste mês de referência.',
+            ]);
+        }
+
+        $sameMonthClosing = $this->dateInMonth(
+            $referenceMonth,
+            $card->closing_day,
+        );
+        $closingDate = $dueDate->greaterThan($sameMonthClosing)
+            ? $sameMonthClosing
+            : $this->dateInMonth(
+                $referenceMonth->subMonth(),
+                $card->closing_day,
+            );
+
+        $invoice = CreditCardInvoice::query()->create([
+            'workspace_id' => $card->workspace_id,
+            'credit_card_id' => $card->id,
+            'reference_month' => $referenceMonth->toDateString(),
+            'closing_date' => $closingDate->toDateString(),
+            'due_date' => $dueDate->toDateString(),
+            'calculated_amount' => '0.00',
+            'statement_amount' => (string) $data['statement_amount'],
+            'paid_amount' => '0.00',
+            'status' => CreditCardInvoiceStatus::Closed->value,
+        ]);
+
+        $this->autoLinkPendingPayments($invoice);
+
+        return $invoice->refresh();
+    }
+
     public function close(CreditCardInvoice $invoice, ?string $statementAmount = null): CreditCardInvoice
     {
         if ($invoice->status === CreditCardInvoiceStatus::Paid) {
@@ -364,6 +422,16 @@ class CreditCardInvoiceService
         $paid = $this->moneyToCents((string) $invoice->paid_amount);
 
         return max(0, $total - $paid);
+    }
+
+    private function dateInMonth(
+        CarbonImmutable $month,
+        int $day,
+    ): CarbonImmutable {
+        $base = $month->startOfMonth();
+        $safeDay = min($day, $base->daysInMonth);
+
+        return $base->addDays($safeDay - 1);
     }
 
     private function moneyToCents(string $amount): int

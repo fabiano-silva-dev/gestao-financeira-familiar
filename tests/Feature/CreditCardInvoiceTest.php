@@ -22,6 +22,83 @@ class CreditCardInvoiceTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_manual_invoice_can_be_created_without_creating_expense_or_cash_movement(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create([
+            'closing_day' => 25,
+            'due_day' => 5,
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('credit-card-invoices.store'), [
+                'credit_card_id' => $card->id,
+                'reference_month' => '2026-10',
+                'due_date' => '2026-10-05',
+                'statement_amount' => '389.90',
+            ]);
+
+        $invoice = CreditCardInvoice::query()->sole();
+
+        $response
+            ->assertRedirect(route('credit-card-invoices.show', $invoice))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame($workspace->id, $invoice->workspace_id);
+        $this->assertSame($card->id, $invoice->credit_card_id);
+        $this->assertSame('2026-10-01', $invoice->reference_month->toDateString());
+        $this->assertSame('2026-09-25', $invoice->closing_date->toDateString());
+        $this->assertSame('2026-10-05', $invoice->due_date->toDateString());
+        $this->assertSame('0.00', $invoice->calculated_amount);
+        $this->assertSame('389.90', $invoice->statement_amount);
+        $this->assertSame(CreditCardInvoiceStatus::Closed, $invoice->status);
+        $this->assertDatabaseCount('financial_transactions', 0);
+        $this->assertDatabaseCount('transaction_installments', 0);
+        $this->assertDatabaseCount('account_movements', 0);
+    }
+
+    public function test_manual_invoice_rejects_duplicate_card_and_reference_month(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+        $data = [
+            'credit_card_id' => $card->id,
+            'reference_month' => '2026-10',
+            'due_date' => '2026-10-12',
+            'statement_amount' => '100.00',
+        ];
+
+        $request->post(route('credit-card-invoices.store'), $data)
+            ->assertSessionHasNoErrors();
+
+        $request->post(route('credit-card-invoices.store'), $data)
+            ->assertSessionHasErrors('reference_month');
+
+        $this->assertDatabaseCount('credit_card_invoices', 1);
+    }
+
+    public function test_manual_invoice_rejects_card_from_another_workspace(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $otherWorkspace = Workspace::factory()->create();
+        $otherCard = CreditCard::factory()->for($otherWorkspace)->create();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('credit-card-invoices.store'), [
+                'credit_card_id' => $otherCard->id,
+                'reference_month' => '2026-10',
+                'due_date' => '2026-10-12',
+                'statement_amount' => '100.00',
+            ])
+            ->assertSessionHasErrors('credit_card_id');
+
+        $this->assertDatabaseCount('credit_card_invoices', 0);
+    }
+
     public function test_card_purchase_preserves_total_and_creates_linked_installments_and_invoices(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();

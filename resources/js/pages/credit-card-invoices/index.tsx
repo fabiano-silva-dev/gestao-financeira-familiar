@@ -1,12 +1,13 @@
 import { Head, Link, usePage } from '@inertiajs/react';
-import { ArrowRight, ReceiptText } from 'lucide-react';
+import { ArrowRight, Plus, ReceiptText } from 'lucide-react';
 import { ListingEmpty } from '@/components/listing/listing-empty';
 import { ListingToolbar } from '@/components/listing/listing-toolbar';
 import { SortableColumn } from '@/components/listing/sortable-column';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { sortListing } from '@/lib/listing';
-import { index, show } from '@/routes/credit-card-invoices';
+import { create, index, show } from '@/routes/credit-card-invoices';
 import type {
     CreditCardInvoice,
     ListingFilterOption,
@@ -72,17 +73,25 @@ export default function CreditCardInvoicesIndex() {
             <Head title="Faturas" />
 
             <div className="flex h-full flex-1 flex-col gap-6 p-4 md:p-6">
-                <div>
-                    <h1 className="text-2xl font-semibold tracking-tight">
-                        Faturas de cartão
-                    </h1>
-                    <p className="text-muted-foreground text-sm">
-                        Ciclos, vencimentos e pagamentos de{' '}
-                        <span className="font-medium">
-                            {workspace.current?.name}
-                        </span>
-                        .
-                    </p>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                        <h1 className="text-2xl font-semibold tracking-tight">
+                            Faturas de cartão
+                        </h1>
+                        <p className="text-muted-foreground text-sm">
+                            Ciclos, vencimentos e pagamentos de{' '}
+                            <span className="font-medium">
+                                {workspace.current?.name}
+                            </span>
+                            .
+                        </p>
+                    </div>
+                    <Button asChild className="sm:shrink-0">
+                        <Link href={create()}>
+                            <Plus />
+                            Lançar fatura
+                        </Link>
+                    </Button>
                 </div>
 
                 {!hasRecords ? (
@@ -98,7 +107,9 @@ export default function CreditCardInvoicesIndex() {
                                 <p className="text-muted-foreground max-w-md text-sm">
                                     Ao registrar uma despesa no cartão, as
                                     parcelas serão vinculadas automaticamente às
-                                    faturas correspondentes.
+                                    faturas correspondentes. Você também pode
+                                    lançar uma fatura manualmente quando tiver
+                                    apenas o valor total da operadora.
                                 </p>
                             </div>
                         </CardContent>

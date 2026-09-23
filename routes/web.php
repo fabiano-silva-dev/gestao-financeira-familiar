@@ -115,6 +115,10 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
 
     Route::get('faturas', [CreditCardInvoiceController::class, 'index'])
         ->name('credit-card-invoices.index');
+    Route::get('faturas/nova', [CreditCardInvoiceController::class, 'create'])
+        ->name('credit-card-invoices.create');
+    Route::post('faturas', [CreditCardInvoiceController::class, 'store'])
+        ->name('credit-card-invoices.store');
     Route::get('faturas/{invoice}', [CreditCardInvoiceController::class, 'show'])
         ->whereNumber('invoice')
         ->name('credit-card-invoices.show');
