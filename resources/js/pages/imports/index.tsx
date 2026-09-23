@@ -196,72 +196,114 @@ function detectedFacts(item: UnifiedImportHistoryItem) {
     );
 }
 
-function suggestedCardId(
+function accountSuggestionRank(
     item: UnifiedImportHistoryItem,
-    cards: CardStatementCardOption[],
-) {
-    const detection = item.autodetection;
-
-    if (!detection || detection.document_type !== 'credit_card_statement') {
-        return undefined;
-    }
-
-    if (
-        detection.identifier_type === 'card_last_four' &&
-        detection.identifier_value
-    ) {
-        const matches = cards.filter(
-            (card) => card.last_four === detection.identifier_value,
-        );
-
-        if (matches.length === 1) {
-            return String(matches[0].id);
-        }
-    }
-
-    return undefined;
-}
-
-function suggestedAccountId(
-    item: UnifiedImportHistoryItem,
-    accounts: FinancialImportAccountOption[],
+    account: FinancialImportAccountOption,
 ) {
     const detection = item.autodetection;
 
     if (
         !detection ||
         detection.document_type === 'credit_card_statement' ||
-        detection.document_type === 'proof'
+        detection.document_type === 'proof' ||
+        !account.is_active
     ) {
-        return undefined;
+        return 0;
     }
 
+    const institutionMatches =
+        detection.institution !== null &&
+        account.institution_key === detection.institution;
     const identifier = detection.identifier_value?.replace(/\D/g, '');
+    const accountNumber = account.account_number?.replace(/\D/g, '');
 
-    if (identifier) {
-        const matches = accounts.filter(
-            (account) => account.account_number?.replace(/\D/g, '') === identifier,
-        );
-
-        if (matches.length === 1) {
-            return String(matches[0].id);
-        }
+    if (
+        identifier &&
+        accountNumber === identifier &&
+        (detection.institution === null || institutionMatches)
+    ) {
+        return 2;
     }
 
-    if (detection.institution) {
-        const institution = detection.institution.replaceAll('_', ' ');
-        const matches = accounts.filter((account) => {
-            const stored = `${account.institution ?? ''} ${account.name}`.toLowerCase();
+    return institutionMatches ? 1 : 0;
+}
 
-            return stored.includes(institution.toLowerCase());
-        });
+function cardSuggestionRank(
+    item: UnifiedImportHistoryItem,
+    card: CardStatementCardOption,
+) {
+    const detection = item.autodetection;
 
-        if (matches.length === 1) {
-            return String(matches[0].id);
-        }
+    if (
+        !detection ||
+        detection.document_type !== 'credit_card_statement' ||
+        !card.is_active
+    ) {
+        return 0;
     }
 
-    return undefined;
+    const institutionMatches =
+        detection.institution !== null &&
+        card.institution_key === detection.institution;
+
+    if (
+        detection.identifier_type === 'card_last_four' &&
+        detection.identifier_value === card.last_four &&
+        (detection.institution === null || institutionMatches)
+    ) {
+        return 2;
+    }
+
+    return institutionMatches ? 1 : 0;
+}
+
+function prioritizeOptions<T>(options: T[], rank: (option: T) => number): T[] {
+    return options
+        .map((option, index) => ({ option, index, rank: rank(option) }))
+        .sort((left, right) => right.rank - left.rank || left.index - right.index)
+        .map(({ option }) => option);
+}
+
+function suggestedCardId(
+    item: UnifiedImportHistoryItem,
+    cards: CardStatementCardOption[],
+) {
+    const identifierMatches = cards.filter(
+        (card) => cardSuggestionRank(item, card) === 2,
+    );
+
+    if (identifierMatches.length === 1) {
+        return String(identifierMatches[0].id);
+    }
+
+    const institutionMatches = cards.filter(
+        (card) => cardSuggestionRank(item, card) > 0,
+    );
+
+    return institutionMatches.length === 1
+        ? String(institutionMatches[0].id)
+        : undefined;
+}
+
+function suggestedAccountId(
+    item: UnifiedImportHistoryItem,
+    accounts: FinancialImportAccountOption[],
+) {
+    const identifierMatches = accounts.filter(
+        (account) => accountSuggestionRank(item, account) === 2,
+    );
+
+    if (identifierMatches.length === 1) {
+        return String(identifierMatches[0].id);
+    }
+
+    const institutionMatches = accounts.filter(
+        (account) => accountSuggestionRank(item, account) > 0,
+    );
+
+    return institutionMatches.length === 1
+        ? String(institutionMatches[0].id)
+        : undefined;
 }
 
 function PendingImportResolver({
@@ -298,6 +340,12 @@ function PendingImportResolver({
     const institution = formatInstitution(item.autodetection?.institution);
     const detectedReference = item.autodetection?.reference_month;
     const facts = detectedFacts(item);
+    const prioritizedAccounts = prioritizeOptions(accountOptions, (account) =>
+        accountSuggestionRank(item, account),
+    );
+    const prioritizedCards = prioritizeOptions(cardOptions, (card) =>
+        cardSuggestionRank(item, card),
+    );
 
     return (
         <div className="rounded-lg border p-4">
@@ -389,14 +437,32 @@ function PendingImportResolver({
                                         <SelectValue placeholder="Selecione a conta" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {accountOptions.map((account) => (
-                                            <SelectItem
-                                                key={account.id}
-                                                value={String(account.id)}
-                                            >
-                                                {accountOptionLabel(account)}
-                                            </SelectItem>
-                                        ))}
+                                        {prioritizedAccounts.map((account) => {
+                                            const isSuggested =
+                                                accountSuggestionRank(
+                                                    item,
+                                                    account,
+                                                ) > 0;
+
+                                            return (
+                                                <SelectItem
+                                                    key={account.id}
+                                                    value={String(account.id)}
+                                                    className={
+                                                        isSuggested
+                                                            ? 'bg-accent/50 font-medium'
+                                                            : undefined
+                                                    }
+                                                >
+                                                    {accountOptionLabel(account)}
+                                                    {isSuggested && (
+                                                        <span className="text-primary ml-2 text-xs font-semibold">
+                                                            Sugerido
+                                                        </span>
+                                                    )}
+                                                </SelectItem>
+                                            );
+                                        })}
                                     </SelectContent>
                                 </Select>
                                 <InputError message={errors.financial_account_id} />
@@ -417,14 +483,32 @@ function PendingImportResolver({
                                             <SelectValue placeholder="Selecione o cartão" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {cardOptions.map((card) => (
-                                                <SelectItem
-                                                    key={card.id}
-                                                    value={String(card.id)}
-                                                >
-                                                    {cardOptionLabel(card)}
-                                                </SelectItem>
-                                            ))}
+                                            {prioritizedCards.map((card) => {
+                                                const isSuggested =
+                                                    cardSuggestionRank(
+                                                        item,
+                                                        card,
+                                                    ) > 0;
+
+                                                return (
+                                                    <SelectItem
+                                                        key={card.id}
+                                                        value={String(card.id)}
+                                                        className={
+                                                            isSuggested
+                                                                ? 'bg-accent/50 font-medium'
+                                                                : undefined
+                                                        }
+                                                    >
+                                                        {cardOptionLabel(card)}
+                                                        {isSuggested && (
+                                                            <span className="text-primary ml-2 text-xs font-semibold">
+                                                                Sugerido
+                                                            </span>
+                                                        )}
+                                                    </SelectItem>
+                                                );
+                                            })}
                                         </SelectContent>
                                     </Select>
                                     <InputError message={errors.credit_card_id} />

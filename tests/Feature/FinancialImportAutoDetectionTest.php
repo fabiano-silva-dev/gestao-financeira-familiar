@@ -201,9 +201,11 @@ class FinancialImportAutoDetectionTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('accountOptions.0.id', $paymentAccount->id)
+                ->where('accountOptions.0.institution_key', 'nubank')
                 ->where('accountOptions.0.agency', '0001')
                 ->where('accountOptions.0.account_number', '12345678-9')
                 ->where('cardOptions.0.id', $card->id)
+                ->where('cardOptions.0.institution_key', 'nubank')
                 ->where('cardOptions.0.holder_name', 'Fabiano')
                 ->where('cardOptions.0.payment_account_name', 'Nubank Fabiano')
                 ->where('cardOptions.0.payment_account_agency', '0001')

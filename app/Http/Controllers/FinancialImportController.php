@@ -12,6 +12,7 @@ use App\Models\FinancialAccount;
 use App\Models\FinancialImport;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Imports\Detection\InstitutionMatcher;
 use App\Services\Imports\FinancialDocumentImportService;
 use App\Services\Imports\ImportedFileDestinationService;
 use App\Support\Listings\ListingQuery;
@@ -28,6 +29,7 @@ class FinancialImportController extends Controller
         private readonly CurrentWorkspace $currentWorkspace,
         private readonly FinancialDocumentImportService $documentImportService,
         private readonly ImportedFileDestinationService $destinationService,
+        private readonly InstitutionMatcher $institutionMatcher,
     ) {}
 
     public function index(Request $request): Response
@@ -94,6 +96,7 @@ class FinancialImportController extends Controller
                     'id' => $account->id,
                     'name' => $account->name,
                     'institution' => $account->institution,
+                    'institution_key' => $this->institutionKey($account->institution, $account->name),
                     'agency' => $account->agency,
                     'account_number' => $account->account_number,
                     'is_active' => $account->is_active,
@@ -119,6 +122,7 @@ class FinancialImportController extends Controller
                     'id' => $card->id,
                     'name' => $card->name,
                     'institution' => $card->institution,
+                    'institution_key' => $this->institutionKey($card->institution, $card->name),
                     'last_four' => $card->last_four,
                     'holder_name' => $card->holder?->name,
                     'payment_account_name' => $card->paymentAccount?->name,
@@ -252,6 +256,19 @@ class FinancialImportController extends Controller
         ]);
 
         return to_route('imports.index');
+    }
+
+    private function institutionKey(?string $institution, string $name): ?string
+    {
+        if ($institution !== null) {
+            $matchedInstitution = $this->institutionMatcher->detect($institution);
+
+            if ($matchedInstitution !== null) {
+                return $matchedInstitution;
+            }
+        }
+
+        return $this->institutionMatcher->detect($name);
     }
 
     private function workspace(): Workspace
