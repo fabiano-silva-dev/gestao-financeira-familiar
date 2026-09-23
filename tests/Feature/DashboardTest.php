@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\CategoryType;
 use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
@@ -46,6 +47,7 @@ class DashboardTest extends TestCase
                 ->where('metrics.current_balance', '0.00')
                 ->where('metrics.projected_balance', '0.00')
                 ->has('cashFlow', 6)
+                ->has('categoryIncomes', 0)
                 ->has('categoryExpenses', 0)
                 ->has('upcomingEntries', 0)
                 ->has('recentEntries', 0)
@@ -70,6 +72,10 @@ class DashboardTest extends TestCase
         $category = Category::factory()->for($workspace)->create([
             'name' => 'Esportes',
         ]);
+        $incomeCategory = Category::factory()->for($workspace)->create([
+            'type' => CategoryType::Income->value,
+            'name' => 'Salário',
+        ]);
         $service = app(FinancialEntryService::class);
 
         $this->createEntry($service, $workspace, $account, [
@@ -77,6 +83,7 @@ class DashboardTest extends TestCase
             'transaction_date' => '2026-09-05',
             'description' => 'Receita mensal',
             'amount' => '500.00',
+            'category_id' => $incomeCategory->id,
         ]);
         $this->createEntry($service, $workspace, $account, [
             'transaction_date' => '2026-09-10',
@@ -107,6 +114,11 @@ class DashboardTest extends TestCase
                 ->where('cashFlow.5.month', '2026-09-01')
                 ->where('cashFlow.5.income', '500.00')
                 ->where('cashFlow.5.expenses', '325.00')
+                ->has('categoryIncomes', 1)
+                ->where('categoryIncomes.0.id', $incomeCategory->id)
+                ->where('categoryIncomes.0.name', 'Salário')
+                ->where('categoryIncomes.0.amount', '500.00')
+                ->where('categoryIncomes.0.percentage', 100.0)
                 ->has('categoryExpenses', 1)
                 ->where('categoryExpenses.0.id', $category->id)
                 ->where('categoryExpenses.0.name', 'Esportes')

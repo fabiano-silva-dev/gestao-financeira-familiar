@@ -38,6 +38,7 @@ export type DashboardPageProps = {
     currentPeriod: string;
     metrics: DashboardMetrics;
     cashFlow: CashFlowPoint[];
+    categoryIncomes: CategoryExpense[];
     categoryExpenses: CategoryExpense[];
     upcomingEntries: DashboardEntry[];
     recentEntries: DashboardEntry[];

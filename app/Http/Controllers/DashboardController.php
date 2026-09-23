@@ -89,6 +89,11 @@ class DashboardController extends Controller
                     ->count(),
             ],
             'cashFlow' => $this->cashFlow($workspace, $monthStart),
+            'categoryIncomes' => $this->categoryIncomes(
+                $workspace,
+                $monthStart,
+                $monthEnd,
+            ),
             'categoryExpenses' => $this->categoryExpenses(
                 $workspace,
                 $monthStart,
@@ -336,6 +341,60 @@ class DashboardController extends Controller
                 'net' => $this->money($month['income'] - $month['expenses']),
             ])
             ->all();
+    }
+
+    /**
+     * @return array<int, array{id: int|null, name: string, amount: string, percentage: float}>
+     */
+    private function categoryIncomes(
+        Workspace $workspace,
+        CarbonImmutable $monthStart,
+        CarbonImmutable $monthEnd,
+    ): array {
+        /** @var array<string, array{id: int|null, name: string, amount: int}> $totals */
+        $totals = [];
+
+        $workspace->financialTransactions()
+            ->where('type', FinancialTransactionType::Income->value)
+            ->where('status', FinancialTransactionStatus::Confirmed->value)
+            ->whereNull('credit_card_id')
+            ->whereNotNull('settled_on')
+            ->whereBetween('competence_date', [
+                $monthStart->toDateString(),
+                $monthEnd->toDateString(),
+            ])
+            ->with([
+                'category:id,name,parent_id',
+                'category.parent:id,name',
+            ])
+            ->get(['id', 'category_id', 'amount'])
+            ->each(function (FinancialTransaction $entry) use (&$totals): void {
+                $this->addCategoryTotal(
+                    $totals,
+                    $entry->category,
+                    (string) $entry->amount,
+                );
+            });
+
+        uasort(
+            $totals,
+            fn (array $left, array $right): int => $right['amount'] <=> $left['amount'],
+        );
+        $grandTotal = array_sum(array_column($totals, 'amount'));
+        $items = [];
+
+        foreach ($totals as $group) {
+            $items[] = [
+                'id' => $group['id'],
+                'name' => $group['name'],
+                'amount' => $this->money($group['amount']),
+                'percentage' => $grandTotal > 0
+                    ? round(($group['amount'] / $grandTotal) * 100, 1)
+                    : 0,
+            ];
+        }
+
+        return $items;
     }
 
     /**

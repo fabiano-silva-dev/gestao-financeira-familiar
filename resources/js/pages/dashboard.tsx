@@ -1,4 +1,5 @@
 import { Head, Link, usePage } from '@inertiajs/react';
+import { useState } from 'react';
 import {
     ArrowLeftRight,
     ArrowUpRight,
@@ -179,11 +180,16 @@ function CategoryList({
     items,
     hrefForItem,
     emptyHref,
+    kind,
 }: {
     items: CategoryExpense[];
     hrefForItem: (item: CategoryExpense) => ReturnType<typeof transactionsHref>;
     emptyHref: ReturnType<typeof transactionsHref>;
+    kind: 'expense' | 'income';
 }) {
+    const isIncome = kind === 'income';
+    const kindLabel = isIncome ? 'receitas' : 'despesas';
+
     if (items.length === 0) {
         return (
             <Link
@@ -191,7 +197,9 @@ function CategoryList({
                 className="focus-visible:ring-ring block rounded-lg focus-visible:ring-2 focus-visible:outline-none"
             >
                 <EmptyCardState>
-                    As despesas confirmadas aparecerão aqui por categoria.
+                    {isIncome
+                        ? 'As receitas confirmadas aparecerão aqui por categoria.'
+                        : 'As despesas confirmadas aparecerão aqui por categoria.'}
                 </EmptyCardState>
             </Link>
         );
@@ -217,7 +225,7 @@ function CategoryList({
                         <div
                             className={`h-full rounded-full ${categoryColors[index % categoryColors.length]}`}
                             style={{ width: `${item.percentage}%` }}
-                            title={`${item.percentage}% das despesas do mês`}
+                            title={`${item.percentage}% das ${kindLabel} do mês`}
                         />
                     </div>
                     <p className="text-muted-foreground mt-1 text-right text-[11px]">
@@ -251,11 +259,15 @@ export default function Dashboard() {
         currentPeriod,
         metrics,
         cashFlow,
+        categoryIncomes,
         categoryExpenses,
         upcomingEntries,
         recentEntries,
         workspace,
     } = usePage<DashboardPageProps>().props;
+    const [categoryMode, setCategoryMode] = useState<'expense' | 'income'>(
+        'expense',
+    );
     const currentBalance = Number(metrics.current_balance);
     const projectedBalance = Number(metrics.projected_balance);
     const period = periodQuery(currentPeriod);
@@ -275,13 +287,19 @@ export default function Dashboard() {
     });
     const cashFlowHref = transactionsHref(period);
     const recentHref = transactionsHref(period);
-    const categoryHref = (item: CategoryExpense) =>
+    const categoryHref = (
+        item: CategoryExpense,
+        type: 'expense' | 'income',
+    ) =>
         transactionsHref({
-            type: 'expense',
+            type,
             status: 'confirmed',
             category: item.id === null ? 'none' : String(item.id),
             ...period,
         });
+    const showingExpenses = categoryMode === 'expense';
+    const categoryItems = showingExpenses ? categoryExpenses : categoryIncomes;
+    const categoryListHref = showingExpenses ? expensesHref : incomeHref;
     const cashFlowMonthHref = (point: CashFlowPoint) =>
         transactionsHref(periodQuery(point.month));
     const cashFlowIncomeHref = (point: CashFlowPoint) =>
@@ -417,30 +435,69 @@ export default function Dashboard() {
                     </Card>
 
                     <Card>
-                        <CardHeader className="flex-row items-start justify-between gap-4">
-                            <div>
-                                <CardTitle>
-                                    <SectionLink href={expensesHref}>
-                                        Despesas por categoria
-                                    </SectionLink>
-                                </CardTitle>
-                                <CardDescription className="mt-1">
-                                    Distribuição das despesas confirmadas no
-                                    mês.
-                                </CardDescription>
+                        <CardHeader className="gap-3">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <CardTitle>
+                                        <SectionLink href={categoryListHref}>
+                                            {showingExpenses
+                                                ? 'Despesas por categoria'
+                                                : 'Receitas por categoria'}
+                                        </SectionLink>
+                                    </CardTitle>
+                                    <CardDescription className="mt-1">
+                                        {showingExpenses
+                                            ? 'Distribuição das despesas confirmadas no mês.'
+                                            : 'Distribuição das receitas confirmadas no mês.'}
+                                    </CardDescription>
+                                </div>
+                                <Button variant="ghost" size="sm" asChild>
+                                    <Link href={categoryListHref}>
+                                        Ver todas
+                                        <ArrowUpRight />
+                                    </Link>
+                                </Button>
                             </div>
-                            <Button variant="ghost" size="sm" asChild>
-                                <Link href={expensesHref}>
-                                    Ver todas
-                                    <ArrowUpRight />
-                                </Link>
-                            </Button>
+
+                            <div
+                                role="group"
+                                aria-label="Tipo de distribuição por categoria"
+                                className="bg-muted inline-flex w-fit rounded-lg p-1"
+                            >
+                                <Button
+                                    type="button"
+                                    variant={
+                                        showingExpenses ? 'secondary' : 'ghost'
+                                    }
+                                    size="sm"
+                                    aria-pressed={showingExpenses}
+                                    onClick={() => setCategoryMode('expense')}
+                                    className="h-8 px-3"
+                                >
+                                    Despesas
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant={
+                                        showingExpenses ? 'ghost' : 'secondary'
+                                    }
+                                    size="sm"
+                                    aria-pressed={!showingExpenses}
+                                    onClick={() => setCategoryMode('income')}
+                                    className="h-8 px-3"
+                                >
+                                    Receitas
+                                </Button>
+                            </div>
                         </CardHeader>
                         <CardContent>
                             <CategoryList
-                                items={categoryExpenses}
-                                hrefForItem={categoryHref}
-                                emptyHref={expensesHref}
+                                items={categoryItems}
+                                hrefForItem={(item) =>
+                                    categoryHref(item, categoryMode)
+                                }
+                                emptyHref={categoryListHref}
+                                kind={categoryMode}
                             />
                         </CardContent>
                     </Card>
