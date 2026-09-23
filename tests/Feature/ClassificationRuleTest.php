@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\ClassificationRuleAutomationLevel;
 use App\Enums\ClassificationRuleMatchType;
 use App\Enums\FinancialTransactionType;
 use App\Models\Category;
@@ -147,6 +148,7 @@ class ClassificationRuleTest extends TestCase
             'match_type' => ClassificationRuleMatchType::ContainsAllWords->value,
             'pattern' => 'Mercado Pago Fabiano',
             'action_type' => FinancialTransactionType::Expense->value,
+            'automation_level' => ClassificationRuleAutomationLevel::ReconcileExisting->value,
             'payee_name' => 'Mercado Pago',
             'category_id' => $category->id,
         ])
@@ -157,12 +159,17 @@ class ClassificationRuleTest extends TestCase
         $this->assertSame($workspace->id, $rule->workspace_id);
         $this->assertSame('Mercado Pago Fabiano', $rule->pattern);
         $this->assertSame(ClassificationRuleMatchType::ContainsAllWords, $rule->match_type);
+        $this->assertSame(
+            ClassificationRuleAutomationLevel::ReconcileExisting,
+            $rule->automation_level,
+        );
 
         $request->put(route('classification-rules.update', $rule), [
             'name' => 'PIX Mercado Pago',
             'match_type' => ClassificationRuleMatchType::Contains->value,
             'pattern' => 'Mercado Pago Fabiano',
             'action_type' => FinancialTransactionType::Expense->value,
+            'automation_level' => ClassificationRuleAutomationLevel::CreateAndReconcile->value,
             'payee_name' => 'Fabiano',
             'category_id' => $category->id,
         ])
@@ -171,6 +178,10 @@ class ClassificationRuleTest extends TestCase
 
         $this->assertSame('PIX Mercado Pago', $rule->fresh()->name);
         $this->assertSame('Fabiano', $rule->fresh()->payee_name);
+        $this->assertSame(
+            ClassificationRuleAutomationLevel::CreateAndReconcile,
+            $rule->fresh()->automation_level,
+        );
     }
 
     public function test_expense_rule_requires_category(): void
