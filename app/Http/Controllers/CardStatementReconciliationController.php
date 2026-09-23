@@ -114,15 +114,30 @@ class CardStatementReconciliationController extends Controller
         return $this->redirectAfterCardReconciliation($invoice);
     }
 
-    public function create(Request $request, int $invoice, int $entry): RedirectResponse
-    {
+    public function create(
+        ClassifyReconciliationEntryRequest $request,
+        int $invoice,
+        int $entry,
+    ): RedirectResponse {
         $user = $request->user();
         abort_unless($user instanceof User, 403);
         $workspace = $this->workspace();
+        $model = $this->findEntry($this->findInvoice($workspace, $invoice), $entry);
+
+        if ($request->has('category_id') || $request->has('payee_name')) {
+            $model = $this->entryActions->classifyCardEntry(
+                $workspace,
+                $model,
+                $request->input('payee_name'),
+                $request->filled('category_id')
+                    ? $request->integer('category_id')
+                    : $model->suggested_category_id,
+            );
+        }
+
         $this->entryActions->createCardTransaction(
             $workspace,
-            $this->findEntry($this->findInvoice($workspace, $invoice), $entry)
-                ->load(['creditCard', 'invoice']),
+            $model->load(['creditCard', 'invoice']),
             $user,
         );
 

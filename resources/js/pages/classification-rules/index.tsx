@@ -204,8 +204,13 @@ export default function ClassificationRulesIndex() {
                                                     {rule.category_name
                                                         ? ` · ${rule.category_name}`
                                                         : ''}
-                                                    {rule.counterpart_account_name
-                                                        ? ` · ${rule.counterpart_account_name}`
+                                                    {rule.action_type ===
+                                                    'transfer'
+                                                        ? ` · ${rule.financial_account_name ?? 'Sem conta do extrato'}${
+                                                              rule.counterpart_account_name
+                                                                  ? ` → ${rule.counterpart_account_name}`
+                                                                  : ''
+                                                          }`
                                                         : ''}
                                                 </p>
                                             </div>

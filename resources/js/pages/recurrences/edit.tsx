@@ -58,8 +58,10 @@ export default function RecurrenceEdit({ recurrence, ...formProps }: Props) {
                             </Badge>
                         </div>
                         <p className="text-muted-foreground mt-1 text-sm">
-                            Ajuste a regra; compromissos futuros ainda
-                            planejados serão regenerados com os novos dados.
+                            Ajuste a regra. Compromissos futuros ainda
+                            planejados são regenerados. Se o início da geração
+                            recuar, as ocorrências faltantes desse período
+                            também são criadas.
                         </p>
                     </div>
                     <Form

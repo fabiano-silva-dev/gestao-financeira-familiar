@@ -7,6 +7,7 @@ enum FinancialImportStatus: string
     case Processing = 'processing';
     case NeedsConfirmation = 'needs_confirmation';
     case Completed = 'completed';
+    case NoMovement = 'no_movement';
     case Failed = 'failed';
 
     public function label(): string
@@ -15,6 +16,7 @@ enum FinancialImportStatus: string
             self::Processing => 'Processando',
             self::NeedsConfirmation => 'Aguardando confirmação',
             self::Completed => 'Concluída',
+            self::NoMovement => 'Sem movimento',
             self::Failed => 'Falhou',
         };
     }

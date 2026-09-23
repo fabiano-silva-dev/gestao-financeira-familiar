@@ -38,7 +38,10 @@ class MonthlyImportClosingController extends Controller
             ->get();
 
         $imports = $workspace->financialImports()
-            ->where('status', FinancialImportStatus::Completed->value)
+            ->whereIn('status', [
+                FinancialImportStatus::Completed->value,
+                FinancialImportStatus::NoMovement->value,
+            ])
             ->where(function ($query) use ($monthStart, $monthEnd, $periodKey): void {
                 $query->where(function ($statement) use ($monthStart, $monthEnd): void {
                     $statement
@@ -236,7 +239,13 @@ class MonthlyImportClosingController extends Controller
             'name' => $account->name,
             'institution' => $account->institution,
             'subtitle' => collect([$account->agency ? 'Ag. '.$account->agency : null, $account->account_number ? 'Conta '.$account->account_number : null])->filter()->implode(' · '),
-            'status' => $this->status($closure, $hasImport, $total, $pending),
+            'status' => $this->status(
+                $closure,
+                $hasImport,
+                $total,
+                $pending,
+                $this->recordedNoMovement($imports, $total),
+            ),
             'has_import' => $hasImport,
             'period_complete' => $periodComplete,
             'period_start' => $imports->min(fn (FinancialImport $import): ?string => $import->statement_start_on?->toDateString()),
@@ -268,7 +277,13 @@ class MonthlyImportClosingController extends Controller
             'name' => $card->name,
             'institution' => $card->institution,
             'subtitle' => 'Final '.$card->last_four,
-            'status' => $this->status($closure, $hasImport, $total, $pending),
+            'status' => $this->status(
+                $closure,
+                $hasImport,
+                $total,
+                $pending,
+                $this->recordedNoMovement($imports, $total),
+            ),
             'has_import' => $hasImport,
             'period_complete' => $hasImport,
             'period_start' => null,
@@ -286,17 +301,27 @@ class MonthlyImportClosingController extends Controller
         ];
     }
 
+    private function recordedNoMovement(Collection $imports, int $total): bool
+    {
+        return $total === 0
+            && $imports->isNotEmpty()
+            && $imports->every(
+                fn (FinancialImport $import): bool => $import->status === FinancialImportStatus::NoMovement,
+            );
+    }
+
     private function status(
         ?ImportPeriodClosure $closure,
         bool $hasImport,
         int $total,
         int $pending,
+        bool $recordedNoMovement = false,
     ): string {
         if ($closure?->status === 'closed') {
             return 'closed';
         }
 
-        if ($closure?->status === 'no_movement') {
+        if ($closure?->status === 'no_movement' || ($recordedNoMovement && $closure?->status !== 'open')) {
             return 'no_movement';
         }
 
@@ -356,6 +381,8 @@ class MonthlyImportClosingController extends Controller
             'start_on' => $import->statement_start_on?->toDateString(),
             'end_on' => $import->statement_end_on?->toDateString(),
             'total_records' => $import->total_records,
+            'status' => $import->status->value,
+            'status_label' => $import->status->label(),
             'processing_summary' => $summary,
         ];
     }

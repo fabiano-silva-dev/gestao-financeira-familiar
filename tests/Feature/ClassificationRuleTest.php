@@ -191,8 +191,11 @@ class ClassificationRuleTest extends TestCase
     public function test_user_can_create_a_transfer_rule_with_an_account(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();
-        $account = FinancialAccount::factory()->for($workspace)->create([
-            'name' => 'Mercado Pago',
+        $mercadoPago = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Mercado Pago Fabiano',
+        ]);
+        $banrisul = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Banrisul',
         ]);
 
         $this->actingAs($user)
@@ -203,18 +206,20 @@ class ClassificationRuleTest extends TestCase
                 'pattern' => 'FABIANO CARVALHO DA SILVA',
                 'action_type' => FinancialTransactionType::Transfer->value,
                 'payee_name' => 'Fabiano',
-                'counterpart_account_id' => $account->id,
+                'financial_account_id' => $mercadoPago->id,
+                'counterpart_account_id' => $banrisul->id,
             ])
             ->assertRedirect(route('classification-rules.index'))
             ->assertSessionHasNoErrors();
 
         $rule = ClassificationRule::query()->sole();
         $this->assertSame(FinancialTransactionType::Transfer, $rule->action_type);
-        $this->assertSame($account->id, $rule->counterpart_account_id);
+        $this->assertSame($mercadoPago->id, $rule->financial_account_id);
+        $this->assertSame($banrisul->id, $rule->counterpart_account_id);
         $this->assertNull($rule->category_id);
     }
 
-    public function test_transfer_rule_requires_account(): void
+    public function test_transfer_rule_requires_statement_and_counterpart_accounts(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();
 
@@ -226,7 +231,94 @@ class ClassificationRuleTest extends TestCase
                 'pattern' => 'Mercado Pago Fabiano',
                 'action_type' => FinancialTransactionType::Transfer->value,
             ])
-            ->assertSessionHasErrors(['counterpart_account_id']);
+            ->assertSessionHasErrors([
+                'financial_account_id',
+                'counterpart_account_id',
+            ]);
+    }
+
+    public function test_transfer_rule_rejects_the_same_account_on_both_sides(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('classification-rules.store'), [
+                'name' => 'Mesma conta',
+                'match_type' => ClassificationRuleMatchType::Contains->value,
+                'pattern' => 'FABIANO CARVALHO DA SILVA',
+                'action_type' => FinancialTransactionType::Transfer->value,
+                'financial_account_id' => $account->id,
+                'counterpart_account_id' => $account->id,
+            ])
+            ->assertSessionHasErrors([
+                'financial_account_id',
+                'counterpart_account_id',
+            ]);
+    }
+
+    public function test_same_transfer_pattern_can_exist_on_another_statement_account(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $mercadoPago = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Mercado Pago Fabiano',
+        ]);
+        $banrisul = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Banrisul',
+        ]);
+        ClassificationRule::factory()->for($workspace)->create([
+            'name' => 'Entrada no Mercado Pago',
+            'match_type' => ClassificationRuleMatchType::Contains,
+            'pattern' => 'FABIANO CARVALHO DA SILVA',
+            'action_type' => FinancialTransactionType::Transfer,
+            'financial_account_id' => $mercadoPago->id,
+            'counterpart_account_id' => $banrisul->id,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('classification-rules.store'), [
+                'name' => 'Saída no Banrisul',
+                'match_type' => ClassificationRuleMatchType::Contains->value,
+                'pattern' => 'fabiano carvalho da silva',
+                'action_type' => FinancialTransactionType::Transfer->value,
+                'financial_account_id' => $banrisul->id,
+                'counterpart_account_id' => $mercadoPago->id,
+            ])
+            ->assertRedirect(route('classification-rules.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseCount('classification_rules', 2);
+    }
+
+    public function test_cannot_duplicate_a_transfer_pattern_on_the_same_account(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $mercadoPago = FinancialAccount::factory()->for($workspace)->create();
+        $banrisul = FinancialAccount::factory()->for($workspace)->create();
+        ClassificationRule::factory()->for($workspace)->create([
+            'name' => 'Entrada no Mercado Pago',
+            'match_type' => ClassificationRuleMatchType::Contains,
+            'pattern' => 'FABIANO CARVALHO DA SILVA',
+            'action_type' => FinancialTransactionType::Transfer,
+            'financial_account_id' => $mercadoPago->id,
+            'counterpart_account_id' => $banrisul->id,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('classification-rules.store'), [
+                'name' => 'Outra entrada',
+                'match_type' => ClassificationRuleMatchType::Contains->value,
+                'pattern' => 'fabiano carvalho da silva',
+                'action_type' => FinancialTransactionType::Transfer->value,
+                'financial_account_id' => $mercadoPago->id,
+                'counterpart_account_id' => $banrisul->id,
+            ])
+            ->assertSessionHasErrors(['pattern']);
+
+        $this->assertDatabaseCount('classification_rules', 1);
     }
 
     public function test_user_can_toggle_rule_status(): void

@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property ClassificationRuleMatchType $match_type
  * @property FinancialTransactionType $action_type
  * @property-read Category|null $category
+ * @property-read FinancialAccount|null $financialAccount
  * @property-read FinancialAccount|null $counterpartAccount
  */
 #[Fillable([
@@ -23,6 +24,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'action_type',
     'payee_name',
     'category_id',
+    'financial_account_id',
     'counterpart_account_id',
     'is_active',
 ])]
@@ -45,6 +47,14 @@ class ClassificationRule extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+
+    /**
+     * @return BelongsTo<FinancialAccount, $this>
+     */
+    public function financialAccount(): BelongsTo
+    {
+        return $this->belongsTo(FinancialAccount::class, 'financial_account_id');
     }
 
     /**

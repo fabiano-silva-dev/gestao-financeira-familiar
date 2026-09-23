@@ -26,6 +26,7 @@ class ClassificationRuleFactory extends Factory
             'action_type' => FinancialTransactionType::Expense,
             'payee_name' => fake()->company(),
             'category_id' => null,
+            'financial_account_id' => null,
             'counterpart_account_id' => null,
             'is_active' => true,
         ];

@@ -267,9 +267,14 @@ export function ReconciliationScopePicker({
                             id="reconciliation-import"
                             className="w-full"
                         >
-                            <SelectValue placeholder="Selecione um arquivo" />
+                            <SelectValue placeholder="Selecione um arquivo">
+                                {selectedImport?.label}
+                            </SelectValue>
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent
+                            align="start"
+                            className="w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]"
+                        >
                             <SelectItem value="none">
                                 Selecione um arquivo
                             </SelectItem>
@@ -277,8 +282,24 @@ export function ReconciliationScopePicker({
                                 <SelectItem
                                     key={option.id}
                                     value={String(option.id)}
+                                    textValue={option.label}
+                                    className="items-start py-2 whitespace-normal [&>span:last-child]:block [&>span:last-child]:min-w-0 [&>span:last-child]:flex-1"
                                 >
-                                    {option.label}
+                                    <span className="flex min-w-0 flex-col gap-0.5">
+                                        <span className="leading-snug font-medium">
+                                            {option.kind_label} · {option.target}
+                                        </span>
+                                        {option.period && (
+                                            <span className="text-muted-foreground text-xs leading-snug">
+                                                {option.period}
+                                            </span>
+                                        )}
+                                        {option.filename && (
+                                            <span className="text-muted-foreground truncate text-xs leading-snug">
+                                                {option.filename}
+                                            </span>
+                                        )}
+                                    </span>
                                 </SelectItem>
                             ))}
                         </SelectContent>

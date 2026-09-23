@@ -26,6 +26,8 @@ type ImportDetail = {
     start_on: string | null;
     end_on: string | null;
     total_records: number;
+    status: string;
+    status_label: string;
     processing_summary: {
         categorized_automatically?: number;
         automatically_reconciled?: number;
@@ -530,7 +532,10 @@ function SourceDetails({ item }: { item: SourceItem }) {
                             </span>
                             <span className="text-muted-foreground">
                                 {' '}
-                                · {entry.total_records} itens
+                                ·{' '}
+                                {entry.status === 'no_movement'
+                                    ? 'Sem movimento'
+                                    : `${entry.total_records} itens`}
                                 {entry.start_on && entry.end_on
                                     ? ` · ${formatDate(entry.start_on)} a ${formatDate(entry.end_on)}`
                                     : ''}

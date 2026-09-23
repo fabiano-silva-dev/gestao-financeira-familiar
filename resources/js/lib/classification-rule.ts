@@ -69,8 +69,15 @@ export function classificationRuleCreateQuery(
         params.set('category_id', String(prompt.category_id));
     }
 
+    if (prompt.financial_account_id !== null) {
+        params.set('financial_account_id', String(prompt.financial_account_id));
+    }
+
     if (prompt.counterpart_account_id !== null) {
-        params.set('counterpart_account_id', String(prompt.counterpart_account_id));
+        params.set(
+            'counterpart_account_id',
+            String(prompt.counterpart_account_id),
+        );
     }
 
     if (prompt.return_to) {

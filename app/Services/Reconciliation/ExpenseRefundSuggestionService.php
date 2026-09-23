@@ -2,7 +2,6 @@
 
 namespace App\Services\Reconciliation;
 
-use App\Enums\ExpenseRefundStatus;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Models\BankStatementEntry;
@@ -50,8 +49,7 @@ final class ExpenseRefundSuggestionService
             ->limit(500)
             ->get()
             ->filter(
-                fn (FinancialTransaction $transaction): bool =>
-                    $entryCents <= $this->refundService->refundableCents($transaction),
+                fn (FinancialTransaction $transaction): bool => $entryCents <= $this->refundService->refundableCents($transaction),
             )
             ->map(function (FinancialTransaction $transaction) use (
                 $entry,
@@ -91,9 +89,17 @@ final class ExpenseRefundSuggestionService
                     + (int) round($similarity * 20)
                     + ($looksLikeRefund ? 10 : 0),
                 );
+                $sameParty = $looksLikeRefund || $this->sameParty(
+                    $entry->description.' '.($entry->memo ?? ''),
+                    collect([
+                        $transaction->description,
+                        $transaction->payee_name,
+                    ])->filter()->join(' '),
+                    $similarity,
+                );
                 [$confidence, $confidenceLabel] = match (true) {
-                    $score >= 90 => ['high', 'Alta confiança'],
-                    $score >= 75 => ['medium', 'Média confiança'],
+                    $score >= 90 && $sameParty => ['high', 'Alta confiança'],
+                    $score >= 75 && $sameParty => ['medium', 'Média confiança'],
                     default => ['low', 'Conferência manual'],
                 };
                 $category = $transaction->category;
@@ -114,7 +120,7 @@ final class ExpenseRefundSuggestionService
                     'confidence' => $confidence,
                     'confidence_label' => $confidenceLabel,
                     'date_distance' => $dateDistance,
-                    'is_suggestion' => $score >= 85,
+                    'is_suggestion' => $score >= 85 && $sameParty,
                     'remaining_refundable_amount' => $this->centsToMoney($remaining),
                     'related_transaction_id' => $transaction->id,
                     'related_description' => $transaction->description,
@@ -140,6 +146,30 @@ final class ExpenseRefundSuggestionService
             ->take(20)
             ->values()
             ->all();
+    }
+
+    private function sameParty(string $credit, string $expense, float $similarity): bool
+    {
+        if ($similarity >= 0.72) {
+            return true;
+        }
+
+        $ignored = [
+            'pix', 'ted', 'doc', 'boleto', 'enviado', 'enviada', 'recebido',
+            'recebida', 'recebimento', 'pagamento', 'pago', 'transferencia',
+            'debito', 'credito', 'compra', 'ltda', 'mei', 'epp', 'banco', 'conta',
+        ];
+        $tokens = function (string $value) use ($ignored): array {
+            $normalized = $this->interpreter->normalize($value);
+
+            return array_values(array_unique(array_filter(
+                explode(' ', $normalized),
+                static fn (string $token): bool => mb_strlen($token) >= 4
+                    && ! in_array($token, $ignored, true),
+            )));
+        };
+
+        return array_intersect($tokens($credit), $tokens($expense)) !== [];
     }
 
     private function centsToMoney(int $cents): string

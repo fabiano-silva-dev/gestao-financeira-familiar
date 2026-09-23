@@ -97,32 +97,71 @@ class ClassificationRuleMatcherTest extends TestCase
         $this->assertSame('expense', $match['action_type']);
     }
 
-    public function test_matches_a_transfer_rule_with_the_counterpart_account(): void
+    public function test_matches_a_transfer_rule_only_on_its_statement_account(): void
     {
         $workspace = $this->workspace();
-        $account = FinancialAccount::factory()->for($workspace)->create([
-            'name' => 'Mercado Pago',
+        $mercadoPago = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Mercado Pago Fabiano',
+        ]);
+        $banrisul = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Banrisul',
         ]);
         $rule = ClassificationRule::factory()->for($workspace)->create([
-            'name' => 'Mercado Pago Fabiano',
-            'pattern' => 'Mercado Pago Fabiano',
-            'match_type' => ClassificationRuleMatchType::ContainsAllWords,
+            'name' => 'Entrada do Banrisul',
+            'pattern' => 'FABIANO CARVALHO DA SILVA',
+            'match_type' => ClassificationRuleMatchType::Contains,
             'action_type' => FinancialTransactionType::Transfer,
             'payee_name' => 'Fabiano',
             'category_id' => null,
-            'counterpart_account_id' => $account->id,
+            'financial_account_id' => $mercadoPago->id,
+            'counterpart_account_id' => $banrisul->id,
         ]);
+        $matcher = app(ClassificationRuleMatcher::class);
+        $description = 'PIX - FABIANO CARVALHO DA SILVA';
 
-        $match = app(ClassificationRuleMatcher::class)->match(
-            $workspace,
-            'transferencia para conta Mercado Pago Fabiano',
-        );
+        $match = $matcher->match($workspace, $description, $mercadoPago->id);
 
         $this->assertNotNull($match);
         $this->assertSame($rule->id, $match['rule_id']);
         $this->assertSame('transfer', $match['action_type']);
-        $this->assertSame($account->id, $match['counterpart_account_id']);
+        $this->assertSame($banrisul->id, $match['counterpart_account_id']);
         $this->assertNull($match['category_id']);
+        $this->assertNull($matcher->match($workspace, $description, $banrisul->id));
+        $this->assertNull($matcher->match($workspace, $description));
+    }
+
+    public function test_allows_the_same_transfer_pattern_on_another_account(): void
+    {
+        $workspace = $this->workspace();
+        $mercadoPago = FinancialAccount::factory()->for($workspace)->create();
+        $banrisul = FinancialAccount::factory()->for($workspace)->create();
+        $existing = ClassificationRule::factory()->for($workspace)->create([
+            'name' => 'Mercado Pago',
+            'pattern' => 'FABIANO CARVALHO DA SILVA',
+            'match_type' => ClassificationRuleMatchType::Contains,
+            'action_type' => FinancialTransactionType::Transfer,
+            'financial_account_id' => $mercadoPago->id,
+            'counterpart_account_id' => $banrisul->id,
+        ]);
+        $matcher = app(ClassificationRuleMatcher::class);
+
+        $this->assertSame(
+            $existing->id,
+            $matcher->findDuplicate(
+                $workspace,
+                ClassificationRuleMatchType::Contains,
+                'fabiano carvalho da silva',
+                null,
+                $mercadoPago->id,
+            )?->id,
+        );
+        $this->assertNull($matcher->findDuplicate(
+            $workspace,
+            ClassificationRuleMatchType::Contains,
+            'fabiano carvalho da silva',
+            null,
+            $banrisul->id,
+        ));
     }
 
     public function test_finds_an_equivalent_duplicate_ignoring_case_and_accents(): void

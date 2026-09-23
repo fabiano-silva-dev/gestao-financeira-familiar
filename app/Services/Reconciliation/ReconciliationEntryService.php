@@ -4,7 +4,6 @@ namespace App\Services\Reconciliation;
 
 use App\Enums\AccountMovementType;
 use App\Enums\CategoryType;
-use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\ExpenseRefundDestination;
 use App\Enums\ExpenseRefundOrigin;
 use App\Enums\FinancialTransactionOrigin;
@@ -141,7 +140,11 @@ final class ReconciliationEntryService
             ]);
         }
 
-        $rule = $this->ruleMatcher->match($workspace, $entry->description);
+        $rule = $this->ruleMatcher->match(
+            $workspace,
+            $entry->description,
+            $entry->financial_account_id,
+        );
 
         if (is_array($rule) && $rule['action_type'] === FinancialTransactionType::Transfer->value) {
             if ($rule['counterpart_account_id'] === null) {
@@ -194,6 +197,7 @@ final class ReconciliationEntryService
             $isExpense,
             $entry->suggested_category_id,
             $entry->suggested_payee_name,
+            $entry->financial_account_id,
         );
 
         if ($resolved['category_id'] === null) {
@@ -623,12 +627,6 @@ final class ReconciliationEntryService
             ]);
         }
 
-        if ($invoice->status !== CreditCardInvoiceStatus::Open) {
-            throw ValidationException::withMessages([
-                'entry' => 'A fatura precisa estar aberta para criar a compra a partir desta linha.',
-            ]);
-        }
-
         $this->cardMaterialization->createFromPendingEntry(
             $workspace,
             $entry->creditCard,
@@ -702,8 +700,9 @@ final class ReconciliationEntryService
         bool $isExpense,
         ?int $suggestedCategoryId,
         ?string $suggestedPayeeName,
+        ?int $financialAccountId = null,
     ): array {
-        $rule = $this->ruleMatcher->match($workspace, $description);
+        $rule = $this->ruleMatcher->match($workspace, $description, $financialAccountId);
         $isTransferRule = is_array($rule)
             && $rule['action_type'] === FinancialTransactionType::Transfer->value;
         $payee = $this->nullableName($suggestedPayeeName)
@@ -751,6 +750,7 @@ final class ReconciliationEntryService
             $transaction->type === FinancialTransactionType::Expense,
             $entry->suggested_category_id,
             $entry->suggested_payee_name,
+            $entry->financial_account_id,
         );
 
         if ($resolved['category_id'] === null) {

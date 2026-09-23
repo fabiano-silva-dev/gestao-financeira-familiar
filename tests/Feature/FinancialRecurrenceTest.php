@@ -82,6 +82,118 @@ class FinancialRecurrenceTest extends TestCase
         $this->assertDatabaseCount('account_movements', 0);
     }
 
+    public function test_generation_start_before_today_creates_retroactive_planned_commitments(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-23 12:00:00'));
+
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('recurrences.store'), [
+                ...$this->validRecurrenceData($account),
+                'description' => 'Negociação Sumaia',
+                'amount' => '200.00',
+                'starts_on' => '2026-09-01',
+                'generation_started_on' => '2026-09-01',
+            ])
+            ->assertRedirect(route('recurrences.index'))
+            ->assertSessionHasNoErrors();
+
+        $recurrence = FinancialRecurrence::query()->sole();
+        $transactions = $recurrence->transactions()
+            ->orderBy('recurrence_occurrence_date')
+            ->get();
+
+        $this->assertSame('2026-09-01', $recurrence->generation_started_on->toDateString());
+        $this->assertSame(
+            ['2026-09-01', '2026-10-01', '2026-11-01', '2026-12-01'],
+            $transactions
+                ->map(fn (FinancialTransaction $entry): string => $entry
+                    ->recurrence_occurrence_date
+                    ->toDateString())
+                ->all(),
+        );
+
+        foreach ($transactions as $transaction) {
+            $this->assertSame(FinancialTransactionStatus::Planned, $transaction->status);
+            $this->assertNull($transaction->settled_on);
+        }
+
+        $this->assertDatabaseCount('account_movements', 0);
+    }
+
+    public function test_updating_generation_start_creates_the_missing_past_occurrence(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-23 12:00:00'));
+
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('recurrences.store'), [
+            ...$this->validRecurrenceData($account),
+            'starts_on' => '2026-09-01',
+            'generation_started_on' => '2026-09-23',
+        ])->assertSessionHasNoErrors();
+
+        $recurrence = FinancialRecurrence::query()->sole();
+
+        $this->assertSame(
+            ['2026-10-01', '2026-11-01', '2026-12-01'],
+            $recurrence->transactions()
+                ->orderBy('recurrence_occurrence_date')
+                ->get()
+                ->map(fn (FinancialTransaction $entry): string => $entry
+                    ->recurrence_occurrence_date
+                    ->toDateString())
+                ->all(),
+        );
+
+        $request->put(route('recurrences.update', $recurrence), [
+            ...$this->validRecurrenceData($account),
+            'starts_on' => '2026-09-01',
+            'generation_started_on' => '2026-09-01',
+        ])->assertSessionHasNoErrors();
+
+        $dates = $recurrence->transactions()
+            ->orderBy('recurrence_occurrence_date')
+            ->get()
+            ->map(fn (FinancialTransaction $entry): string => $entry
+                ->recurrence_occurrence_date
+                ->toDateString())
+            ->all();
+
+        $this->assertSame(
+            ['2026-09-01', '2026-10-01', '2026-11-01', '2026-12-01'],
+            $dates,
+        );
+        $this->assertSame(
+            FinancialTransactionStatus::Planned,
+            $recurrence->transactions()->orderBy('recurrence_occurrence_date')->firstOrFail()->status,
+        );
+        $this->assertDatabaseCount('account_movements', 0);
+    }
+
+    public function test_generation_start_before_first_occurrence_is_rejected(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('recurrences.store'), [
+                ...$this->validRecurrenceData($account),
+                'starts_on' => '2026-09-01',
+                'generation_started_on' => '2026-08-01',
+            ])
+            ->assertSessionHasErrors('generation_started_on');
+
+        $this->assertDatabaseCount('financial_recurrences', 0);
+    }
+
     public function test_already_settled_recurrence_marks_current_occurrence_as_paid(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-09-21 12:00:00'));

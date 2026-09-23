@@ -45,7 +45,10 @@ final class FinancialDocumentImportService
         $fileHash = hash('sha256', $contents);
         $alreadyImported = $workspace->financialImports()
             ->where('file_hash', $fileHash)
-            ->where('status', FinancialImportStatus::Completed->value)
+            ->whereIn('status', [
+                FinancialImportStatus::Completed->value,
+                FinancialImportStatus::NoMovement->value,
+            ])
             ->latest('id')
             ->first();
 
@@ -370,6 +373,23 @@ final class FinancialDocumentImportService
         return $pending->refresh();
     }
 
+    public function discardPending(Workspace $workspace, FinancialImport $pending): void
+    {
+        abort_unless($pending->workspace_id === $workspace->id, 404);
+        abort_unless(
+            $pending->type === FinancialImportType::Document
+                && $pending->status === FinancialImportStatus::NeedsConfirmation,
+            404,
+        );
+
+        $storedPath = $pending->stored_path;
+        $pending->delete();
+
+        if (is_string($storedPath) && $storedPath !== '') {
+            Storage::disk('local')->delete($storedPath);
+        }
+    }
+
     private function discardPendingDuplicate(Workspace $workspace, string $fileHash): void
     {
         $pending = $workspace->financialImports()
@@ -382,12 +402,7 @@ final class FinancialDocumentImportService
             return;
         }
 
-        $storedPath = $pending->stored_path;
-        $pending->delete();
-
-        if (is_string($storedPath) && $storedPath !== '') {
-            Storage::disk('local')->delete($storedPath);
-        }
+        $this->discardPending($workspace, $pending);
     }
 
     /** @return list<string> */

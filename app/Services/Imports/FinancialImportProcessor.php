@@ -401,7 +401,11 @@ final class FinancialImportProcessor
         BankStatementEntry $entry,
         User $user,
     ): bool {
-        $rule = $this->ruleMatcher->match($workspace, $entry->description);
+        $rule = $this->ruleMatcher->match(
+            $workspace,
+            $entry->description,
+            $entry->financial_account_id,
+        );
 
         if (is_array($rule) && $rule['action_type'] === FinancialTransactionType::Transfer->value) {
             if ($rule['counterpart_account_id'] === null) {

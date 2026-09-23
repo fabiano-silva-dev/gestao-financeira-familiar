@@ -19,6 +19,12 @@ alwaysApply: true
 - Ao concluir uma tarefa, informe de forma curta: o que foi alterado, arquivos principais, validações realizadas e eventual pendência real.
 - Só faça commit ou push quando isso for solicitado explicitamente.
 
+## Compilação e PHP
+
+- O PHP instalado no host não atende ao projeto. Comandos PHP, Artisan, Composer, testes e a compilação do frontend devem rodar nos containers Docker do projeto.
+- A compilação do frontend (`npm run build`) depende do PHP por causa do Wayfinder. Execute-a no container, por exemplo: `docker exec gff-node npm run build`.
+- Não execute `php`, `artisan`, `composer` nem `npm run build` diretamente no host.
+
 ## Banco de dados
 
 - PostgreSQL é o banco oficial e definitivo deste projeto.
@@ -26,3 +32,5 @@ alwaysApply: true
 - Não crie camada de compatibilidade multi-banco sem necessidade.
 - Valores monetários nunca devem usar `float` ou `double`; use tipos decimais de precisão fixa.
 - Migrations, índices, constraints e consultas devem ser pensados para PostgreSQL.
+- O banco `gestao_financeira_familiar` contém os dados reais da aplicação. É proibido rodar nele `php artisan test`, `migrate:fresh`, `db:wipe`, `migrate:refresh` ou qualquer comando que recrie ou esvazie tabelas.
+- Testes automatizados só podem usar `gestao_financeira_familiar_testing`. Antes de executar, confirme o nome do banco da conexão. A configuração em cache ignora o `phpunit.xml` e faz o teste cair no banco real.

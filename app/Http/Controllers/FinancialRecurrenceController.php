@@ -317,6 +317,7 @@ class FinancialRecurrenceController extends Controller
             'interval' => $recurrence->interval,
             'schedule_label' => $this->scheduleLabel($recurrence),
             'starts_on' => $recurrence->starts_on->toDateString(),
+            'generation_started_on' => $recurrence->generation_started_on->toDateString(),
             'ends_on' => $recurrence->ends_on?->toDateString(),
             'next_occurrence' => $this->recurrenceService
                 ->nextOccurrence($recurrence)?->toDateString(),

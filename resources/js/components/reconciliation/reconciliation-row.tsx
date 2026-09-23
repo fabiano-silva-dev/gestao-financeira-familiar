@@ -12,7 +12,8 @@ import {
     Sparkles,
     WalletCards,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import BankReconciliationController from '@/actions/App/Http/Controllers/BankReconciliationController';
 import CardStatementReconciliationController from '@/actions/App/Http/Controllers/CardStatementReconciliationController';
 import { Badge } from '@/components/ui/badge';
@@ -56,6 +57,71 @@ function isOutflow(entry: ReconciliationPendingEntry): boolean {
     }
 
     return Number(entry.amount) < 0;
+}
+
+function candidatePlace(candidate: ReconciliationCandidate): string | null {
+    const onCard =
+        candidate.is_invoice_payment ||
+        candidate.is_refund ||
+        candidate.type === 'installment';
+    const name = onCard
+        ? (candidate.card_name ?? candidate.related_account_name)
+        : candidate.related_account_name;
+
+    if (!name) {
+        return null;
+    }
+
+    return onCard ? `cartão ${name}` : `conta ${name}`;
+}
+
+function candidateOptionLabel(candidate: ReconciliationCandidate): string {
+    const place = candidatePlace(candidate);
+    const parts = [
+        formatReconciliationDate(candidate.occurred_on),
+        currency.format(Number(candidate.amount)),
+        place,
+        candidate.description,
+    ].filter((part): part is string => Boolean(part));
+    const category = [
+        candidate.related_parent_category_name,
+        candidate.related_subcategory_name,
+    ]
+        .filter((part): part is string => Boolean(part))
+        .filter((part, index, list) => list.indexOf(part) === index)
+        .join(' › ');
+
+    if (category !== '') {
+        parts.push(category);
+    }
+
+    if (
+        candidate.related_payee_name &&
+        !candidate.description
+            .toLocaleLowerCase('pt-BR')
+            .includes(candidate.related_payee_name.toLocaleLowerCase('pt-BR'))
+    ) {
+        parts.push(candidate.related_payee_name);
+    }
+
+    if (
+        candidate.related_competence_date &&
+        candidate.related_competence_date !== candidate.occurred_on
+    ) {
+        parts.push(
+            `competência ${formatReconciliationDate(candidate.related_competence_date)}`,
+        );
+    }
+
+    if (candidate.is_planned) {
+        parts.push('pré-agendado');
+    }
+
+    if (candidate.is_suggestion) {
+        parts.push('sugerido');
+    }
+
+    return parts.join(' · ');
 }
 
 function visitOptions() {
@@ -147,8 +213,17 @@ export function ReconciliationRow({
     const [cardPaymentCardId, setCardPaymentCardId] = useState(
         cardOptions.length === 1 ? String(cardOptions[0].id) : '',
     );
+    const [actionError, setActionError] = useState<string | null>(null);
+    const [suggestionDismissed, setSuggestionDismissed] = useState(false);
+    const matchOverrideEntryId = useRef<number | null>(null);
 
     useEffect(() => {
+        if (matchOverrideEntryId.current === entry.id) {
+            return;
+        }
+
+        matchOverrideEntryId.current = null;
+        setSuggestionDismissed(false);
         const nextSuggestion = entry.candidates.find(
             (candidate) => candidate.is_suggestion,
         );
@@ -207,21 +282,27 @@ export function ReconciliationRow({
             : selectedParentId !== ''
               ? Number(selectedParentId)
               : null;
-    const relatedLabel =
-        selectedCandidate?.related_description ??
-        selectedCandidate?.description ??
-        entry.related_description;
-    const relatedType =
-        selectedCandidate?.related_type_label ??
-        selectedCandidate?.type_label ??
-        entry.related_type_label;
-    const relatedAccount =
-        selectedCandidate?.related_account_name ?? entry.related_account_name;
-    const competence =
-        selectedCandidate?.related_competence_date ??
-        entry.related_competence_date;
+    const showLinkedEntry = selectedCandidate != null || entry.is_reconciled;
+    const relatedLabel = showLinkedEntry
+        ? (selectedCandidate?.related_description ??
+          selectedCandidate?.description ??
+          entry.related_description)
+        : null;
+    const relatedType = showLinkedEntry
+        ? (selectedCandidate?.related_type_label ??
+          selectedCandidate?.type_label ??
+          entry.related_type_label)
+        : null;
+    const relatedAccount = showLinkedEntry
+        ? (selectedCandidate?.related_account_name ?? entry.related_account_name)
+        : null;
+    const competence = showLinkedEntry
+        ? (selectedCandidate?.related_competence_date ??
+          entry.related_competence_date)
+        : null;
     const selectedInvoice =
-        selectedCandidate?.is_invoice_payment || entry.is_invoice_payment
+        !suggestionDismissed &&
+        (selectedCandidate?.is_invoice_payment || entry.is_invoice_payment)
             ? {
                   cardName:
                       selectedCandidate?.card_name ?? entry.card_name ?? null,
@@ -247,7 +328,8 @@ export function ReconciliationRow({
               }
             : null;
     const showInvoicePayment =
-        entry.is_likely_invoice_payment || selectedInvoice !== null;
+        !suggestionDismissed &&
+        (entry.is_likely_invoice_payment || selectedInvoice !== null);
     const showRefund = Boolean(selectedCandidate?.is_refund);
     const canRegisterPendingCardPayment =
         entry.kind === 'statement' &&
@@ -255,7 +337,6 @@ export function ReconciliationRow({
         selectedInvoice === null &&
         !entry.is_reconciled;
     const isTransferLine =
-        showTransfer ||
         entry.is_likely_transfer ||
         entry.related_is_transfer ||
         entry.matcher_action_type === 'transfer';
@@ -263,19 +344,67 @@ export function ReconciliationRow({
         isTransferLine ||
         showInvoicePayment ||
         showRefund ||
-        entry.is_likely_refund;
+        (entry.is_likely_refund && !suggestionDismissed);
     const selectedHasCategory =
         leafCategoryId !== null ||
         (selectedCandidate?.related_category_id ?? null) !== null;
     const needsCategory = !categoryExempt;
     const canCreate =
         !entry.is_reconciled &&
-        !entry.has_suggestion &&
-        !entry.is_likely_invoice_payment &&
-        !entry.is_likely_refund &&
+        (suggestionDismissed || !entry.has_suggestion) &&
+        (suggestionDismissed || !entry.is_likely_invoice_payment) &&
+        (suggestionDismissed || !entry.is_likely_refund) &&
         !entry.is_likely_transfer &&
         !showRefund &&
         (!needsCategory || leafCategoryId !== null);
+
+    const rejectMatch = () => {
+        matchOverrideEntryId.current = entry.id;
+        setSuggestionDismissed(true);
+        const rejectedPayee = (
+            selectedCandidate?.related_payee_name ??
+            entry.related_payee_name ??
+            ''
+        ).trim();
+        const sameName = (left: string, right: string) =>
+            left.trim().localeCompare(right.trim(), 'pt-BR', {
+                sensitivity: 'accent',
+            }) === 0;
+
+        if (rejectedPayee !== '' && sameName(payee, rejectedPayee)) {
+            const matcherPayee = entry.matcher_payee_name?.trim() ?? '';
+            setPayee(
+                matcherPayee !== '' && !sameName(matcherPayee, rejectedPayee)
+                    ? matcherPayee
+                    : '',
+            );
+        }
+
+        const rejectedParent =
+            selectedCandidate?.related_parent_category_id ??
+            entry.related_parent_category_id;
+
+        if (
+            rejectedParent != null &&
+            selectedParentId === String(rejectedParent)
+        ) {
+            const matcherParent = entry.matcher_parent_category_id;
+
+            if (matcherParent != null && matcherParent !== rejectedParent) {
+                setSelectedParentId(String(matcherParent));
+                setSelectedSubId(
+                    entry.matcher_subcategory_id
+                        ? String(entry.matcher_subcategory_id)
+                        : '',
+                );
+            } else {
+                setSelectedParentId('');
+                setSelectedSubId('');
+            }
+        }
+
+        setMatchId('');
+    };
     const counterpartOptions = counterpartAccountOptions.filter(
         (account) => account.id !== entry.financial_account_id,
     );
@@ -327,6 +456,7 @@ export function ReconciliationRow({
                   ? 'expense'
                   : 'income',
             category_id: isTransfer ? null : leafCategoryId,
+            financial_account_id: entry.financial_account_id,
             counterpart_account_id: isTransfer
                 ? counterpartId !== ''
                     ? Number(counterpartId)
@@ -428,15 +558,38 @@ export function ReconciliationRow({
         );
     };
 
+    const reportActionError = (errors: Record<string, string | string[]>) => {
+        const value =
+            errors.entry ?? errors.category_id ?? Object.values(errors)[0];
+        const message = Array.isArray(value) ? value[0] : value;
+
+        if (typeof message !== 'string' || message === '') {
+            return;
+        }
+
+        setActionError(message);
+        toast.error(message);
+    };
+
+    const createPayload = () => ({
+        payee_name: payee.trim() === '' ? null : payee.trim(),
+        category_id: leafCategoryId,
+    });
+
     const createEntry = () => {
+        setActionError(null);
+
         if (entry.kind === 'statement') {
             router.post(
                 listingUrl(
                     BankReconciliationController.create.url(entry.id),
                     query,
                 ),
-                {},
-                completeOptions(),
+                createPayload(),
+                {
+                    ...completeOptions(),
+                    onError: reportActionError,
+                },
             );
 
             return;
@@ -450,8 +603,11 @@ export function ReconciliationRow({
                 }),
                 query,
             ),
-            {},
-            completeOptions(),
+            createPayload(),
+            {
+                ...completeOptions(),
+                onError: reportActionError,
+            },
         );
     };
 
@@ -589,7 +745,7 @@ export function ReconciliationRow({
                             Possível duplicidade
                         </Badge>
                     )}
-                    {entry.is_likely_invoice_payment && (
+                    {showInvoicePayment && (
                         <Badge variant="outline">Pagamento de fatura</Badge>
                     )}
                     {entry.is_likely_refund && (
@@ -612,6 +768,7 @@ export function ReconciliationRow({
                 {(entry.has_suggestion ||
                     entry.matcher_category_name ||
                     entry.suggestion_description) &&
+                    !suggestionDismissed &&
                     !entry.is_reconciled && (
                         <p className="text-primary flex items-start gap-1.5 text-xs">
                             <Sparkles className="mt-0.5 size-3 shrink-0" />
@@ -756,14 +913,25 @@ export function ReconciliationRow({
                                 entry.is_reconciled ||
                                 entry.candidates.length === 0
                             }
-                            onValueChange={(value) =>
-                                setMatchId(value === 'none' ? '' : value)
-                            }
+                            onValueChange={(value) => {
+                                if (value === 'none') {
+                                    rejectMatch();
+
+                                    return;
+                                }
+
+                                matchOverrideEntryId.current = entry.id;
+                                setSuggestionDismissed(false);
+                                setMatchId(value);
+                            }}
                         >
                             <SelectTrigger size="sm" className="w-full">
                                 <SelectValue placeholder="Selecionar" />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent
+                                align="start"
+                                className="w-[min(36rem,calc(100vw-1.5rem))]"
+                            >
                                 <SelectItem value="none">
                                     Sem correspondência
                                 </SelectItem>
@@ -774,14 +942,16 @@ export function ReconciliationRow({
                                     );
 
                                     return (
-                                        <SelectItem key={id} value={id}>
-                                            {candidate.description}
-                                            {candidate.is_planned
-                                                ? ' · pré-agendado'
-                                                : ''}
-                                            {candidate.is_suggestion
-                                                ? ' · sugerido'
-                                                : ''}
+                                        <SelectItem
+                                            key={id}
+                                            value={id}
+                                            className="h-auto items-start py-2 whitespace-normal *:[span]:last:min-w-0 *:[span]:last:flex-1 *:[span]:last:whitespace-normal"
+                                        >
+                                            <span className="block leading-snug whitespace-normal">
+                                                {candidateOptionLabel(
+                                                    candidate,
+                                                )}
+                                            </span>
                                         </SelectItem>
                                     );
                                 })}
@@ -992,9 +1162,14 @@ export function ReconciliationRow({
                             leafCategoryId === null &&
                             !selectedHasCategory && (
                                 <p className="text-muted-foreground text-xs">
-                                    Defina a categoria para conciliar.
+                                    Defina a categoria para criar o lançamento.
                                 </p>
                             )}
+                        {actionError && (
+                            <p className="text-destructive text-xs">
+                                {actionError}
+                            </p>
+                        )}
                         {canRegisterPendingCardPayment && (
                             <Button
                                 type="button"

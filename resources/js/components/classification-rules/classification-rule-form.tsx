@@ -99,6 +99,13 @@ export default function ClassificationRuleForm({
             ? String(initialCategory.id)
             : '',
     );
+    const [statementAccountId, setStatementAccountId] = useState(
+        rule?.financial_account_id || draft?.financial_account_id
+            ? String(
+                  rule?.financial_account_id ?? draft?.financial_account_id,
+              )
+            : '',
+    );
     const [accountId, setAccountId] = useState(
         rule?.counterpart_account_id || draft?.counterpart_account_id
             ? String(
@@ -106,6 +113,9 @@ export default function ClassificationRuleForm({
                       draft?.counterpart_account_id,
               )
             : '',
+    );
+    const counterpartOptions = accountOptions.filter(
+        (account) => String(account.id) !== statementAccountId,
     );
     const [example, setExample] = useState(draft?.source_description ?? '');
     const categoryId =
@@ -210,8 +220,9 @@ export default function ClassificationRuleForm({
                                 </SelectContent>
                             </Select>
                             <p className="text-muted-foreground text-xs">
-                                Despesa e receita usam categoria.
-                                Transferência usa uma conta própria e não cria
+                                Despesa e receita usam categoria e valem em
+                                qualquer extrato. Transferência vale só na conta
+                                do extrato e usa a outra conta, sem criar
                                 receita nem despesa.
                             </p>
                             <InputError message={errors.action_type} />
@@ -326,53 +337,116 @@ export default function ClassificationRuleForm({
                         </div>
 
                         {isTransfer ? (
-                            <div className="grid gap-2">
-                                <Label htmlFor="counterpart_account_id">
-                                    Conta
-                                </Label>
-                                <input
-                                    type="hidden"
-                                    name="counterpart_account_id"
-                                    value={accountId}
-                                />
-                                <Select
-                                    value={
-                                        accountId === '' ? 'none' : accountId
-                                    }
-                                    onValueChange={(value) =>
-                                        setAccountId(
-                                            value === 'none' ? '' : value,
-                                        )
-                                    }
-                                >
-                                    <SelectTrigger
-                                        id="counterpart_account_id"
-                                        className="w-full"
+                            <>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="financial_account_id">
+                                        Conta do extrato
+                                    </Label>
+                                    <input
+                                        type="hidden"
+                                        name="financial_account_id"
+                                        value={statementAccountId}
+                                    />
+                                    <Select
+                                        value={
+                                            statementAccountId === ''
+                                                ? 'none'
+                                                : statementAccountId
+                                        }
+                                        onValueChange={(value) => {
+                                            const next =
+                                                value === 'none' ? '' : value;
+                                            setStatementAccountId(next);
+
+                                            if (accountId === next) {
+                                                setAccountId('');
+                                            }
+                                        }}
                                     >
-                                        <SelectValue placeholder="Conta própria" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="none">
-                                            Selecionar conta
-                                        </SelectItem>
-                                        {accountOptions.map((account) => (
-                                            <SelectItem
-                                                key={account.id}
-                                                value={String(account.id)}
-                                            >
-                                                {account.name}
+                                        <SelectTrigger
+                                            id="financial_account_id"
+                                            className="w-full"
+                                        >
+                                            <SelectValue placeholder="Conta conciliada" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">
+                                                Selecionar conta
                                             </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <p className="text-muted-foreground text-xs">
-                                    A outra ponta da transferência entre contas
-                                    da família.
-                                </p>
-                                <InputError
-                                    message={errors.counterpart_account_id}
-                                />
-                            </div>
+                                            {accountOptions.map((account) => (
+                                                <SelectItem
+                                                    key={account.id}
+                                                    value={String(account.id)}
+                                                >
+                                                    {account.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <p className="text-muted-foreground text-xs">
+                                        A regra só classifica movimentos desta
+                                        conta.
+                                    </p>
+                                    <InputError
+                                        message={errors.financial_account_id}
+                                    />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="counterpart_account_id">
+                                        Outra conta
+                                    </Label>
+                                    <input
+                                        type="hidden"
+                                        name="counterpart_account_id"
+                                        value={accountId}
+                                    />
+                                    <Select
+                                        value={
+                                            accountId === ''
+                                                ? 'none'
+                                                : accountId
+                                        }
+                                        onValueChange={(value) =>
+                                            setAccountId(
+                                                value === 'none' ? '' : value,
+                                            )
+                                        }
+                                    >
+                                        <SelectTrigger
+                                            id="counterpart_account_id"
+                                            className="w-full"
+                                        >
+                                            <SelectValue placeholder="Outra conta própria" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">
+                                                Selecionar conta
+                                            </SelectItem>
+                                            {counterpartOptions.map(
+                                                (account) => (
+                                                    <SelectItem
+                                                        key={account.id}
+                                                        value={String(
+                                                            account.id,
+                                                        )}
+                                                    >
+                                                        {account.name}
+                                                    </SelectItem>
+                                                ),
+                                            )}
+                                        </SelectContent>
+                                    </Select>
+                                    <p className="text-muted-foreground text-xs">
+                                        A outra ponta da transferência entre
+                                        contas da família.
+                                    </p>
+                                    <InputError
+                                        message={
+                                            errors.counterpart_account_id
+                                        }
+                                    />
+                                </div>
+                            </>
                         ) : (
                             <div className="grid gap-2">
                                 <Label htmlFor="category_id">Categoria</Label>

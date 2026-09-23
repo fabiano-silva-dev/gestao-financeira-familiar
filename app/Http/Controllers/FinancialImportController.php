@@ -234,6 +234,21 @@ class FinancialImportController extends Controller
         return to_route('imports.index');
     }
 
+    public function destroy(int $import): RedirectResponse
+    {
+        $workspace = $this->workspace();
+        $pending = $workspace->financialImports()->findOrFail($import);
+
+        $this->documentImportService->discardPending($workspace, $pending);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Documento aguardando confirmação cancelado.',
+        ]);
+
+        return to_route('imports.index');
+    }
+
     public function reassign(
         ReassignFinancialImportRequest $request,
         int $import,

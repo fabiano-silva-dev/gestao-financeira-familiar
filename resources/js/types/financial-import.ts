@@ -12,7 +12,7 @@ export type FinancialImportHistoryItem = {
     id: number;
     source_filename: string;
     account_name: string;
-    status: 'processing' | 'needs_confirmation' | 'completed' | 'failed';
+    status: 'processing' | 'needs_confirmation' | 'completed' | 'no_movement' | 'failed';
     status_label: string;
     total_records: number;
     imported_records: number;
@@ -122,7 +122,7 @@ export type UnifiedImportHistoryItem = {
     kind_label: string;
     source_filename: string;
     target_name: string | null;
-    status: 'processing' | 'needs_confirmation' | 'completed' | 'failed';
+    status: 'processing' | 'needs_confirmation' | 'completed' | 'no_movement' | 'failed';
     status_label: string;
     total_records: number;
     imported_records: number;

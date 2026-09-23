@@ -487,6 +487,55 @@ class CardStatementReconciliationTest extends TestCase
         );
     }
 
+    public function test_user_can_create_card_purchase_from_a_paid_invoice_line(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+        $invoice = $this->invoice($workspace, $card);
+        $invoice->update([
+            'calculated_amount' => '100.00',
+            'statement_amount' => '100.00',
+            'paid_amount' => '100.00',
+            'paid_at' => '2026-10-08',
+            'status' => CreditCardInvoiceStatus::Paid,
+        ]);
+        $category = Category::factory()->for($workspace)->create([
+            'name' => 'Mercado',
+            'type' => CategoryType::Expense->value,
+        ]);
+        $entry = $this->statementEntry(
+            $workspace,
+            $card,
+            $invoice,
+            '5.88',
+            '2026-08-28',
+            'UFFA REDE DE LOJAS',
+            1,
+            1,
+        );
+        $entry->update(['suggested_category_id' => $category->id]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->from(route('reconciliation.index'))
+            ->post(route('credit-card-invoices.statement-entries.create', [$invoice, $entry]))
+            ->assertRedirect(route('reconciliation.index'))
+            ->assertSessionHasNoErrors();
+
+        $entry->refresh();
+        $invoice->refresh();
+        $installment = $entry->transactionInstallment;
+
+        $this->assertTrue($entry->is_reconciled);
+        $this->assertNotNull($installment);
+        $this->assertSame(TransactionInstallmentStatus::Paid, $installment?->status);
+        $this->assertSame('2026-10-08', $installment?->paid_at?->toDateString());
+        $this->assertSame(CreditCardInvoiceStatus::Paid, $invoice->status);
+        $this->assertSame('100.00', $invoice->paid_amount);
+        $this->assertSame('100.00', $invoice->statement_amount);
+        $this->assertSame('5.88', $invoice->calculated_amount);
+    }
+
     public function test_card_create_is_blocked_when_a_compatible_installment_exists(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();

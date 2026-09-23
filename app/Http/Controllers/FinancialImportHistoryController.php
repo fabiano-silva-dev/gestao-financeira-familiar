@@ -101,6 +101,8 @@ class FinancialImportHistoryController extends Controller
         }
 
         $mapped = $query
+            ->orderByDesc('imported_at')
+            ->orderByDesc('id')
             ->limit(250)
             ->get()
             ->map(fn (FinancialImport $import): array => $this->item($import));

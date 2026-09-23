@@ -31,6 +31,10 @@ class StoreClassificationRuleRequest extends FormRequest
             $this->merge(['counterpart_account_id' => null]);
         }
 
+        if ($this->input('financial_account_id') === '' || $this->input('financial_account_id') === 'none') {
+            $this->merge(['financial_account_id' => null]);
+        }
+
         if ($this->input('payee_name') === '') {
             $this->merge(['payee_name' => null]);
         }
@@ -42,7 +46,10 @@ class StoreClassificationRuleRequest extends FormRequest
         }
 
         if ($action !== FinancialTransactionType::Transfer) {
-            $this->merge(['counterpart_account_id' => null]);
+            $this->merge([
+                'counterpart_account_id' => null,
+                'financial_account_id' => null,
+            ]);
         }
     }
 
@@ -57,6 +64,13 @@ class StoreClassificationRuleRequest extends FormRequest
         abort_if($workspace === null, 403);
         $action = FinancialTransactionType::tryFrom((string) $this->input('action_type'));
         $isTransfer = $action === FinancialTransactionType::Transfer;
+        $financialAccountId = $isTransfer && $this->filled('financial_account_id')
+            ? $this->integer('financial_account_id')
+            : null;
+        $accountExists = fn () => Rule::exists(FinancialAccount::class, 'id')
+            ->where(fn (Builder $query): Builder => $query
+                ->where('workspace_id', $workspace->id)
+                ->where('is_active', true));
 
         return [
             'name' => ['required', 'string', 'max:120'],
@@ -70,6 +84,7 @@ class StoreClassificationRuleRequest extends FormRequest
                     $matcher,
                     ClassificationRuleMatchType::tryFrom((string) $this->input('match_type')),
                     $this->ignoreRuleId(),
+                    $financialAccountId,
                 ),
             ],
             'action_type' => ['required', Rule::enum(FinancialTransactionType::class)],
@@ -92,15 +107,30 @@ class StoreClassificationRuleRequest extends FormRequest
                         return $query;
                     }),
             ],
+            'financial_account_id' => [
+                Rule::requiredIf($isTransfer),
+                'nullable',
+                'integer',
+                Rule::when($isTransfer, 'different:counterpart_account_id'),
+                $accountExists(),
+            ],
             'counterpart_account_id' => [
                 Rule::requiredIf($isTransfer),
                 'nullable',
                 'integer',
-                Rule::exists(FinancialAccount::class, 'id')
-                    ->where(fn (Builder $query): Builder => $query
-                        ->where('workspace_id', $workspace->id)
-                        ->where('is_active', true)),
+                Rule::when($isTransfer, 'different:financial_account_id'),
+                $accountExists(),
             ],
+        ];
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return [
+            'financial_account_id.required' => 'Selecione a conta do extrato.',
+            'financial_account_id.different' => 'A conta do extrato deve ser diferente da outra conta.',
+            'counterpart_account_id.different' => 'A outra conta deve ser diferente da conta do extrato.',
         ];
     }
 
@@ -114,7 +144,8 @@ class StoreClassificationRuleRequest extends FormRequest
             'action_type' => 'tipo',
             'payee_name' => 'empresa ou beneficiário',
             'category_id' => 'categoria',
-            'counterpart_account_id' => 'conta',
+            'financial_account_id' => 'conta do extrato',
+            'counterpart_account_id' => 'outra conta',
         ];
     }
 

@@ -273,7 +273,9 @@ class ExpenseRefundTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('entries.0.is_likely_refund', true)
+                ->where('entries.0.has_suggestion', true)
                 ->where('entries.0.candidates.0.is_refund', true)
+                ->where('entries.0.candidates.0.is_suggestion', true)
                 ->where('entries.0.candidates.0.transaction_id', $expense->id)
             );
 
@@ -292,6 +294,42 @@ class ExpenseRefundTest extends TestCase
         $this->assertSame($user->id, $refund->linked_by);
         $this->assertNotNull($refund->linked_at);
         $this->assertDatabaseCount('financial_transactions', 1);
+    }
+
+    public function test_unrelated_income_is_not_suggested_as_expense_refund(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $expense = $this->createExpense(
+            $workspace,
+            $account,
+            '150.00',
+            'Pix enviado Associacao Voleibol Futuro',
+        );
+        $this->bankEntry(
+            $workspace,
+            $account,
+            '150.00',
+            '2026-09-20',
+            'PIX RECEBIDO - USE O CLOSET MODA FEMININA LTDA',
+        );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('reconciliation.index', [
+                'account' => $account->id,
+                'period' => '2026-09',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('entries.0.is_likely_refund', false)
+                ->where('entries.0.has_suggestion', false)
+                ->where('entries.0.suggestion_description', null)
+                ->where('entries.0.related_payee_name', null)
+                ->where('entries.0.candidates.0.is_refund', true)
+                ->where('entries.0.candidates.0.is_suggestion', false)
+                ->where('entries.0.candidates.0.transaction_id', $expense->id)
+            );
     }
 
     public function test_refund_respects_workspace_isolation(): void

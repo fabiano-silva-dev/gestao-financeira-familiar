@@ -10,6 +10,7 @@ use App\Models\FinancialImport;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Imports\Data\OfxImportResult;
+use App\Services\Imports\Data\OfxStatement;
 use App\Services\Imports\Data\OfxTransaction;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -92,6 +93,10 @@ final class OfxImportService
 
         try {
             $statement = $this->parser->parse($contents, $extension);
+            [$statementStartOn, $statementEndOn] = $this->statementPeriod(
+                $statement,
+                $sourceFilename,
+            );
 
             DB::transaction(function () use (
                 $financialImport,
@@ -99,11 +104,35 @@ final class OfxImportService
                 $account,
                 $statement,
                 $extension,
+                $statementStartOn,
+                $statementEndOn,
             ): void {
                 $lockedImport = FinancialImport::query()
                     ->whereKey($financialImport->id)
                     ->lockForUpdate()
                     ->firstOrFail();
+
+                if ($statement->transactions === []) {
+                    $lockedImport->update([
+                        'status' => FinancialImportStatus::NoMovement,
+                        'total_records' => 0,
+                        'imported_records' => 0,
+                        'duplicate_records' => 0,
+                        'statement_start_on' => $statementStartOn,
+                        'statement_end_on' => $statementEndOn,
+                        'external_account_identifier' => $statement->accountId,
+                        'metadata' => array_filter([
+                            'bank_id' => $statement->bankId,
+                            'currency' => $statement->currency,
+                            'source_format' => $extension,
+                        ], static fn (mixed $value): bool => $value !== null),
+                        'error_message' => null,
+                        'imported_at' => now(),
+                    ]);
+
+                    return;
+                }
+
                 $imported = 0;
                 $duplicates = 0;
 
@@ -134,8 +163,8 @@ final class OfxImportService
                     'total_records' => count($statement->transactions),
                     'imported_records' => $imported,
                     'duplicate_records' => $duplicates,
-                    'statement_start_on' => $statement->startOn,
-                    'statement_end_on' => $statement->endOn,
+                    'statement_start_on' => $statementStartOn,
+                    'statement_end_on' => $statementEndOn,
                     'external_account_identifier' => $statement->accountId,
                     'metadata' => array_filter([
                         'bank_id' => $statement->bankId,
@@ -164,7 +193,11 @@ final class OfxImportService
             ]);
         }
 
-        $this->processor->process($workspace, $financialImport->refresh(), $user);
+        $financialImport->refresh();
+
+        if ($financialImport->status === FinancialImportStatus::Completed) {
+            $this->processor->process($workspace, $financialImport, $user);
+        }
 
         return new OfxImportResult($financialImport->refresh(), false);
     }
@@ -177,7 +210,10 @@ final class OfxImportService
         $alreadyImported = $workspace->financialImports()
             ->where('file_hash', $fileHash)
             ->where('financial_account_id', $account->id)
-            ->where('status', FinancialImportStatus::Completed)
+            ->whereIn('status', [
+                FinancialImportStatus::Completed->value,
+                FinancialImportStatus::NoMovement->value,
+            ])
             ->exists();
 
         if (! $alreadyImported) {
@@ -214,6 +250,51 @@ final class OfxImportService
             $normalize($transaction->checkNumber),
             $normalize($transaction->referenceNumber),
         ]));
+    }
+
+    /**
+     * @return array{0: ?string, 1: ?string}
+     */
+    private function statementPeriod(OfxStatement $statement, string $filename): array
+    {
+        if ($statement->startOn !== null || $statement->endOn !== null) {
+            return [$statement->startOn, $statement->endOn];
+        }
+
+        $months = [
+            'JAN' => '01',
+            'FEV' => '02',
+            'MAR' => '03',
+            'ABR' => '04',
+            'MAI' => '05',
+            'JUN' => '06',
+            'JUL' => '07',
+            'AGO' => '08',
+            'SET' => '09',
+            'OUT' => '10',
+            'NOV' => '11',
+            'DEZ' => '12',
+        ];
+
+        if (preg_match(
+            '/(\d{2})(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)(\d{4})_(\d{2})(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)(\d{4})/i',
+            $filename,
+            $match,
+        ) !== 1) {
+            return [null, null];
+        }
+
+        $startMonth = $months[strtoupper($match[2])] ?? null;
+        $endMonth = $months[strtoupper($match[5])] ?? null;
+
+        if ($startMonth === null || $endMonth === null) {
+            return [null, null];
+        }
+
+        return [
+            sprintf('%s-%s-%s', $match[3], $startMonth, $match[1]),
+            sprintf('%s-%s-%s', $match[6], $endMonth, $match[4]),
+        ];
     }
 
     private function markAsFailed(

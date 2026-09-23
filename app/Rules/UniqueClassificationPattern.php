@@ -15,6 +15,7 @@ class UniqueClassificationPattern implements ValidationRule
         private ClassificationRuleMatcher $matcher,
         private ?ClassificationRuleMatchType $matchType,
         private ?int $ignoreId = null,
+        private ?int $financialAccountId = null,
     ) {}
 
     public function validate(string $attribute, mixed $value, Closure $fail): void
@@ -28,6 +29,7 @@ class UniqueClassificationPattern implements ValidationRule
             $this->matchType,
             $value,
             $this->ignoreId,
+            $this->financialAccountId,
         );
 
         if ($duplicate !== null) {

@@ -68,6 +68,17 @@ class BankStatementCsvParserTest extends TestCase
         $this->assertSame('1746447981172', $statement->transactions[4]->externalId);
     }
 
+    public function test_header_only_csv_is_a_statement_without_movements(): void
+    {
+        $statement = (new BankStatementCsvParser)->parse(<<<'CSV'
+            Data,Valor,Identificador,Descrição
+            CSV);
+
+        $this->assertSame([], $statement->transactions);
+        $this->assertNull($statement->startOn);
+        $this->assertNull($statement->endOn);
+    }
+
     public function test_it_rejects_csv_without_required_columns(): void
     {
         $this->expectException(BankStatementParseException::class);

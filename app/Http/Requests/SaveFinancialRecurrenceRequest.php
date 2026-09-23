@@ -104,6 +104,15 @@ class SaveFinancialRecurrenceRequest extends FormRequest
             'frequency' => ['required', Rule::enum(RecurrenceFrequency::class)],
             'interval' => ['required', 'integer', 'min:1', 'max:12'],
             'starts_on' => ['required', 'date'],
+            'generation_started_on' => [
+                'nullable',
+                'date',
+                'after_or_equal:starts_on',
+                Rule::when(
+                    $this->filled('ends_on'),
+                    ['before_or_equal:ends_on'],
+                ),
+            ],
             'ends_on' => ['nullable', 'date', 'after_or_equal:starts_on'],
             'already_settled' => ['sometimes', 'boolean'],
             'notes' => ['nullable', 'string', 'max:2000'],
@@ -129,6 +138,7 @@ class SaveFinancialRecurrenceRequest extends FormRequest
             'frequency' => 'frequência',
             'interval' => 'intervalo',
             'starts_on' => 'início',
+            'generation_started_on' => 'início da geração',
             'ends_on' => 'fim',
             'already_settled' => 'já pago ou recebido',
             'notes' => 'observações',

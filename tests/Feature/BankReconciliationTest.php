@@ -565,6 +565,36 @@ class BankReconciliationTest extends TestCase
         );
     }
 
+    public function test_create_bank_transaction_uses_category_sent_with_the_request(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $category = Category::factory()->for($workspace)->create([
+            'name' => 'Pessoal',
+            'type' => CategoryType::Expense->value,
+        ]);
+        $entry = $this->bankEntry(
+            $workspace,
+            $account,
+            '-100.00',
+            description: 'PIX - FABIANO CARVALHO DA SILVA',
+        );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('reconciliation.create', $entry), [
+                'payee_name' => 'Fabiano Carvalho',
+                'category_id' => $category->id,
+            ])
+            ->assertRedirect(route('reconciliation.index'))
+            ->assertSessionHasNoErrors();
+
+        $entry->refresh();
+        $this->assertTrue($entry->is_reconciled);
+        $this->assertSame($category->id, $entry->accountMovement?->transaction?->category_id);
+        $this->assertSame('Fabiano Carvalho', $entry->accountMovement?->transaction?->payee_name);
+    }
+
     public function test_create_bank_transaction_stays_pending_without_category(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();
@@ -743,6 +773,73 @@ class BankReconciliationTest extends TestCase
                 ->where('entries.0.matcher_rule_id', $rule->id)
                 ->where('entries.0.is_likely_transfer', false)
             );
+    }
+
+    public function test_transfer_rule_is_suggested_only_on_its_statement_account(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $mercadoPago = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Mercado Pago Fabiano',
+        ]);
+        $banrisul = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Banrisul',
+        ]);
+        $rule = ClassificationRule::factory()->for($workspace)->create([
+            'name' => 'Entrada do Banrisul',
+            'match_type' => ClassificationRuleMatchType::Contains,
+            'pattern' => 'FABIANO CARVALHO DA SILVA',
+            'action_type' => FinancialTransactionType::Transfer,
+            'financial_account_id' => $mercadoPago->id,
+            'counterpart_account_id' => $banrisul->id,
+        ]);
+        $mercadoPagoEntry = $this->bankEntry(
+            $workspace,
+            $mercadoPago,
+            '150.00',
+            description: 'PIX - FABIANO CARVALHO DA SILVA',
+        );
+        $banrisulEntry = $this->bankEntry(
+            $workspace,
+            $banrisul,
+            '-150.00',
+            description: 'PIX - FABIANO CARVALHO DA SILVA',
+        );
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->get(route('reconciliation.index', $this->workbenchQuery($mercadoPago)))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('entries.0.id', $mercadoPagoEntry->id)
+                ->where('entries.0.matcher_rule_id', $rule->id)
+                ->where('entries.0.matcher_action_type', 'transfer')
+                ->where('entries.0.matcher_counterpart_account_id', $banrisul->id)
+                ->where('entries.0.is_likely_transfer', true)
+            );
+        $request->get(route('reconciliation.index', $this->workbenchQuery($banrisul)))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('entries.0.id', $banrisulEntry->id)
+                ->where('entries.0.matcher_rule_id', null)
+                ->where('entries.0.matcher_action_type', null)
+                ->where('entries.0.is_likely_transfer', false)
+            );
+
+        $request->post(route('reconciliation.create', $banrisulEntry))
+            ->assertSessionHasErrors('category_id');
+        $this->assertFalse($banrisulEntry->fresh()->is_reconciled);
+
+        $request->post(route('reconciliation.create', $mercadoPagoEntry))
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $mercadoPagoEntry->refresh();
+        $transaction = $mercadoPagoEntry->accountMovement?->transaction;
+        $this->assertTrue($mercadoPagoEntry->is_reconciled);
+        $this->assertSame(FinancialTransactionType::Transfer, $transaction?->type);
+        $this->assertSame($banrisul->id, $transaction?->source_account_id);
+        $this->assertSame($mercadoPago->id, $transaction?->destination_account_id);
+        $this->assertFalse($banrisulEntry->fresh()->is_reconciled);
     }
 
     public function test_creating_a_transaction_uses_matching_classification_rule(): void

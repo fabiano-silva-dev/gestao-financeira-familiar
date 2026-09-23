@@ -529,7 +529,7 @@ function PendingImportResolver({
                             </>
                         )}
 
-                        <div className="md:col-span-2">
+                        <div className="flex flex-wrap gap-2 md:col-span-2">
                             <Button
                                 disabled={
                                     processing ||
@@ -541,6 +541,15 @@ function PendingImportResolver({
                                 {processing
                                     ? 'Continuando processamento…'
                                     : 'Confirmar e processar'}
+                            </Button>
+                            <Button variant="outline" asChild>
+                                <Link
+                                    href={`/importacoes/${item.id}`}
+                                    method="delete"
+                                    preserveScroll
+                                >
+                                    Cancelar
+                                </Link>
                             </Button>
                         </div>
                     </>
@@ -756,6 +765,10 @@ function ImportSummary({ item }: { item: UnifiedImportHistoryItem }) {
                 </p>
             </div>
         );
+    }
+
+    if (item.status === 'no_movement') {
+        return <p className="text-sm">Sem movimento</p>;
     }
 
     if (item.status === 'completed') {
@@ -1088,7 +1101,9 @@ export default function ImportsIndex({
                                                 <Badge
                                                     variant={
                                                         item.status ===
-                                                        'completed'
+                                                            'completed' ||
+                                                        item.status ===
+                                                            'no_movement'
                                                             ? 'secondary'
                                                             : item.status ===
                                                                 'failed'
@@ -1104,6 +1119,22 @@ export default function ImportsIndex({
                                                 <ImportSummary item={item} />
                                             </div>
                                             <div className="flex min-w-0 flex-col items-stretch gap-1.5">
+                                                {item.status ===
+                                                    'needs_confirmation' && (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        asChild
+                                                    >
+                                                        <Link
+                                                            href={`/importacoes/${item.id}`}
+                                                            method="delete"
+                                                            preserveScroll
+                                                        >
+                                                            Cancelar
+                                                        </Link>
+                                                    </Button>
+                                                )}
                                                 {item.can_reassign && (
                                                     <Button
                                                         type="button"

@@ -189,6 +189,9 @@ export type ReconciliationImportOption = {
     filename: string | null;
     label: string;
     kind: ReconciliationKind;
+    kind_label: string;
+    target: string;
+    period: string | null;
     account_id: number | null;
     card_id: number | null;
 };

@@ -3,6 +3,7 @@
 namespace App\Services\Finance;
 
 use App\Enums\ClassificationRuleMatchType;
+use App\Enums\FinancialTransactionType;
 use App\Models\ClassificationRule;
 use App\Models\Workspace;
 use Illuminate\Support\Collection;
@@ -48,10 +49,24 @@ final class ClassificationRuleMatcher
      *     counterpart_account_id: int|null
      * }|null
      */
-    public function match(Workspace $workspace, string $description): ?array
-    {
+    public function match(
+        Workspace $workspace,
+        string $description,
+        ?int $financialAccountId = null,
+    ): ?array {
         $rules = $workspace->classificationRules()
             ->where('is_active', true)
+            ->where(function ($query) use ($financialAccountId): void {
+                $query->where('action_type', '!=', FinancialTransactionType::Transfer->value);
+
+                if ($financialAccountId !== null) {
+                    $query->orWhere(function ($transfer) use ($financialAccountId): void {
+                        $transfer
+                            ->where('action_type', FinancialTransactionType::Transfer->value)
+                            ->where('financial_account_id', $financialAccountId);
+                    });
+                }
+            })
             ->orderBy('id')
             ->get([
                 'id',
@@ -92,6 +107,7 @@ final class ClassificationRuleMatcher
         ClassificationRuleMatchType $matchType,
         string $pattern,
         ?int $ignoreId = null,
+        ?int $financialAccountId = null,
     ): ?ClassificationRule {
         $normalized = $this->normalize($pattern);
 
@@ -105,6 +121,11 @@ final class ClassificationRuleMatcher
                 fn ($query) => $query->where('id', '!=', $ignoreId),
             )
             ->where('match_type', $matchType->value)
+            ->when(
+                $financialAccountId !== null,
+                fn ($query) => $query->where('financial_account_id', $financialAccountId),
+                fn ($query) => $query->whereNull('financial_account_id'),
+            )
             ->orderBy('id')
             ->get(['id', 'name', 'match_type', 'pattern'])
             ->first(

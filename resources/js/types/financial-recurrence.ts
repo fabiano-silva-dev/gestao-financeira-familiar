@@ -24,6 +24,7 @@ export type FinancialRecurrence = {
     interval: number;
     schedule_label: string;
     starts_on: string;
+    generation_started_on: string;
     ends_on: string | null;
     next_occurrence: string | null;
     is_active: boolean;

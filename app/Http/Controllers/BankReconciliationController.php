@@ -390,13 +390,29 @@ class BankReconciliationController extends Controller
         return to_route('reconciliation.index', $this->filterQuery($request));
     }
 
-    public function create(Request $request, int $entry): RedirectResponse
-    {
+    public function create(
+        ClassifyReconciliationEntryRequest $request,
+        int $entry,
+    ): RedirectResponse {
         $user = $request->user();
         abort_unless($user instanceof User, 403);
+        $workspace = $this->workspace();
+        $model = $this->findEntry($workspace, $entry);
+
+        if ($request->has('category_id') || $request->has('payee_name')) {
+            $model = $this->entryActions->classifyBankEntry(
+                $workspace,
+                $model,
+                $request->input('payee_name'),
+                $request->filled('category_id')
+                    ? $request->integer('category_id')
+                    : $model->suggested_category_id,
+            );
+        }
+
         $this->entryActions->createBankTransaction(
-            $this->workspace(),
-            $this->findEntry($this->workspace(), $entry),
+            $workspace,
+            $model,
             $user,
         );
 
@@ -682,6 +698,7 @@ class BankReconciliationController extends Controller
             $this->interpreter->isOutflow($entry->amount)
                 ? CategoryType::Expense
                 : CategoryType::Income,
+            $entry->financial_account_id,
         );
 
         return $this->withFlags([
@@ -742,6 +759,7 @@ class BankReconciliationController extends Controller
             $this->interpreter->isOutflow($entry->amount)
                 ? CategoryType::Expense
                 : CategoryType::Income,
+            $entry->financial_account_id,
         );
 
         return $this->withFlags([
@@ -1176,9 +1194,12 @@ class BankReconciliationController extends Controller
      *     subcategory_name: string|null
      * }
      */
-    private function matcherSuggestion(string $description, CategoryType $type): array
-    {
-        $cacheKey = $type->value.':'.$description;
+    private function matcherSuggestion(
+        string $description,
+        CategoryType $type,
+        ?int $financialAccountId = null,
+    ): array {
+        $cacheKey = $type->value.':'.($financialAccountId ?? 'none').':'.$description;
 
         if (array_key_exists($cacheKey, $this->matcherSuggestions)) {
             return $this->matcherSuggestions[$cacheKey];
@@ -1192,7 +1213,7 @@ class BankReconciliationController extends Controller
             ...$this->categoryParts(null),
         ];
         $workspace = $this->workspace();
-        $rule = $this->ruleMatcher->match($workspace, $description);
+        $rule = $this->ruleMatcher->match($workspace, $description, $financialAccountId);
 
         if (is_array($rule)) {
             $category = $rule['category_id'] !== null
@@ -1241,8 +1262,7 @@ class BankReconciliationController extends Controller
         $hasSuggestion = collect($candidates)->contains(
             fn (array $candidate): bool => (bool) ($candidate['is_suggestion'] ?? false),
         );
-        $best = collect($candidates)->firstWhere('is_suggestion', true)
-            ?? $candidates[0] ?? null;
+        $best = collect($candidates)->firstWhere('is_suggestion', true);
         $isTransfer = (bool) ($entry['related_is_transfer'] ?? false)
             || $this->interpreter->isLikelyTransfer($entry['description']);
         $ruleAction = $entry['matcher_action_type'] ?? null;
@@ -1426,6 +1446,9 @@ class BankReconciliationController extends Controller
      *     filename: string|null,
      *     label: string,
      *     kind: string,
+     *     kind_label: string,
+     *     target: string,
+     *     period: string|null,
      *     account_id: int|null,
      *     card_id: int|null
      * }>
@@ -1444,6 +1467,7 @@ class BankReconciliationController extends Controller
             ->get()
             ->map(function (FinancialImport $import): array {
                 $isInvoice = $import->type === FinancialImportType::CardStatement;
+                $kindLabel = $isInvoice ? 'Fatura' : 'Extrato';
                 $target = $isInvoice
                     ? ($import->creditCard instanceof CreditCard
                         ? "{$import->creditCard->name} · final {$import->creditCard->last_four}"
@@ -1456,10 +1480,13 @@ class BankReconciliationController extends Controller
                 return [
                     'id' => $import->id,
                     'filename' => $import->source_filename,
-                    'label' => collect([$import->source_filename, $target, $period])
+                    'label' => collect([$kindLabel, $target, $period, $import->source_filename])
                         ->filter()
                         ->implode(' · '),
                     'kind' => $isInvoice ? 'invoice' : 'statement',
+                    'kind_label' => $kindLabel,
+                    'target' => $target,
+                    'period' => $period,
                     'account_id' => $import->financial_account_id,
                     'card_id' => $import->credit_card_id,
                 ];

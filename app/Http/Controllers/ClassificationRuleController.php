@@ -41,6 +41,7 @@ class ClassificationRuleController extends Controller
             ->with([
                 'category:id,name,parent_id',
                 'category.parent:id,name',
+                'financialAccount:id,name',
                 'counterpartAccount:id,name',
             ])
             ->getQuery();
@@ -183,6 +184,7 @@ class ClassificationRuleController extends Controller
             ->with([
                 'category:id,name,parent_id',
                 'category.parent:id,name',
+                'financialAccount:id,name',
                 'counterpartAccount:id,name',
             ])
             ->findOrFail($rule);
@@ -196,6 +198,7 @@ class ClassificationRuleController extends Controller
      *     action_type: string,
      *     payee_name: string,
      *     category_id: int|null,
+     *     financial_account_id: int|null,
      *     counterpart_account_id: int|null,
      *     source_description: string
      * }
@@ -205,6 +208,9 @@ class ClassificationRuleController extends Controller
         $description = trim($request->string('description')->toString());
         $payeeName = trim($request->string('payee_name')->toString());
         $categoryId = $request->filled('category_id') ? $request->integer('category_id') : null;
+        $financialAccountId = $request->filled('financial_account_id')
+            ? $request->integer('financial_account_id')
+            : null;
         $counterpartAccountId = $request->filled('counterpart_account_id')
             ? $request->integer('counterpart_account_id')
             : null;
@@ -235,6 +241,7 @@ class ClassificationRuleController extends Controller
             'action_type' => ($action ?? FinancialTransactionType::Expense)->value,
             'payee_name' => $payeeName,
             'category_id' => $action === FinancialTransactionType::Transfer ? null : $categoryId,
+            'financial_account_id' => $financialAccountId,
             'counterpart_account_id' => $action === FinancialTransactionType::Transfer
                 ? $counterpartAccountId
                 : null,
@@ -250,6 +257,7 @@ class ClassificationRuleController extends Controller
      *     action_type: string,
      *     payee_name: string,
      *     category_id: int|null,
+     *     financial_account_id: int|null,
      *     counterpart_account_id: int|null,
      *     source_description: string
      * }  $draft
@@ -263,7 +271,11 @@ class ClassificationRuleController extends Controller
             return null;
         }
 
-        $match = $this->matcher->match($this->workspace(), $description);
+        $match = $this->matcher->match(
+            $this->workspace(),
+            $description,
+            $draft['financial_account_id'],
+        );
 
         if (! is_array($match)) {
             return null;
@@ -333,6 +345,8 @@ class ClassificationRuleController extends Controller
      *     payee_name: string|null,
      *     category_id: int|null,
      *     category_name: string|null,
+     *     financial_account_id: int|null,
+     *     financial_account_name: string|null,
      *     counterpart_account_id: int|null,
      *     counterpart_account_name: string|null,
      *     is_active: bool
@@ -346,6 +360,7 @@ class ClassificationRuleController extends Controller
                 ? $category->parent->name.' / '.$category->name
                 : $category->name)
             : null;
+        $statementAccount = $rule->financialAccount;
         $account = $rule->counterpartAccount;
 
         return [
@@ -360,6 +375,10 @@ class ClassificationRuleController extends Controller
             'payee_name' => $rule->payee_name,
             'category_id' => $rule->category_id,
             'category_name' => $categoryName,
+            'financial_account_id' => $rule->financial_account_id,
+            'financial_account_name' => $statementAccount instanceof FinancialAccount
+                ? $statementAccount->name
+                : null,
             'counterpart_account_id' => $rule->counterpart_account_id,
             'counterpart_account_name' => $account instanceof FinancialAccount
                 ? $account->name

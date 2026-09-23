@@ -559,6 +559,41 @@ class FinancialImportAutoDetectionTest extends TestCase
         $this->assertDatabaseCount('card_statement_entries', 0);
     }
 
+    public function test_pending_import_can_be_cancelled(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.store'), [
+                'files' => [
+                    UploadedFile::fake()->createWithContent(
+                        'comprovante.pdf',
+                        $this->simplePdf([
+                            'NUBANK',
+                            'COMPROVANTE DE PIX',
+                            'Transferência realizada com sucesso',
+                        ]),
+                    ),
+                ],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $pending = FinancialImport::query()->sole();
+        $storedPath = $pending->stored_path;
+        $this->assertSame(FinancialImportStatus::NeedsConfirmation, $pending->status);
+        Storage::disk('local')->assertExists($storedPath);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->delete(route('imports.destroy', $pending))
+            ->assertRedirect(route('imports.index'));
+
+        $this->assertDatabaseMissing('financial_imports', ['id' => $pending->id]);
+        Storage::disk('local')->assertMissing($storedPath);
+    }
+
     private function ofx(
         string $fitid = 'auto-001',
         string $amount = '-89.90',

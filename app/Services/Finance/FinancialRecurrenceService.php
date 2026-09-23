@@ -28,12 +28,9 @@ class FinancialRecurrenceService
         return DB::transaction(function () use ($workspace, $data): FinancialRecurrence {
             [$data, $alreadySettled] = $this->extractSettlementFlag($data);
             $today = CarbonImmutable::today();
-            $startsOn = CarbonImmutable::parse((string) $data['starts_on']);
             $recurrence = $workspace->financialRecurrences()->create([
                 ...$data,
-                'generation_started_on' => $startsOn->greaterThan($today)
-                    ? $startsOn->toDateString()
-                    : $today->toDateString(),
+                'generation_started_on' => $this->resolveGenerationStartedOn($data, $today),
                 'is_active' => true,
             ]);
 
@@ -60,16 +57,18 @@ class FinancialRecurrenceService
             $this->clearFuturePlannedOccurrences($recurrence);
 
             $today = CarbonImmutable::today();
-            $startsOn = CarbonImmutable::parse((string) $data['starts_on']);
+            $generationStartedOn = $this->resolveGenerationStartedOn($data, $today);
 
             $recurrence->update([
                 ...$data,
-                'generation_started_on' => $startsOn->greaterThan($today)
-                    ? $startsOn->toDateString()
-                    : $today->toDateString(),
+                'generation_started_on' => $generationStartedOn,
             ]);
 
             if ($recurrence->is_active) {
+                $this->clearPlannedOccurrencesBefore(
+                    $recurrence->refresh(),
+                    CarbonImmutable::parse($generationStartedOn),
+                );
                 $this->prepareCurrentDueGeneration(
                     $recurrence->refresh(),
                     $alreadySettled,
@@ -103,15 +102,18 @@ class FinancialRecurrenceService
             $recurrence->refresh();
 
             if ($isActive) {
-                $today = CarbonImmutable::today();
                 $startsOn = CarbonImmutable::parse($recurrence->starts_on->toDateString());
+                $generationStart = CarbonImmutable::parse(
+                    $recurrence->generation_started_on->toDateString(),
+                );
 
-                $recurrence->update([
-                    'generation_started_on' => $startsOn->greaterThan($today)
-                        ? $startsOn->toDateString()
-                        : $today->toDateString(),
-                ]);
+                if ($generationStart->lessThan($startsOn)) {
+                    $recurrence->update([
+                        'generation_started_on' => $startsOn->toDateString(),
+                    ]);
+                }
 
+                $today = CarbonImmutable::today();
                 $this->generate(
                     $recurrence->refresh(),
                     $today->addDays(self::GENERATION_HORIZON_DAYS),
@@ -365,6 +367,41 @@ class FinancialRecurrenceService
         }
 
         return $projection;
+    }
+
+    private function resolveGenerationStartedOn(
+        array $data,
+        CarbonImmutable $today,
+    ): string {
+        $startsOn = CarbonImmutable::parse((string) $data['starts_on']);
+        $requested = $data['generation_started_on'] ?? null;
+
+        if (! is_string($requested) || $requested === '') {
+            return $startsOn->greaterThan($today)
+                ? $startsOn->toDateString()
+                : $today->toDateString();
+        }
+
+        $generationStart = CarbonImmutable::parse($requested);
+
+        if ($generationStart->lessThan($startsOn)) {
+            return $startsOn->toDateString();
+        }
+
+        return $generationStart->toDateString();
+    }
+
+    private function clearPlannedOccurrencesBefore(
+        FinancialRecurrence $recurrence,
+        CarbonImmutable $generationStart,
+    ): void {
+        $recurrence->transactions()
+            ->where('status', FinancialTransactionStatus::Planned->value)
+            ->where('recurrence_is_overridden', false)
+            ->whereNull('settled_on')
+            ->whereDate('recurrence_occurrence_date', '<', $generationStart->toDateString())
+            ->whereDoesntHave('accountMovements')
+            ->delete();
     }
 
     private function clearFuturePlannedOccurrences(

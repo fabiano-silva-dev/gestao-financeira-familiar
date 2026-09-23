@@ -68,6 +68,12 @@ export default function FinancialRecurrenceForm({
             : 'none',
     );
     const [alreadySettled, setAlreadySettled] = useState(false);
+    const [startsOn, setStartsOn] = useState(
+        recurrence?.starts_on ?? defaultStartDate ?? '',
+    );
+    const [generationStartedOn, setGenerationStartedOn] = useState(
+        recurrence?.generation_started_on ?? defaultStartDate ?? '',
+    );
 
     const isExpense = type === 'expense';
     const usesCreditCard = isExpense && paymentMethod === 'credit_card';
@@ -77,6 +83,18 @@ export default function FinancialRecurrenceForm({
     const form = recurrence
         ? FinancialRecurrenceController.update.form(recurrence.id)
         : FinancialRecurrenceController.store.form();
+
+    function changeStartsOn(value: string) {
+        setStartsOn(value);
+
+        if (
+            generationStartedOn !== '' &&
+            value !== '' &&
+            generationStartedOn < value
+        ) {
+            setGenerationStartedOn(value);
+        }
+    }
 
     function changeType(value: string) {
         const nextType = value as FinancialRecurrenceType;
@@ -225,8 +243,9 @@ export default function FinancialRecurrenceForm({
                                 id="starts_on"
                                 name="starts_on"
                                 type="date"
-                                defaultValue={
-                                    recurrence?.starts_on ?? defaultStartDate
+                                value={startsOn}
+                                onChange={(event) =>
+                                    changeStartsOn(event.target.value)
                                 }
                                 required
                             />
@@ -234,7 +253,32 @@ export default function FinancialRecurrenceForm({
                         </div>
                     </div>
 
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <div className="grid gap-2">
+                            <Label htmlFor="generation_started_on">
+                                Início da geração
+                            </Label>
+                            <Input
+                                id="generation_started_on"
+                                name="generation_started_on"
+                                type="date"
+                                min={startsOn || undefined}
+                                value={generationStartedOn}
+                                onChange={(event) =>
+                                    setGenerationStartedOn(event.target.value)
+                                }
+                                required
+                            />
+                            <p className="text-muted-foreground text-xs">
+                                {usesCreditCard
+                                    ? 'Ocorrências já chegadas a partir desta data são lançadas no cartão ao salvar. As futuras continuam só como projeção.'
+                                    : 'Ocorrências a partir desta data são criadas ao salvar. Uma data anterior a hoje gera o período retroativo como compromisso, sem alterar o saldo.'}
+                            </p>
+                            <InputError
+                                message={errors.generation_started_on}
+                            />
+                        </div>
+
                         <div className="grid gap-2">
                             <Label htmlFor="ends_on">Encerrar em</Label>
                             <Input

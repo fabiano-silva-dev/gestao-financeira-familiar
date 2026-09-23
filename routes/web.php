@@ -263,6 +263,9 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::post('importacoes/{import}/resolver', [FinancialImportController::class, 'resolve'])
         ->whereNumber('import')
         ->name('imports.resolve');
+    Route::delete('importacoes/{import}', [FinancialImportController::class, 'destroy'])
+        ->whereNumber('import')
+        ->name('imports.destroy');
     Route::post('importacoes/{import}/destino', [FinancialImportController::class, 'reassign'])
         ->whereNumber('import')
         ->name('imports.reassign');

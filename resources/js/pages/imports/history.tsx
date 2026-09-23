@@ -50,7 +50,7 @@ type HistoryItem = {
     source_filename: string;
     target_name: string;
     institution: string | null;
-    status: 'processing' | 'needs_confirmation' | 'completed' | 'failed';
+    status: 'processing' | 'needs_confirmation' | 'completed' | 'no_movement' | 'failed';
     status_label: string;
     reference_month: string | null;
     statement_start_on: string | null;
@@ -122,7 +122,7 @@ function statusVariant(item: HistoryItem) {
         return 'destructive' as const;
     }
 
-    if (item.status === 'completed') {
+    if (item.status === 'completed' || item.status === 'no_movement') {
         return 'secondary' as const;
     }
 
@@ -455,21 +455,55 @@ export default function ImportHistory({
                                                         : '—'}
                                                 </p>
                                                 <div className="text-sm tabular-nums">
-                                                    <p>
-                                                        {item.resolved_records}/
-                                                        {item.total_records}{' '}
-                                                        tratados
-                                                    </p>
-                                                    <p className="text-muted-foreground text-xs">
-                                                        {item.pending_records}{' '}
-                                                        pendentes ·{' '}
-                                                        {item.duplicate_records}{' '}
-                                                        duplicados
-                                                    </p>
+                                                    {item.status ===
+                                                    'no_movement' ? (
+                                                        <p>Sem movimento</p>
+                                                    ) : (
+                                                        <>
+                                                            <p>
+                                                                {
+                                                                    item.resolved_records
+                                                                }
+                                                                /
+                                                                {
+                                                                    item.total_records
+                                                                }{' '}
+                                                                tratados
+                                                            </p>
+                                                            <p className="text-muted-foreground text-xs">
+                                                                {
+                                                                    item.pending_records
+                                                                }{' '}
+                                                                pendentes ·{' '}
+                                                                {
+                                                                    item.duplicate_records
+                                                                }{' '}
+                                                                duplicados
+                                                            </p>
+                                                        </>
+                                                    )}
                                                 </div>
                                                 <div className="flex flex-wrap gap-1">
+                                                    {item.status ===
+                                                        'needs_confirmation' && (
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            asChild
+                                                        >
+                                                            <Link
+                                                                href={`/importacoes/${item.id}`}
+                                                                method="delete"
+                                                                preserveScroll
+                                                            >
+                                                                Cancelar
+                                                            </Link>
+                                                        </Button>
+                                                    )}
                                                     {item.kind !==
-                                                        'document' && (
+                                                        'document' &&
+                                                        item.status !==
+                                                            'no_movement' && (
                                                         <Button
                                                             asChild
                                                             variant="ghost"

@@ -143,12 +143,6 @@ final class CardStatementMaterializationService
             ]);
         }
 
-        if ($invoice->status !== CreditCardInvoiceStatus::Open) {
-            throw ValidationException::withMessages([
-                'entry' => 'A fatura precisa estar aberta para criar a compra.',
-            ]);
-        }
-
         $transaction = $this->createTransaction(
             $workspace,
             $card,
@@ -399,6 +393,8 @@ final class CardStatementMaterializationService
                         ->addMonths($offset),
                 );
 
+            $invoiceAlreadyPaid = $invoice->status === CreditCardInvoiceStatus::Paid;
+
             $installment = $transaction->installments()->create([
                 'workspace_id' => $transaction->workspace_id,
                 'credit_card_invoice_id' => $invoice->id,
@@ -408,8 +404,12 @@ final class CardStatementMaterializationService
                 'competence_month' => $invoice->reference_month->toDateString(),
                 'due_date' => $invoice->due_date->toDateString(),
                 'expected_payment_date' => $invoice->due_date->toDateString(),
-                'paid_at' => null,
-                'status' => TransactionInstallmentStatus::Open,
+                'paid_at' => $invoiceAlreadyPaid
+                    ? ($invoice->paid_at?->toDateString() ?? $invoice->due_date->toDateString())
+                    : null,
+                'status' => $invoiceAlreadyPaid
+                    ? TransactionInstallmentStatus::Paid
+                    : TransactionInstallmentStatus::Open,
             ]);
 
             if ($number === $currentNumber) {
@@ -453,12 +453,6 @@ final class CardStatementMaterializationService
                 'status' => CreditCardInvoiceStatus::Open,
             ],
         );
-
-        if ($invoice->status !== CreditCardInvoiceStatus::Open) {
-            throw ValidationException::withMessages([
-                'file' => 'Uma das faturas futuras da compra parcelada já está fechada ou paga.',
-            ]);
-        }
 
         return $invoice;
     }

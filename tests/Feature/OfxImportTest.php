@@ -622,6 +622,36 @@ class OfxImportTest extends TestCase
         ]);
     }
 
+    public function test_header_only_bank_csv_is_recorded_as_no_movement(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Nubank Lidiane',
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.ofx.store'), [
+                'financial_account_id' => $account->id,
+                'file' => UploadedFile::fake()->createWithContent(
+                    'NU_8407288736_01JUL2026_31JUL2026.csv',
+                    "Data,Valor,Identificador,Descrição\n",
+                ),
+            ])
+            ->assertRedirect(route('imports.index'))
+            ->assertSessionHasNoErrors();
+
+        $financialImport = FinancialImport::query()->sole();
+
+        $this->assertSame(FinancialImportStatus::NoMovement, $financialImport->status);
+        $this->assertNull($financialImport->error_message);
+        $this->assertSame(0, $financialImport->total_records);
+        $this->assertSame('2026-07-01', $financialImport->statement_start_on?->toDateString());
+        $this->assertSame('2026-07-31', $financialImport->statement_end_on?->toDateString());
+        $this->assertDatabaseCount('bank_statement_entries', 0);
+    }
+
     public function test_invalid_ofx_is_recorded_as_failed(): void
     {
         Storage::fake('local');

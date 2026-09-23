@@ -134,7 +134,14 @@ final class BankStatementCsvParser
         }
 
         if ($transactions === []) {
-            throw new BankStatementParseException('Nenhum movimento válido foi encontrado no CSV.');
+            return new OfxStatement(
+                bankId: null,
+                accountId: null,
+                currency: 'BRL',
+                startOn: null,
+                endOn: null,
+                transactions: [],
+            );
         }
 
         $dates = array_map(

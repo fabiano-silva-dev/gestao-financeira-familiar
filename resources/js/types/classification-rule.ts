@@ -19,6 +19,8 @@ export type ClassificationRule = {
     payee_name: string | null;
     category_id: number | null;
     category_name: string | null;
+    financial_account_id: number | null;
+    financial_account_name: string | null;
     counterpart_account_id: number | null;
     counterpart_account_name: string | null;
     is_active: boolean;
@@ -31,6 +33,7 @@ export type ClassificationRuleDraft = {
     action_type: ClassificationRuleActionType | string;
     payee_name: string;
     category_id: number | null;
+    financial_account_id: number | null;
     counterpart_account_id: number | null;
     source_description: string;
 };
@@ -51,6 +54,7 @@ export type ClassificationRulePrompt = {
     payee_name: string;
     action_type: ClassificationRuleActionType;
     category_id: number | null;
+    financial_account_id: number | null;
     counterpart_account_id: number | null;
     return_to?: string;
 };
