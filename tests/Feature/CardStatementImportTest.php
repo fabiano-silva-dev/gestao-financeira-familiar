@@ -3,12 +3,16 @@
 namespace Tests\Feature;
 
 use App\Enums\CategoryType;
+use App\Enums\ClassificationRuleAutomationLevel;
+use App\Enums\ClassificationRuleMatchType;
 use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\FinancialImportStatus;
 use App\Enums\FinancialImportType;
 use App\Enums\FinancialTransactionOrigin;
+use App\Enums\FinancialTransactionType;
 use App\Models\CardStatementEntry;
 use App\Models\Category;
+use App\Models\ClassificationRule;
 use App\Models\CreditCard;
 use App\Models\CreditCardInvoice;
 use App\Models\FinancialImport;
@@ -46,6 +50,15 @@ class CardStatementImportTest extends TestCase
             'name' => 'Esporte',
             'type' => CategoryType::Expense,
             'is_active' => true,
+        ]);
+        ClassificationRule::factory()->for($workspace)->create([
+            'name' => 'Vôlei Lidiane',
+            'match_type' => ClassificationRuleMatchType::Contains,
+            'pattern' => 'Vôlei Lidiane',
+            'action_type' => FinancialTransactionType::Expense,
+            'automation_level' => ClassificationRuleAutomationLevel::CreateAndReconcile,
+            'payee_name' => 'Vôlei Lidiane',
+            'category_id' => $category->id,
         ]);
 
         $this->actingAs($user)
@@ -94,6 +107,8 @@ class CardStatementImportTest extends TestCase
             'total_installments' => 10,
             'external_id' => 'linha-001',
             'is_reconciled' => true,
+            'automation_level_applied' => ClassificationRuleAutomationLevel::CreateAndReconcile->value,
+            'automation_result' => 'created_and_reconciled',
         ]);
         $this->assertDatabaseHas('card_statement_entries', [
             'description' => 'Estorno mensalidade',
@@ -148,6 +163,54 @@ class CardStatementImportTest extends TestCase
                 ->where('invoice.statement_entries.0.is_reconciled', false)
                 ->where('invoice.statement_entries.1.is_reconciled', true)
             );
+    }
+
+    public function test_card_rule_can_only_classify_and_keep_purchase_pending(): void
+    {
+        Storage::fake('local');
+        config()->set('financial_ai.enabled', false);
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+        $category = Category::factory()->for($workspace)->create([
+            'name' => 'Mercado',
+            'type' => CategoryType::Expense,
+            'is_active' => true,
+        ]);
+        $rule = ClassificationRule::factory()->for($workspace)->create([
+            'name' => 'Loja teste',
+            'match_type' => ClassificationRuleMatchType::Contains,
+            'pattern' => 'LOJA TESTE',
+            'action_type' => FinancialTransactionType::Expense,
+            'automation_level' => ClassificationRuleAutomationLevel::ClassifyOnly,
+            'payee_name' => 'Loja Teste',
+            'category_id' => $category->id,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.card-statements.store'), [
+                'credit_card_id' => $card->id,
+                'reference_month' => '2026-10',
+                'amount_sign' => 'positive',
+                'file' => UploadedFile::fake()->createWithContent(
+                    'fatura-classificar.csv',
+                    "Data;Estabelecimento;Valor;Identificador\n10/09/2026;LOJA TESTE;50,00;classificar-001\n",
+                ),
+            ])
+            ->assertSessionHasNoErrors();
+
+        $entry = CardStatementEntry::query()->sole();
+
+        $this->assertFalse($entry->is_reconciled);
+        $this->assertSame('Loja Teste', $entry->suggested_payee_name);
+        $this->assertSame($category->id, $entry->suggested_category_id);
+        $this->assertSame($rule->id, $entry->matched_classification_rule_id);
+        $this->assertSame(
+            ClassificationRuleAutomationLevel::ClassifyOnly->value,
+            $entry->automation_level_applied,
+        );
+        $this->assertSame('classified_pending', $entry->automation_result);
+        $this->assertDatabaseCount('financial_transactions', 0);
     }
 
     public function test_uncategorized_card_purchase_stays_pending_and_is_not_reconciled(): void
@@ -392,13 +455,11 @@ class CardStatementImportTest extends TestCase
             ])
             ->assertSessionHasNoErrors();
 
-        $this->assertDatabaseHas('financial_transactions', [
-            'workspace_id' => $workspace->id,
-            'description' => 'SUPERMERCADO XYZ 001',
-            'payee_name' => 'Supermercado XYZ',
-            'category_id' => $category->id,
-            'origin' => FinancialTransactionOrigin::CardImport->value,
-        ]);
+        $entry = CardStatementEntry::query()->sole();
+        $this->assertFalse($entry->is_reconciled);
+        $this->assertSame('Supermercado XYZ', $entry->suggested_payee_name);
+        $this->assertSame($category->id, $entry->suggested_category_id);
+        $this->assertDatabaseCount('financial_transactions', 0);
 
         $metadata = FinancialImport::query()->sole()->metadata;
         $this->assertSame(['gemini'], $metadata['ai_classification']['providers']);
@@ -426,6 +487,24 @@ class CardStatementImportTest extends TestCase
             'name' => 'Farmácia',
             'type' => CategoryType::Expense,
             'is_active' => true,
+        ]);
+        ClassificationRule::factory()->for($workspace)->create([
+            'name' => '99app',
+            'match_type' => ClassificationRuleMatchType::Contains,
+            'pattern' => '99app',
+            'action_type' => FinancialTransactionType::Expense,
+            'automation_level' => ClassificationRuleAutomationLevel::CreateAndReconcile,
+            'payee_name' => '99app',
+            'category_id' => $transporte->id,
+        ]);
+        ClassificationRule::factory()->for($workspace)->create([
+            'name' => 'Farmácia São João',
+            'match_type' => ClassificationRuleMatchType::Contains,
+            'pattern' => 'Farmacia Sao Joao',
+            'action_type' => FinancialTransactionType::Expense,
+            'automation_level' => ClassificationRuleAutomationLevel::CreateAndReconcile,
+            'payee_name' => 'Farmácia São João',
+            'category_id' => $farmacia->id,
         ]);
         $csv = <<<'CSV'
             date,title,amount
