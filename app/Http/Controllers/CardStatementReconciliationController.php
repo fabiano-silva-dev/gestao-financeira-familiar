@@ -93,6 +93,24 @@ class CardStatementReconciliationController extends Controller
         return $this->redirectAfterCardReconciliation($invoice);
     }
 
+    public function restoreIgnored(int $invoice, int $entry): RedirectResponse
+    {
+        $workspace = $this->workspace();
+        $creditCardInvoice = $this->findInvoice($workspace, $invoice);
+
+        $this->entryActions->restoreCardEntry(
+            $workspace,
+            $this->findEntry($creditCardInvoice, $entry),
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Linha restaurada para a conciliação.',
+        ]);
+
+        return $this->redirectAfterCardReconciliation($invoice);
+    }
+
     public function classify(
         ClassifyReconciliationEntryRequest $request,
         int $invoice,

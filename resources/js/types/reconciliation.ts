@@ -7,7 +7,8 @@ export type ReconciliationView =
     | 'duplicates'
     | 'uncategorized'
     | 'transfers'
-    | 'reconciled';
+    | 'reconciled'
+    | 'ignored';
 
 export type ReconciliationCandidate = {
     movement_id?: number | null;
@@ -160,6 +161,16 @@ export type ReconciliationFilters = {
     from: string | null;
     to: string | null;
     view: ReconciliationView;
+    category: string | null;
+    flow: 'all' | 'in' | 'out';
+    entry_type:
+        | 'all'
+        | 'expense'
+        | 'income'
+        | 'transfer'
+        | 'invoice_payment'
+        | 'refund'
+        | 'card_purchase';
     q?: string;
     sort?: string;
     direction?: 'asc' | 'desc';
@@ -173,6 +184,7 @@ export type ReconciliationViewCounts = {
     uncategorized: number;
     transfers: number;
     reconciled: number;
+    ignored: number;
 };
 
 export type ReconciliationAccountOption = {

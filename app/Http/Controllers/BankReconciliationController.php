@@ -131,6 +131,7 @@ class BankReconciliationController extends Controller
                         : $this->pendingCardEntryData($entry, $installments),
                 )),
         );
+        $scoped = $this->filterColumns($scoped, $filters);
         $viewCounts = $this->viewCounts($scoped);
         $entries = $listing->sortMapped(
             $this->filterView($scoped, $filters['view']),
@@ -139,8 +140,11 @@ class BankReconciliationController extends Controller
                 'date' => fn (array $entry): string => $entry['occurred_on'],
                 'amount' => fn (array $entry): int => ListingQuery::moneyToCents($entry['amount']),
                 'source' => fn (array $entry): string => $entry['source_name'],
+                'type' => fn (array $entry): string => $this->entryTypeLabel($entry),
+                'category' => fn (array $entry): string => $this->entryCategoryLabel($entry),
+                'status' => fn (array $entry): int => $this->entryStatusRank($entry),
             ],
-        )->take(250)->all();
+        )->all();
 
         return Inertia::render('reconciliation/index', [
             'entries' => $entries,
@@ -178,24 +182,13 @@ class BankReconciliationController extends Controller
                 ])
                 ->all(),
             'categoryOptions' => $this->categoryOptions($workspace),
-            'pendingEntriesCount' => $workspace->bankStatementEntries()
-                ->where('is_reconciled', false)
-                ->where('is_ignored', false)
-                ->count()
-                + $workspace->cardStatementEntries()
-                    ->where('is_reconciled', false)
-                    ->where('is_ignored', false)
-                    ->count(),
+            'pendingEntriesCount' => $viewCounts['pending'],
             'unmatchedMovementsCount' => $workspace->accountMovements()
                 ->where('is_reconciled', false)
                 ->whereDoesntHave('bankStatementEntry')
                 ->count(),
-            'reconciledEntriesCount' => $workspace->bankStatementEntries()
-                ->where('is_reconciled', true)
-                ->count()
-                + $workspace->cardStatementEntries()
-                    ->where('is_reconciled', true)
-                    ->count(),
+            'reconciledEntriesCount' => $viewCounts['reconciled'],
+            'ignoredEntriesCount' => $viewCounts['ignored'],
         ]);
     }
 
@@ -285,6 +278,109 @@ class BankReconciliationController extends Controller
                 ? "{$confirmed} movimento(s) conciliado(s) pelas regras existentes."
                     .($skipped > 0 ? " {$skipped} ficaram para revisão." : '')
                 : 'Nenhum movimento selecionado pôde ser conciliado automaticamente. Revise as exceções.',
+        ]);
+
+        return to_route('reconciliation.index', $this->filterQuery($request));
+    }
+
+    public function bulkAdjust(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'entries' => ['required', 'array', 'min:1', 'max:1000'],
+            'entries.*.kind' => ['required', 'string', 'in:statement,invoice'],
+            'entries.*.id' => ['required', 'integer'],
+            'action' => ['required', 'string', 'in:category,ignore'],
+            'category_id' => ['nullable', 'integer'],
+        ]);
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $workspace = $this->workspace();
+        $action = $validated['action'];
+        $categoryId = isset($validated['category_id'])
+            ? (int) $validated['category_id']
+            : null;
+
+        if ($action === 'category' && $categoryId === null) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'category_id' => 'Selecione uma categoria para o ajuste em lote.',
+            ]);
+        }
+
+        $updated = 0;
+        $skipped = 0;
+
+        foreach ($validated['entries'] as $selection) {
+            try {
+                if ($selection['kind'] === 'statement') {
+                    $entry = $workspace->bankStatementEntries()
+                        ->with('accountMovement.transaction')
+                        ->find((int) $selection['id']);
+
+                    if (! $entry instanceof BankStatementEntry) {
+                        $skipped++;
+
+                        continue;
+                    }
+
+                    if ($action === 'ignore') {
+                        if ($entry->is_reconciled || $entry->is_ignored) {
+                            $skipped++;
+
+                            continue;
+                        }
+
+                        $this->entryActions->ignoreBankEntry($workspace, $entry, $user);
+                    } else {
+                        $this->entryActions->classifyBankEntry(
+                            $workspace,
+                            $entry,
+                            $entry->suggested_payee_name
+                                ?? $entry->accountMovement?->transaction?->payee_name,
+                            $categoryId,
+                        );
+                    }
+                } else {
+                    $entry = $workspace->cardStatementEntries()
+                        ->with('transactionInstallment.transaction')
+                        ->find((int) $selection['id']);
+
+                    if (! $entry instanceof CardStatementEntry) {
+                        $skipped++;
+
+                        continue;
+                    }
+
+                    if ($action === 'ignore') {
+                        if ($entry->is_reconciled || $entry->is_ignored) {
+                            $skipped++;
+
+                            continue;
+                        }
+
+                        $this->entryActions->ignoreCardEntry($workspace, $entry, $user);
+                    } else {
+                        $this->entryActions->classifyCardEntry(
+                            $workspace,
+                            $entry,
+                            $entry->suggested_payee_name
+                                ?? $entry->transactionInstallment?->transaction?->payee_name,
+                            $categoryId,
+                        );
+                    }
+                }
+
+                $updated++;
+            } catch (\Illuminate\Validation\ValidationException) {
+                $skipped++;
+            }
+        }
+
+        Inertia::flash('toast', [
+            'type' => $updated > 0 ? 'success' : 'warning',
+            'message' => $updated > 0
+                ? "{$updated} item(ns) ajustado(s) em lote."
+                    .($skipped > 0 ? " {$skipped} ficaram sem alteração." : '')
+                : 'Nenhum dos itens selecionados pôde ser ajustado.',
         ]);
 
         return to_route('reconciliation.index', $this->filterQuery($request));
@@ -446,6 +542,21 @@ class BankReconciliationController extends Controller
         return to_route('reconciliation.index', $this->filterQuery($request));
     }
 
+    public function restoreIgnored(Request $request, int $entry): RedirectResponse
+    {
+        $this->entryActions->restoreBankEntry(
+            $this->workspace(),
+            $this->findEntry($this->workspace(), $entry),
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Movimento restaurado para a conciliação.',
+        ]);
+
+        return to_route('reconciliation.index', $this->filterQuery($request));
+    }
+
     public function classify(
         ClassifyReconciliationEntryRequest $request,
         int $entry,
@@ -537,10 +648,22 @@ class BankReconciliationController extends Controller
     {
         return ListingQuery::from(
             $request,
-            ['description', 'date', 'amount', 'source'],
+            ['description', 'date', 'amount', 'source', 'type', 'category', 'status'],
             'date',
             'desc',
-            ['kind', 'account', 'card', 'view', 'period', 'from', 'to', 'import'],
+            [
+                'kind',
+                'account',
+                'card',
+                'view',
+                'period',
+                'from',
+                'to',
+                'import',
+                'category',
+                'flow',
+                'entry_type',
+            ],
         );
     }
 
@@ -562,19 +685,41 @@ class BankReconciliationController extends Controller
         $view = $listing->filter('view') ?? 'all';
         $from = $this->normalizeDate($listing->filter('from'));
         $to = $this->normalizeDate($listing->filter('to'));
+        $import = $listing->intFilter('import');
+        $period = $this->normalizePeriod($listing->filter('period'));
 
         if ($from !== null && $to !== null && $from > $to) {
             [$from, $to] = [$to, $from];
         }
 
+        if ($import === null && $period === null && $from === null && $to === null) {
+            $period = CarbonImmutable::today()->format('Y-m');
+        }
+
+        $category = $listing->filter('category');
+        $flow = $listing->filter('flow') ?? 'all';
+        $entryType = $listing->filter('entry_type') ?? 'all';
+
         return [
             'kind' => in_array($kind, ['statement', 'invoice'], true) ? $kind : 'all',
             'account' => $listing->intFilter('account'),
             'card' => $listing->intFilter('card'),
-            'import' => $listing->intFilter('import'),
-            'period' => $this->normalizePeriod($listing->filter('period')),
+            'import' => $import,
+            'period' => $period,
             'from' => $from,
             'to' => $to,
+            'category' => $category !== null && ($category === 'none' || ctype_digit($category))
+                ? $category
+                : null,
+            'flow' => in_array($flow, ['in', 'out'], true) ? $flow : 'all',
+            'entry_type' => in_array($entryType, [
+                'expense',
+                'income',
+                'transfer',
+                'invoice_payment',
+                'refund',
+                'card_purchase',
+            ], true) ? $entryType : 'all',
             'view' => in_array($view, [
                 'all',
                 'pending',
@@ -583,6 +728,7 @@ class BankReconciliationController extends Controller
                 'uncategorized',
                 'transfers',
                 'reconciled',
+                'ignored',
             ], true) ? $view : 'all',
         ];
     }
@@ -632,11 +778,8 @@ class BankReconciliationController extends Controller
             return true;
         }
 
-        $hasTarget = $filters['account'] !== null || $filters['card'] !== null;
-        $hasPeriod = $filters['period'] !== null
+        return $filters['period'] !== null
             || ($filters['from'] !== null && $filters['to'] !== null);
-
-        return $hasTarget && $hasPeriod;
     }
 
     /**
@@ -661,12 +804,7 @@ class BankReconciliationController extends Controller
             return collect();
         }
 
-        if ($filters['import'] === null && $filters['account'] === null) {
-            return collect();
-        }
-
         $query = $workspace->bankStatementEntries()
-            ->where('is_ignored', false)
             ->when(
                 $filters['import'] !== null,
                 fn ($query) => $query->where('financial_import_id', $filters['import']),
@@ -697,7 +835,6 @@ class BankReconciliationController extends Controller
         return $query
             ->orderByDesc('occurred_on')
             ->orderByDesc('id')
-            ->limit(250)
             ->get();
     }
 
@@ -723,12 +860,7 @@ class BankReconciliationController extends Controller
             return collect();
         }
 
-        if ($filters['import'] === null && $filters['card'] === null) {
-            return collect();
-        }
-
         $query = $workspace->cardStatementEntries()
-            ->where('is_ignored', false)
             ->when(
                 $filters['import'] !== null,
                 fn ($query) => $query->where('financial_import_id', $filters['import']),
@@ -755,7 +887,6 @@ class BankReconciliationController extends Controller
         return $query
             ->orderByDesc('purchased_on')
             ->orderByDesc('id')
-            ->limit(250)
             ->get();
     }
 
@@ -769,7 +900,9 @@ class BankReconciliationController extends Controller
         Collection $movements,
         Collection $invoices,
     ): array {
-        $candidates = $this->bankCandidates($entry, $movements, $invoices);
+        $candidates = $entry->is_ignored
+            ? []
+            : $this->bankCandidates($entry, $movements, $invoices);
         $suggestion = collect($candidates)->firstWhere('is_suggestion', true);
         $matcher = $this->matcherSuggestion(
             $entry->description,
@@ -786,7 +919,7 @@ class BankReconciliationController extends Controller
             ...$this->matcherPayload($matcher),
             'candidates' => $candidates,
             'is_reconciled' => false,
-            'is_ignored' => false,
+            'is_ignored' => (bool) $entry->is_ignored,
             'reconciled_by_name' => null,
             'reconciled_at' => null,
         ], $candidates);
@@ -800,7 +933,9 @@ class BankReconciliationController extends Controller
         CardStatementEntry $entry,
         Collection $installments,
     ): array {
-        $candidates = $this->cardCandidates($entry, $installments);
+        $candidates = $entry->is_ignored
+            ? []
+            : $this->cardCandidates($entry, $installments);
         $suggestion = collect($candidates)->firstWhere('is_suggestion', true);
         $matcher = $this->matcherSuggestion(
             $entry->description,
@@ -814,7 +949,7 @@ class BankReconciliationController extends Controller
             ...$this->matcherPayload($matcher),
             'candidates' => $candidates,
             'is_reconciled' => false,
-            'is_ignored' => false,
+            'is_ignored' => (bool) $entry->is_ignored,
             'reconciled_by_name' => null,
             'reconciled_at' => null,
         ], $candidates);
@@ -1465,56 +1600,181 @@ class BankReconciliationController extends Controller
      * @param  Collection<int, array<string, mixed>>  $entries
      * @return Collection<int, array<string, mixed>>
      */
+    /**
+     * @param  Collection<int, array<string, mixed>>  $entries
+     * @param  array<string, mixed>  $filters
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function filterColumns(Collection $entries, array $filters): Collection
+    {
+        return $entries
+            ->filter(function (array $entry) use ($filters): bool {
+                if ($filters['flow'] === 'out' && ListingQuery::moneyToCents($entry['amount']) >= 0) {
+                    return false;
+                }
+
+                if ($filters['flow'] === 'in' && ListingQuery::moneyToCents($entry['amount']) <= 0) {
+                    return false;
+                }
+
+                if (
+                    $filters['entry_type'] !== 'all'
+                    && $this->entryType($entry) !== $filters['entry_type']
+                ) {
+                    return false;
+                }
+
+                if ($filters['category'] === 'none') {
+                    return $this->effectiveCategoryId($entry) === null;
+                }
+
+                if (
+                    is_string($filters['category'])
+                    && ctype_digit($filters['category'])
+                    && $this->effectiveCategoryId($entry) !== (int) $filters['category']
+                ) {
+                    return false;
+                }
+
+                return true;
+            })
+            ->values();
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $entries
+     * @return Collection<int, array<string, mixed>>
+     */
     private function filterView(Collection $entries, string $view): Collection
     {
         return match ($view) {
-            'pending' => $entries->filter(fn (array $entry): bool => ! $entry['is_reconciled'])->values(),
+            'pending' => $entries->filter(
+                fn (array $entry): bool => ! $entry['is_reconciled'] && ! $entry['is_ignored'],
+            )->values(),
             'suggestions' => $entries->filter(
-                fn (array $entry): bool => $entry['has_suggestion'] && ! $entry['is_reconciled'],
+                fn (array $entry): bool => $entry['has_suggestion']
+                    && ! $entry['is_reconciled']
+                    && ! $entry['is_ignored'],
             )->values(),
             'duplicates' => $entries->filter(fn (array $entry): bool => $entry['is_possible_duplicate'])->values(),
             'uncategorized' => $entries->filter(
-                fn (array $entry): bool => $entry['is_uncategorized'],
+                fn (array $entry): bool => $entry['is_uncategorized'] && ! $entry['is_ignored'],
             )->values(),
             'transfers' => $entries->filter(
-                fn (array $entry): bool => $entry['is_likely_transfer'] && ! $entry['is_reconciled'],
+                fn (array $entry): bool => $entry['is_likely_transfer']
+                    && ! $entry['is_reconciled']
+                    && ! $entry['is_ignored'],
             )->values(),
             'reconciled' => $entries->filter(fn (array $entry): bool => $entry['is_reconciled'])->values(),
+            'ignored' => $entries->filter(fn (array $entry): bool => $entry['is_ignored'])->values(),
             default => $entries->values(),
         };
     }
 
     /**
      * @param  Collection<int, array<string, mixed>>  $scoped
-     * @return array{
-     *     all: int,
-     *     pending: int,
-     *     suggestions: int,
-     *     duplicates: int,
-     *     uncategorized: int,
-     *     transfers: int,
-     *     reconciled: int
-     * }
+     * @return array<string, int>
      */
     private function viewCounts(Collection $scoped): array
     {
         return [
             'all' => $scoped->count(),
-            'pending' => $scoped->where('is_reconciled', false)->count(),
-            'suggestions' => $scoped
-                ->where('has_suggestion', true)
-                ->where('is_reconciled', false)
-                ->count(),
+            'pending' => $scoped->filter(
+                fn (array $entry): bool => ! $entry['is_reconciled'] && ! $entry['is_ignored'],
+            )->count(),
+            'suggestions' => $scoped->filter(
+                fn (array $entry): bool => $entry['has_suggestion']
+                    && ! $entry['is_reconciled']
+                    && ! $entry['is_ignored'],
+            )->count(),
             'duplicates' => $scoped->where('is_possible_duplicate', true)->count(),
-            'uncategorized' => $scoped
-                ->where('is_uncategorized', true)
-                ->count(),
-            'transfers' => $scoped
-                ->where('is_likely_transfer', true)
-                ->where('is_reconciled', false)
-                ->count(),
+            'uncategorized' => $scoped->filter(
+                fn (array $entry): bool => $entry['is_uncategorized'] && ! $entry['is_ignored'],
+            )->count(),
+            'transfers' => $scoped->filter(
+                fn (array $entry): bool => $entry['is_likely_transfer']
+                    && ! $entry['is_reconciled']
+                    && ! $entry['is_ignored'],
+            )->count(),
             'reconciled' => $scoped->where('is_reconciled', true)->count(),
+            'ignored' => $scoped->where('is_ignored', true)->count(),
         ];
+    }
+
+    /** @param array<string, mixed> $entry */
+    private function effectiveCategoryId(array $entry): ?int
+    {
+        $value = $entry['category_id']
+            ?? $entry['related_category_id']
+            ?? $entry['matcher_category_id']
+            ?? null;
+
+        return $value === null ? null : (int) $value;
+    }
+
+    /** @param array<string, mixed> $entry */
+    private function entryCategoryLabel(array $entry): string
+    {
+        return collect([
+            $entry['parent_category_name']
+                ?? $entry['related_parent_category_name']
+                ?? $entry['matcher_parent_category_name']
+                ?? $entry['category_name']
+                ?? $entry['related_category_name']
+                ?? $entry['matcher_category_name']
+                ?? null,
+            $entry['subcategory_name']
+                ?? $entry['related_subcategory_name']
+                ?? $entry['matcher_subcategory_name']
+                ?? null,
+        ])->filter()->unique()->implode(' / ');
+    }
+
+    /** @param array<string, mixed> $entry */
+    private function entryType(array $entry): string
+    {
+        if ($entry['is_invoice_payment'] || $entry['is_likely_invoice_payment']) {
+            return 'invoice_payment';
+        }
+
+        if ($entry['is_likely_refund']) {
+            return 'refund';
+        }
+
+        if ($entry['related_is_transfer'] || $entry['is_likely_transfer']) {
+            return 'transfer';
+        }
+
+        if ($entry['kind'] === 'invoice') {
+            return 'card_purchase';
+        }
+
+        return ListingQuery::moneyToCents($entry['amount']) < 0 ? 'expense' : 'income';
+    }
+
+    /** @param array<string, mixed> $entry */
+    private function entryTypeLabel(array $entry): string
+    {
+        return match ($this->entryType($entry)) {
+            'invoice_payment' => 'Pagamento de fatura',
+            'refund' => 'Reembolso',
+            'transfer' => 'Transferência',
+            'card_purchase' => 'Compra no cartão',
+            'income' => 'Receita',
+            default => 'Despesa',
+        };
+    }
+
+    /** @param array<string, mixed> $entry */
+    private function entryStatusRank(array $entry): int
+    {
+        return match (true) {
+            $entry['is_ignored'] => 4,
+            $entry['is_reconciled'] => 1,
+            $entry['is_possible_duplicate'] => 3,
+            $entry['has_suggestion'] => 2,
+            default => 3,
+        };
     }
 
     /**

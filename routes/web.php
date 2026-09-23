@@ -157,6 +157,13 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->whereNumber('entry')
         ->name('credit-card-invoices.statement-entries.ignore');
     Route::patch(
+        'faturas/{invoice}/linhas/{entry}/restaurar',
+        [CardStatementReconciliationController::class, 'restoreIgnored'],
+    )
+        ->whereNumber('invoice')
+        ->whereNumber('entry')
+        ->name('credit-card-invoices.statement-entries.restore-ignored');
+    Route::patch(
         'faturas/{invoice}/linhas/{entry}/classificacao',
         [CardStatementReconciliationController::class, 'classify'],
     )
@@ -286,6 +293,8 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->name('reconciliation.reprocess');
     Route::post('conciliacao/lote/regras', [BankReconciliationController::class, 'bulkConfirmRules'])
         ->name('reconciliation.bulk-confirm-rules');
+    Route::post('conciliacao/lote/ajustar', [BankReconciliationController::class, 'bulkAdjust'])
+        ->name('reconciliation.bulk-adjust');
     Route::post('conciliacao/{entry}', [BankReconciliationController::class, 'store'])
         ->whereNumber('entry')
         ->name('reconciliation.store');
@@ -295,6 +304,9 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::patch('conciliacao/{entry}/ignorar', [BankReconciliationController::class, 'ignore'])
         ->whereNumber('entry')
         ->name('reconciliation.ignore');
+    Route::patch('conciliacao/{entry}/restaurar', [BankReconciliationController::class, 'restoreIgnored'])
+        ->whereNumber('entry')
+        ->name('reconciliation.restore-ignored');
     Route::patch('conciliacao/{entry}/classificacao', [BankReconciliationController::class, 'classify'])
         ->whereNumber('entry')
         ->name('reconciliation.classify');

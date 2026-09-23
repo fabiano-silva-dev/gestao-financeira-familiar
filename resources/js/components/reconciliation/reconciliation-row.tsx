@@ -165,6 +165,7 @@ type Props = {
     counterpartAccountOptions: ReconciliationAccountOption[];
     onOpenDetails: (entry: ReconciliationPendingEntry) => void;
     onAskCreateRule: (prompt: ClassificationRulePrompt) => void;
+    showDetailsAction?: boolean;
 };
 
 export function ReconciliationRow({
@@ -175,6 +176,7 @@ export function ReconciliationRow({
     counterpartAccountOptions,
     onOpenDetails,
     onAskCreateRule,
+    showDetailsAction = true,
 }: Props) {
     const suggestion = entry.candidates.find(
         (candidate) => candidate.is_suggestion,
@@ -672,6 +674,33 @@ export function ReconciliationRow({
         );
     };
 
+    const restoreIgnored = () => {
+        if (entry.kind === 'statement') {
+            router.patch(
+                listingUrl(
+                    BankReconciliationController.restoreIgnored.url(entry.id),
+                    query,
+                ),
+                {},
+                visitOptions(),
+            );
+
+            return;
+        }
+
+        router.patch(
+            listingUrl(
+                CardStatementReconciliationController.restoreIgnored.url({
+                    invoice: entry.invoice_id ?? 0,
+                    entry: entry.id,
+                }),
+                query,
+            ),
+            {},
+            visitOptions(),
+        );
+    };
+
     const undo = () => {
         if (entry.kind === 'statement') {
             router.delete(
@@ -787,6 +816,9 @@ export function ReconciliationRow({
                     )}
                     {entry.is_likely_transfer && (
                         <Badge variant="outline">Transferência</Badge>
+                    )}
+                    {entry.is_ignored && (
+                        <Badge variant="outline">Ignorado</Badge>
                     )}
                     {entry.is_reconciled && (
                         <Badge variant="secondary">Conciliado</Badge>
@@ -1143,7 +1175,17 @@ export function ReconciliationRow({
             </div>
 
             <div className="flex flex-col gap-2 lg:min-w-52">
-                {entry.is_reconciled ? (
+                {entry.is_ignored ? (
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={restoreIgnored}
+                    >
+                        <RotateCcw />
+                        Restaurar
+                    </Button>
+                ) : entry.is_reconciled ? (
                     <>
                         <Button
                             type="button"
@@ -1289,15 +1331,17 @@ export function ReconciliationRow({
                         </Button>
                     </>
                 )}
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => onOpenDetails(entry)}
-                >
-                    <Eye />
-                    Ver detalhes
-                </Button>
+                {showDetailsAction && (
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onOpenDetails(entry)}
+                    >
+                        <Eye />
+                        Ver detalhes
+                    </Button>
+                )}
             </div>
         </article>
     );

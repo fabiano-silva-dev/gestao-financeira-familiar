@@ -81,6 +81,48 @@ final class ReconciliationEntryService
         return $entry->refresh();
     }
 
+    public function restoreBankEntry(
+        Workspace $workspace,
+        BankStatementEntry $entry,
+    ): BankStatementEntry {
+        $this->assertSameWorkspace($workspace, $entry->workspace_id);
+
+        if ($entry->is_reconciled) {
+            throw ValidationException::withMessages([
+                'entry' => 'Um movimento conciliado não pode ser restaurado como pendente.',
+            ]);
+        }
+
+        $entry->update([
+            'is_ignored' => false,
+            'ignored_by' => null,
+            'ignored_at' => null,
+        ]);
+
+        return $entry->refresh();
+    }
+
+    public function restoreCardEntry(
+        Workspace $workspace,
+        CardStatementEntry $entry,
+    ): CardStatementEntry {
+        $this->assertSameWorkspace($workspace, $entry->workspace_id);
+
+        if ($entry->is_reconciled) {
+            throw ValidationException::withMessages([
+                'entry' => 'Uma linha conciliada não pode ser restaurada como pendente.',
+            ]);
+        }
+
+        $entry->update([
+            'is_ignored' => false,
+            'ignored_by' => null,
+            'ignored_at' => null,
+        ]);
+
+        return $entry->refresh();
+    }
+
     public function classifyBankEntry(
         Workspace $workspace,
         BankStatementEntry $entry,

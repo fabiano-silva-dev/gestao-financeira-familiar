@@ -924,53 +924,28 @@ class BankReconciliationTest extends TestCase
             );
     }
 
-    public function test_page_requires_account_and_period_or_import_before_listing(): void
+    public function test_month_scope_lists_all_accounts_without_requiring_a_target(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();
-        $account = FinancialAccount::factory()->for($workspace)->create();
-        $entry = $this->bankEntry($workspace, $account, '-89.90');
-        $request = $this->actingAs($user)
-            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+        $firstAccount = FinancialAccount::factory()->for($workspace)->create(['name' => 'Conta A']);
+        $secondAccount = FinancialAccount::factory()->for($workspace)->create(['name' => 'Conta B']);
+        $first = $this->bankEntry($workspace, $firstAccount, '-89.90', '2026-09-10', 'Primeiro');
+        $second = $this->bankEntry($workspace, $secondAccount, '120.00', '2026-09-11', 'Segundo');
 
-        $request->get(route('reconciliation.index'))
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('reconciliation.index', ['period' => '2026-09']))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('reconciliation/index')
-                ->where('scopeReady', false)
-                ->has('entries', 0)
-            );
-
-        $request->get(route('reconciliation.index', ['account' => $account->id]))
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->where('scopeReady', false)
-                ->has('entries', 0)
-            );
-
-        $request->get(route('reconciliation.index', ['period' => '2026-09']))
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->where('scopeReady', false)
-                ->has('entries', 0)
-            );
-
-        $request->get(route('reconciliation.index', $this->workbenchQuery($account)))
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
                 ->where('scopeReady', true)
-                ->has('entries', 1)
-                ->where('entries.0.id', $entry->id)
-            );
-
-        $request->get(route('reconciliation.index', [
-            'import' => $entry->financial_import_id,
-        ]))
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->where('scopeReady', true)
-                ->has('entries', 1)
-                ->where('entries.0.id', $entry->id)
-                ->where('entries.0.import_id', $entry->financial_import_id)
+                ->where('filters.period', '2026-09')
+                ->has('entries', 2)
+                ->where(
+                    'entries',
+                    fn ($entries): bool => collect($entries)->pluck('id')->sort()->values()->all()
+                        === collect([$first->id, $second->id])->sort()->values()->all(),
+                )
             );
     }
 
@@ -979,6 +954,8 @@ class BankReconciliationTest extends TestCase
         [$user, $workspace] = $this->userAndWorkspace();
         $account = FinancialAccount::factory()->for($workspace)->create();
         $pending = $this->bankEntry($workspace, $account, '-40.00', '2026-09-10', 'Padaria');
+        $ignored = $this->bankEntry($workspace, $account, '-12.00', '2026-09-11', 'Tarifa');
+        $ignored->update(['is_ignored' => true]);
         $movement = $this->movement($workspace, $account, '-90.00', '2026-09-12', 'Farmácia');
         $reconciled = $this->bankEntry($workspace, $account, '-90.00', '2026-09-12', 'Farmácia');
         $reconciled->update([
@@ -995,10 +972,11 @@ class BankReconciliationTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('scopeReady', true)
-                ->has('entries', 2)
-                ->where('viewCounts.all', 2)
+                ->has('entries', 3)
+                ->where('viewCounts.all', 3)
                 ->where('viewCounts.pending', 1)
                 ->where('viewCounts.reconciled', 1)
+                ->where('viewCounts.ignored', 1)
                 ->where(
                     'entries',
                     fn ($entries): bool => collect($entries)->contains(
@@ -1006,10 +984,42 @@ class BankReconciliationTest extends TestCase
                             && $entry['is_reconciled'] === true,
                     ) && collect($entries)->contains(
                         fn (array $entry): bool => $entry['id'] === $pending->id
-                            && $entry['is_reconciled'] === false,
+                            && $entry['is_reconciled'] === false
+                            && $entry['is_ignored'] === false,
+                    ) && collect($entries)->contains(
+                        fn (array $entry): bool => $entry['id'] === $ignored->id
+                            && $entry['is_ignored'] === true,
                     ),
                 )
             );
+    }
+
+    public function test_user_can_adjust_category_in_bulk(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $category = Category::factory()->for($workspace)->create([
+            'name' => 'Mercado',
+            'type' => CategoryType::Expense,
+        ]);
+        $first = $this->bankEntry($workspace, $account, '-40.00', '2026-09-10', 'Mercado A');
+        $second = $this->bankEntry($workspace, $account, '-60.00', '2026-09-11', 'Mercado B');
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('reconciliation.bulk-adjust', ['period' => '2026-09']), [
+                'action' => 'category',
+                'category_id' => $category->id,
+                'entries' => [
+                    ['kind' => 'statement', 'id' => $first->id],
+                    ['kind' => 'statement', 'id' => $second->id],
+                ],
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame($category->id, $first->fresh()->suggested_category_id);
+        $this->assertSame($category->id, $second->fresh()->suggested_category_id);
     }
 
     public function test_guest_cannot_reprocess_an_import(): void
