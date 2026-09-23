@@ -59,6 +59,21 @@ jobs:
       - name: Setup Application
         run: composer setup
 
+      - name: Validate monthly closing list
+        run: |
+          ./node_modules/.bin/vp fmt resources/js/pages/imports/monthly-closing.tsx --write
+          git diff --exit-code -- resources/js/pages/imports/monthly-closing.tsx
+          set +e
+          npm run types:check > /tmp/types.log 2>&1
+          TYPE_STATUS=$?
+          set -e
+          cat /tmp/types.log
+          if grep -F "resources/js/pages/imports/monthly-closing.tsx" /tmp/types.log; then
+            echo "TypeScript error found in monthly closing page."
+            exit 1
+          fi
+          echo "Global typecheck exit code: $TYPE_STATUS; no error in the changed page."
+
       - name: Run financial feature tests
         run: |
           php artisan test tests/Feature/FinancialImportAutoDetectionTest.php
