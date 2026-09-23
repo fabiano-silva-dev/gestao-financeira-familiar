@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\ClassificationRuleAutomationLevel;
 use App\Enums\ClassificationRuleMatchType;
 use App\Enums\FinancialTransactionType;
 use App\Models\Category;
@@ -23,6 +24,12 @@ class StoreClassificationRuleRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        if (! $this->filled('automation_level')) {
+            $this->merge([
+                'automation_level' => ClassificationRuleAutomationLevel::ClassifyOnly->value,
+            ]);
+        }
+
         if ($this->input('category_id') === '' || $this->input('category_id') === 'none') {
             $this->merge(['category_id' => null]);
         }
@@ -88,6 +95,7 @@ class StoreClassificationRuleRequest extends FormRequest
                 ),
             ],
             'action_type' => ['required', Rule::enum(FinancialTransactionType::class)],
+            'automation_level' => ['required', Rule::enum(ClassificationRuleAutomationLevel::class)],
             'payee_name' => ['nullable', 'string', 'max:160'],
             'category_id' => [
                 Rule::requiredIf(! $isTransfer),
@@ -142,6 +150,7 @@ class StoreClassificationRuleRequest extends FormRequest
             'match_type' => 'forma de correspondência',
             'pattern' => 'texto da regra',
             'action_type' => 'tipo',
+            'automation_level' => 'nível de automação',
             'payee_name' => 'empresa ou beneficiário',
             'category_id' => 'categoria',
             'financial_account_id' => 'conta do extrato',
