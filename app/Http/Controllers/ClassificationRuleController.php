@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\CategoryType;
+use App\Enums\ClassificationRuleAutomationLevel;
 use App\Enums\ClassificationRuleMatchType;
 use App\Enums\FinancialTransactionType;
 use App\Http\Requests\StoreClassificationRuleRequest;
@@ -32,10 +33,10 @@ class ClassificationRuleController extends Controller
         $workspace = $this->workspace();
         $listing = ListingQuery::from(
             $request,
-            ['name', 'match_type', 'action_type', 'status'],
+            ['name', 'match_type', 'action_type', 'automation_level', 'status'],
             'name',
             'asc',
-            ['match_type', 'action_type', 'status'],
+            ['match_type', 'action_type', 'automation_level', 'status'],
         );
         $query = $workspace->classificationRules()
             ->with([
@@ -59,6 +60,15 @@ class ClassificationRuleController extends Controller
             $query->where('action_type', $actionType);
         }
 
+        $automationLevel = $listing->filter('automation_level');
+
+        if (
+            $automationLevel !== null
+            && ClassificationRuleAutomationLevel::tryFrom($automationLevel) !== null
+        ) {
+            $query->where('automation_level', $automationLevel);
+        }
+
         $active = $listing->booleanFilter('status');
 
         if ($active !== null) {
@@ -71,11 +81,14 @@ class ClassificationRuleController extends Controller
             $query->orderBy('match_type', $listing->direction)->orderBy('name');
         } elseif ($listing->sort === 'action_type') {
             $query->orderBy('action_type', $listing->direction)->orderBy('name');
+        } elseif ($listing->sort === 'automation_level') {
+            $query->orderBy('automation_level', $listing->direction)->orderBy('name');
         } else {
             $listing->applySort($query, [
                 'name' => 'name',
                 'match_type' => 'match_type',
                 'action_type' => 'action_type',
+                'automation_level' => 'automation_level',
                 'status' => 'is_active',
             ]);
         }
@@ -88,6 +101,7 @@ class ClassificationRuleController extends Controller
             'hasRecords' => $workspace->classificationRules()->exists(),
             'matchTypeOptions' => ClassificationRuleMatchType::options(),
             'actionTypeOptions' => FinancialTransactionType::options(),
+            'automationLevelOptions' => ClassificationRuleAutomationLevel::options(),
             'statusOptions' => ListingQuery::statusOptions(),
         ]);
     }
@@ -101,6 +115,7 @@ class ClassificationRuleController extends Controller
             'matchingRule' => $this->matchingRuleFromDraft($draft),
             'matchTypeOptions' => ClassificationRuleMatchType::options(),
             'actionTypeOptions' => FinancialTransactionType::options(),
+            'automationLevelOptions' => ClassificationRuleAutomationLevel::options(),
             'categoryOptions' => $this->categoryOptions(),
             'accountOptions' => $this->accountOptions(),
             'returnTo' => InternalReturnUrl::fromRequest($request, 'reconciliation.index'),
@@ -133,6 +148,7 @@ class ClassificationRuleController extends Controller
             'rule' => $this->ruleData($classificationRule),
             'matchTypeOptions' => ClassificationRuleMatchType::options(),
             'actionTypeOptions' => FinancialTransactionType::options(),
+            'automationLevelOptions' => ClassificationRuleAutomationLevel::options(),
             'categoryOptions' => $this->categoryOptions(),
             'accountOptions' => $this->accountOptions(),
         ]);
@@ -196,6 +212,7 @@ class ClassificationRuleController extends Controller
      *     match_type: string,
      *     pattern: string,
      *     action_type: string,
+     *     automation_level: string,
      *     payee_name: string,
      *     category_id: int|null,
      *     financial_account_id: int|null,
@@ -218,6 +235,9 @@ class ClassificationRuleController extends Controller
             ? $this->matcher->suggest($description, $payeeName !== '' ? $payeeName : null)
             : null;
         $action = FinancialTransactionType::tryFrom($request->string('action_type')->toString());
+        $automationLevel = ClassificationRuleAutomationLevel::tryFrom(
+            $request->string('automation_level')->toString(),
+        ) ?? ClassificationRuleAutomationLevel::ClassifyOnly;
 
         if ($action === null && $counterpartAccountId !== null) {
             $action = FinancialTransactionType::Transfer;
@@ -239,6 +259,7 @@ class ClassificationRuleController extends Controller
                 ? $request->string('pattern')->toString()
                 : ($suggestion['pattern'] ?? ''),
             'action_type' => ($action ?? FinancialTransactionType::Expense)->value,
+            'automation_level' => $automationLevel->value,
             'payee_name' => $payeeName,
             'category_id' => $action === FinancialTransactionType::Transfer ? null : $categoryId,
             'financial_account_id' => $financialAccountId,
@@ -255,6 +276,7 @@ class ClassificationRuleController extends Controller
      *     match_type: string,
      *     pattern: string,
      *     action_type: string,
+     *     automation_level: string,
      *     payee_name: string,
      *     category_id: int|null,
      *     financial_account_id: int|null,
@@ -342,6 +364,9 @@ class ClassificationRuleController extends Controller
      *     pattern: string,
      *     action_type: string,
      *     action_type_label: string,
+     *     automation_level: string,
+     *     automation_level_label: string,
+     *     automation_level_help: string,
      *     payee_name: string|null,
      *     category_id: int|null,
      *     category_name: string|null,
@@ -372,6 +397,9 @@ class ClassificationRuleController extends Controller
             'pattern' => $rule->pattern,
             'action_type' => $rule->action_type->value,
             'action_type_label' => $rule->action_type->label(),
+            'automation_level' => $rule->automation_level->value,
+            'automation_level_label' => $rule->automation_level->label(),
+            'automation_level_help' => $rule->automation_level->help(),
             'payee_name' => $rule->payee_name,
             'category_id' => $rule->category_id,
             'category_name' => $categoryName,
