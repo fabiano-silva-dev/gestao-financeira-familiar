@@ -264,6 +264,8 @@ class BankReconciliationTest extends TestCase
                 ->where('entries.0.related_is_transfer', true)
                 ->where('entries.0.candidates.0.movement_id', $incoming->id)
                 ->where('entries.0.candidates.0.is_suggestion', true)
+                ->where('entries.0.candidates.0.related_counterpart_account_name', $source->name)
+                ->where('entries.0.candidates.0.type', AccountMovementType::TransferIn->value)
             );
 
         $request->post(route('reconciliation.create', $destinationEntry))

@@ -127,6 +127,9 @@ export type UnifiedImportHistoryItem = {
     total_records: number;
     imported_records: number;
     duplicate_records: number;
+    statement_records: number;
+    resolved_records: number;
+    reconciliation_status: 'reconciled' | 'partial' | 'pending' | 'unavailable';
     statement_start_on: string | null;
     statement_end_on: string | null;
     statement_amount: string | null;

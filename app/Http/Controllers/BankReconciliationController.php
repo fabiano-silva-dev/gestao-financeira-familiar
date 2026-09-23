@@ -83,6 +83,9 @@ class BankReconciliationController extends Controller
                     'invoicePayment.creditCard:id,name,institution,last_four,payment_account_id',
                     'invoicePayment.invoice.creditCard:id,name,institution,last_four,payment_account_id',
                     'transaction:id,description,type,status,payee_name,category_id,competence_date,financial_account_id,credit_card_id,source_account_id,destination_account_id',
+                    'transaction.sourceAccount:id,name',
+                    'transaction.destinationAccount:id,name',
+                    'transaction.creditCard:id,name',
                     'transaction.category:id,name,parent_id',
                     'transaction.category.parent:id,name',
                 ])
@@ -610,6 +613,9 @@ class BankReconciliationController extends Controller
             'accountMovement.invoicePayment.creditCard:id,name,institution,last_four,payment_account_id',
             'accountMovement.invoicePayment.invoice.creditCard:id,name,institution,last_four,payment_account_id',
             'accountMovement.transaction:id,description,type,payee_name,category_id,competence_date,financial_account_id,credit_card_id,source_account_id,destination_account_id',
+            'accountMovement.transaction.sourceAccount:id,name',
+            'accountMovement.transaction.destinationAccount:id,name',
+            'accountMovement.transaction.creditCard:id,name',
             'accountMovement.transaction.category:id,name,parent_id',
             'accountMovement.transaction.category.parent:id,name',
             'reconciler:id,name',
@@ -1003,6 +1009,7 @@ class BankReconciliationController extends Controller
             'related_account_name' => $movement?->account?->name
                 ?? $transaction?->account?->name
                 ?? $transaction?->creditCard?->name,
+            'related_counterpart_account_name' => $this->counterpartAccountName($transaction, $type),
             'related_competence_date' => $transaction?->competence_date?->toDateString()
                 ?? $installment?->competence_month?->toDateString(),
             'related_payee_name' => $transaction?->payee_name,
@@ -1019,6 +1026,21 @@ class BankReconciliationController extends Controller
         ];
     }
 
+    private function counterpartAccountName(
+        ?FinancialTransaction $transaction,
+        ?AccountMovementType $type,
+    ): ?string {
+        if (! $transaction instanceof FinancialTransaction) {
+            return null;
+        }
+
+        return match ($type) {
+            AccountMovementType::TransferIn => $transaction->sourceAccount?->name,
+            AccountMovementType::TransferOut => $transaction->destinationAccount?->name,
+            default => $transaction->creditCard?->name,
+        };
+    }
+
     /**
      * @param  array<string, mixed>|null  $candidate
      * @return array<string, mixed>
@@ -1032,6 +1054,7 @@ class BankReconciliationController extends Controller
                 'related_type' => null,
                 'related_type_label' => null,
                 'related_account_name' => null,
+                'related_counterpart_account_name' => null,
                 'related_competence_date' => null,
                 'related_payee_name' => null,
                 'related_category_id' => null,
@@ -1050,6 +1073,7 @@ class BankReconciliationController extends Controller
             'related_type' => $candidate['related_type'] ?? $candidate['type'] ?? null,
             'related_type_label' => $candidate['related_type_label'] ?? $candidate['type_label'] ?? null,
             'related_account_name' => $candidate['related_account_name'] ?? null,
+            'related_counterpart_account_name' => $candidate['related_counterpart_account_name'] ?? null,
             'related_competence_date' => $candidate['related_competence_date'] ?? $candidate['occurred_on'] ?? null,
             'related_payee_name' => $candidate['related_payee_name'] ?? null,
             'related_category_id' => $candidate['related_category_id'] ?? null,

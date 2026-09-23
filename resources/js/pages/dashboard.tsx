@@ -66,16 +66,8 @@ function date(value: string) {
     return shortDate.format(new Date(`${value}T00:00:00Z`)).replace('.', '');
 }
 
-function monthRange(periodStart: string): { from: string; to: string } {
-    const from = periodStart.slice(0, 10);
-    const utc = new Date(`${from}T00:00:00Z`);
-    const to = new Date(
-        Date.UTC(utc.getUTCFullYear(), utc.getUTCMonth() + 1, 0),
-    )
-        .toISOString()
-        .slice(0, 10);
-
-    return { from, to };
+function periodQuery(periodStart: string): { period: string } {
+    return { period: periodStart.slice(0, 7) };
 }
 
 function transactionsHref(query: Record<string, string>) {
@@ -266,10 +258,7 @@ export default function Dashboard() {
     } = usePage<DashboardPageProps>().props;
     const currentBalance = Number(metrics.current_balance);
     const projectedBalance = Number(metrics.projected_balance);
-    const period = monthRange(currentPeriod);
-    const cashFlowFrom = cashFlow[0]
-        ? monthRange(cashFlow[0].month).from
-        : period.from;
+    const period = periodQuery(currentPeriod);
     const incomeHref = transactionsHref({
         type: 'income',
         status: 'confirmed',
@@ -282,12 +271,10 @@ export default function Dashboard() {
     });
     const pendingHref = transactionsHref({
         settlement: 'pending',
+        ...period,
     });
-    const cashFlowHref = transactionsHref({
-        from: cashFlowFrom,
-        to: period.to,
-    });
-    const recentHref = transactionsIndex();
+    const cashFlowHref = transactionsHref(period);
+    const recentHref = transactionsHref(period);
     const categoryHref = (item: CategoryExpense) =>
         transactionsHref({
             type: 'expense',
@@ -296,16 +283,16 @@ export default function Dashboard() {
             ...period,
         });
     const cashFlowMonthHref = (point: CashFlowPoint) =>
-        transactionsHref(monthRange(point.month));
+        transactionsHref(periodQuery(point.month));
     const cashFlowIncomeHref = (point: CashFlowPoint) =>
         transactionsHref({
             type: 'income',
-            ...monthRange(point.month),
+            ...periodQuery(point.month),
         });
     const cashFlowExpensesHref = (point: CashFlowPoint) =>
         transactionsHref({
             type: 'expense',
-            ...monthRange(point.month),
+            ...periodQuery(point.month),
         });
 
     return (

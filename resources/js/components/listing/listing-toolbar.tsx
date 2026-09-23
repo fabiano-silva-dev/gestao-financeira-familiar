@@ -1,5 +1,5 @@
 import { Search, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,6 +23,7 @@ type Props = {
     searchPlaceholder?: string;
     selects?: ListingSelectFilter[];
     dates?: ListingDateFilter[];
+    end?: ReactNode;
 };
 
 export function ListingToolbar({
@@ -31,6 +32,7 @@ export function ListingToolbar({
     searchPlaceholder = 'Buscar…',
     selects = [],
     dates = [],
+    end,
 }: Props) {
     const queryRef = useRef(query);
     queryRef.current = query;
@@ -92,7 +94,7 @@ export function ListingToolbar({
                 </div>
             </div>
 
-            {(selects.length > 0 || dates.length > 0 || hasFilters) && (
+            {(selects.length > 0 || dates.length > 0 || end || hasFilters) && (
                 <div className="flex flex-wrap items-end gap-3">
                     {selects.map((select) => (
                         <div key={select.key} className="grid min-w-40 flex-1 gap-1.5 sm:max-w-56">
@@ -141,6 +143,8 @@ export function ListingToolbar({
                             />
                         </div>
                     ))}
+
+                    {end}
 
                     {hasFilters && (
                         <Button type="button" variant="ghost" onClick={clear}>

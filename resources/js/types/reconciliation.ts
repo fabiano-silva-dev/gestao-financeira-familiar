@@ -43,6 +43,7 @@ export type ReconciliationCandidate = {
     related_type?: string | null;
     related_type_label?: string | null;
     related_account_name?: string | null;
+    related_counterpart_account_name?: string | null;
     related_competence_date?: string | null;
     related_payee_name?: string | null;
     related_category_id?: number | null;
@@ -96,6 +97,7 @@ export type ReconciliationPendingEntry = {
     related_type: string | null;
     related_type_label: string | null;
     related_account_name: string | null;
+    related_counterpart_account_name: string | null;
     related_competence_date: string | null;
     related_payee_name: string | null;
     related_category_id: number | null;

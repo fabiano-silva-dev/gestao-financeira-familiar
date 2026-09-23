@@ -59,20 +59,46 @@ function isOutflow(entry: ReconciliationPendingEntry): boolean {
     return Number(entry.amount) < 0;
 }
 
-function candidatePlace(candidate: ReconciliationCandidate): string | null {
-    const onCard =
-        candidate.is_invoice_payment ||
-        candidate.is_refund ||
-        candidate.type === 'installment';
-    const name = onCard
-        ? (candidate.card_name ?? candidate.related_account_name)
-        : candidate.related_account_name;
+function movementPlace(
+    type: string | null | undefined,
+    counterpart: string | null | undefined,
+    accountName: string | null | undefined,
+    onCard: boolean,
+    cardName?: string | null,
+): string | null {
+    if (counterpart) {
+        if (type === 'transfer_out') {
+            return `destino ${counterpart}`;
+        }
+
+        if (type === 'transfer_in') {
+            return `origem ${counterpart}`;
+        }
+
+        return `cartão ${counterpart}`;
+    }
+
+    const name = onCard ? (cardName ?? accountName) : accountName;
 
     if (!name) {
         return null;
     }
 
     return onCard ? `cartão ${name}` : `conta ${name}`;
+}
+
+function candidatePlace(candidate: ReconciliationCandidate): string | null {
+    return movementPlace(
+        candidate.type,
+        candidate.related_counterpart_account_name,
+        candidate.related_account_name,
+        Boolean(
+            candidate.is_invoice_payment ||
+            candidate.is_refund ||
+            candidate.type === 'installment',
+        ),
+        candidate.card_name,
+    );
 }
 
 function candidateOptionLabel(candidate: ReconciliationCandidate): string {
@@ -294,7 +320,15 @@ export function ReconciliationRow({
           entry.related_type_label)
         : null;
     const relatedAccount = showLinkedEntry
-        ? (selectedCandidate?.related_account_name ?? entry.related_account_name)
+        ? selectedCandidate
+            ? candidatePlace(selectedCandidate)
+            : movementPlace(
+                  entry.related_type,
+                  entry.related_counterpart_account_name,
+                  entry.related_account_name,
+                  entry.is_invoice_payment || entry.is_likely_invoice_payment,
+                  entry.card_name,
+              )
         : null;
     const competence = showLinkedEntry
         ? (selectedCandidate?.related_competence_date ??

@@ -62,7 +62,7 @@ type Props = {
 };
 
 const historyGridClass =
-    'md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_7.25rem_7.25rem_minmax(7rem,0.55fr)_11.5rem_minmax(0,1.15fr)_10.75rem]';
+    'md:grid-cols-[minmax(0,1.15fr)_minmax(0,0.9fr)_6.75rem_6.75rem_minmax(6.5rem,0.5fr)_8.25rem_8.25rem_minmax(0,1.1fr)_10.5rem]';
 
 const date = new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
@@ -113,8 +113,15 @@ function reconciliationHref(item: UnifiedImportHistoryItem) {
 }
 
 function entriesHref(item: UnifiedImportHistoryItem) {
+    const period =
+        item.reference_month?.slice(0, 7) ??
+        item.statement_start_on?.slice(0, 7);
+
     return transactionsIndex({
-        query: { import: String(item.id) },
+        query: {
+            import: String(item.id),
+            ...(period ? { period } : {}),
+        },
     });
 }
 
@@ -742,6 +749,54 @@ function DestinationDialog({
     );
 }
 
+function reconciliationPresentation(item: UnifiedImportHistoryItem) {
+    if (item.reconciliation_status === 'reconciled') {
+        return {
+            label: 'Conciliado',
+            className: 'border-positive/30 bg-positive-muted text-positive',
+        };
+    }
+
+    if (item.reconciliation_status === 'partial') {
+        return {
+            label: 'Parcial',
+            className:
+                'border-warning/40 bg-warning-muted text-warning-foreground',
+        };
+    }
+
+    if (item.reconciliation_status === 'pending') {
+        return {
+            label: 'Pendente',
+            className: 'border-destructive/30 bg-destructive/10 text-destructive',
+        };
+    }
+
+    return null;
+}
+
+function ReconciliationStatus({ item }: { item: UnifiedImportHistoryItem }) {
+    const presentation = reconciliationPresentation(item);
+
+    if (presentation === null) {
+        return <p className="text-muted-foreground text-sm">—</p>;
+    }
+
+    return (
+        <div className="min-w-0">
+            <Badge
+                variant="outline"
+                className={`max-w-full whitespace-normal ${presentation.className}`}
+            >
+                {presentation.label}
+            </Badge>
+            <p className="text-muted-foreground mt-1 text-xs tabular-nums">
+                {item.resolved_records} de {item.statement_records}
+            </p>
+        </div>
+    );
+}
+
 function ImportSummary({ item }: { item: UnifiedImportHistoryItem }) {
     if (item.status === 'completed' && item.processing_summary) {
         const summary = item.processing_summary;
@@ -1024,7 +1079,7 @@ export default function ImportsIndex({
                         ) : (
                             <div className="overflow-x-auto rounded-lg border">
                                 <div
-                                    className={`text-muted-foreground hidden min-w-[1180px] gap-3 border-b px-4 py-3 text-xs font-medium tracking-wide uppercase md:grid ${historyGridClass}`}
+                                    className={`text-muted-foreground hidden min-w-[1320px] gap-3 border-b px-4 py-3 text-xs font-medium tracking-wide uppercase md:grid ${historyGridClass}`}
                                 >
                                     <SortableColumn
                                         column="filename"
@@ -1033,9 +1088,27 @@ export default function ImportsIndex({
                                         direction={filters.direction}
                                         onSort={onSort}
                                     />
-                                    <span>Conta / cartão</span>
-                                    <span>Data inicial</span>
-                                    <span>Data final</span>
+                                    <SortableColumn
+                                        column="target"
+                                        label="Conta / cartão"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <SortableColumn
+                                        column="start"
+                                        label="Data inicial"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <SortableColumn
+                                        column="end"
+                                        label="Data final"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
                                     <SortableColumn
                                         column="kind"
                                         label="Tipo"
@@ -1050,14 +1123,27 @@ export default function ImportsIndex({
                                         direction={filters.direction}
                                         onSort={onSort}
                                     />
-                                    <span>Resumo</span>
+                                    <SortableColumn
+                                        column="reconciliation"
+                                        label="Conciliação"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <SortableColumn
+                                        column="summary"
+                                        label="Resumo"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
                                     <span className="text-right">Ações</span>
                                 </div>
                                 <div className="divide-y">
                                     {imports.map((item) => (
                                         <div
                                             key={`${item.kind}-${item.id}`}
-                                            className={`grid grid-cols-1 gap-2 px-4 py-3 md:min-w-[1180px] md:items-start md:gap-3 ${historyGridClass}`}
+                                            className={`grid grid-cols-1 gap-2 px-4 py-3 md:min-w-[1320px] md:items-start md:gap-3 ${historyGridClass}`}
                                         >
                                             <div className="min-w-0">
                                                 <p className="truncate font-medium">
@@ -1115,6 +1201,7 @@ export default function ImportsIndex({
                                                     {item.status_label}
                                                 </Badge>
                                             </div>
+                                            <ReconciliationStatus item={item} />
                                             <div className="min-w-0">
                                                 <ImportSummary item={item} />
                                             </div>

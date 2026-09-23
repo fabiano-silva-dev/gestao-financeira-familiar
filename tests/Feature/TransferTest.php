@@ -50,7 +50,7 @@ class TransferTest extends TestCase
             ->withSession([
                 CurrentWorkspace::SESSION_KEY => $currentWorkspace->id,
             ])
-            ->get(route('transactions.index'))
+            ->get(route('transactions.index', ['period' => '2026-09']))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('transactions/index')

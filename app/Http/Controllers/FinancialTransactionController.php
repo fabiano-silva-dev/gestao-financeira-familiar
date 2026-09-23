@@ -24,6 +24,7 @@ use App\Services\Finance\FinancialEntryService;
 use App\Services\Finance\TransferService;
 use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -47,7 +48,7 @@ class FinancialTransactionController extends Controller
             ['description', 'date', 'category', 'status', 'amount'],
             'date',
             'desc',
-            ['type', 'status', 'settlement', 'category', 'account', 'from', 'to', 'import'],
+            ['type', 'status', 'settlement', 'category', 'account', 'period', 'import'],
         );
         $query = $workspace
             ->financialTransactions()
@@ -167,54 +168,13 @@ class FinancialTransactionController extends Controller
             }
         }
 
-        $from = $listing->filter('from');
-        $to = $listing->filter('to');
-
-        if ($from !== null || $to !== null) {
-            $query->where(function (Builder $inner) use ($from, $to): void {
-                $inner->where(function (Builder $dates) use ($from, $to): void {
-                    if ($from !== null) {
-                        $dates->whereDate(
-                            'financial_transactions.transaction_date',
-                            '>=',
-                            $from,
-                        );
-                    }
-
-                    if ($to !== null) {
-                        $dates->whereDate(
-                            'financial_transactions.transaction_date',
-                            '<=',
-                            $to,
-                        );
-                    }
-                })->orWhere(function (Builder $dates) use ($from, $to): void {
-                    if ($from !== null) {
-                        $dates->whereDate(
-                            'financial_transactions.competence_date',
-                            '>=',
-                            $from,
-                        );
-                    }
-
-                    if ($to !== null) {
-                        $dates->whereDate(
-                            'financial_transactions.competence_date',
-                            '<=',
-                            $to,
-                        );
-                    }
-                })->orWhereHas('installments', function (Builder $installments) use ($from, $to): void {
-                    if ($from !== null) {
-                        $installments->whereDate('competence_month', '>=', $from);
-                    }
-
-                    if ($to !== null) {
-                        $installments->whereDate('competence_month', '<=', $to);
-                    }
-                });
-            });
-        }
+        $monthStart = $this->periodStart($listing->filter('period'));
+        $query->whereDate('financial_transactions.transaction_date', '>=', $monthStart->toDateString())
+            ->whereDate(
+                'financial_transactions.transaction_date',
+                '<=',
+                $monthStart->endOfMonth()->toDateString(),
+            );
 
         $listing->applySort($query, [
             'description' => 'financial_transactions.description',
@@ -235,7 +195,10 @@ class FinancialTransactionController extends Controller
             'entries' => $query
                 ->get()
                 ->map(fn (FinancialTransaction $entry): array => $this->entryData($entry)),
-            'filters' => $listing->toArray(),
+            'filters' => [
+                ...$listing->toArray(),
+                'period' => $monthStart->format('Y-m'),
+            ],
             'importScope' => $importScope,
             'hasRecords' => $workspace->financialTransactions()
                 ->whereIn('type', [
@@ -789,5 +752,27 @@ class FinancialTransactionController extends Controller
         }
 
         return $entry->status->label();
+    }
+
+    private function periodStart(?string $period): CarbonImmutable
+    {
+        $today = CarbonImmutable::today();
+
+        if ($period === null || $period === '') {
+            return $today->startOfMonth();
+        }
+
+        if (preg_match('/^(\d{4})-(\d{2})(?:-\d{2})?$/', $period, $matches) !== 1) {
+            return $today->startOfMonth();
+        }
+
+        $year = (int) $matches[1];
+        $month = (int) $matches[2];
+
+        if ($year < 1990 || $year > 2100 || $month < 1 || $month > 12) {
+            return $today->startOfMonth();
+        }
+
+        return CarbonImmutable::create($year, $month, 1)->startOfMonth();
     }
 }

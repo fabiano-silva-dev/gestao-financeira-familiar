@@ -10,6 +10,7 @@ use App\Enums\FinancialTransactionOrigin;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
+use App\Enums\TransactionInstallmentStatus;
 use App\Models\BankStatementEntry;
 use App\Models\CardStatementEntry;
 use App\Models\Category;
@@ -23,6 +24,7 @@ use App\Models\Workspace;
 use App\Services\Finance\FinancialEntryService;
 use App\Services\Finance\TransferService;
 use App\Support\Workspaces\CurrentWorkspace;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -80,7 +82,7 @@ class FinancialEntryTest extends TestCase
             ->withSession([
                 CurrentWorkspace::SESSION_KEY => $currentWorkspace->id,
             ])
-            ->get(route('transactions.index'))
+            ->get(route('transactions.index', ['period' => '2026-09']))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('transactions/index')
@@ -111,7 +113,10 @@ class FinancialEntryTest extends TestCase
                 CurrentWorkspace::SESSION_KEY => $currentWorkspace->id,
             ]);
 
-        $request->get(route('transactions.index', ['type' => 'expense']))
+        $request->get(route('transactions.index', [
+            'type' => 'expense',
+            'period' => '2026-09',
+        ]))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->has('entries', 1)
@@ -121,6 +126,7 @@ class FinancialEntryTest extends TestCase
         $request->get(route('transactions.index', [
             'sort' => 'description',
             'direction' => 'asc',
+            'period' => '2026-09',
         ]))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -176,7 +182,10 @@ class FinancialEntryTest extends TestCase
             ->withSession([
                 CurrentWorkspace::SESSION_KEY => $workspace->id,
             ])
-            ->get(route('transactions.index', ['category' => $parent->id]))
+            ->get(route('transactions.index', [
+                'category' => $parent->id,
+                'period' => '2026-09',
+            ]))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('transactions/index')
@@ -212,7 +221,10 @@ class FinancialEntryTest extends TestCase
             ->withSession([
                 CurrentWorkspace::SESSION_KEY => $workspace->id,
             ])
-            ->get(route('transactions.index', ['category' => 'none']))
+            ->get(route('transactions.index', [
+                'category' => 'none',
+                'period' => '2026-09',
+            ]))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('transactions/index')
@@ -222,28 +234,45 @@ class FinancialEntryTest extends TestCase
             );
     }
 
-    public function test_index_filters_period_by_transaction_competence_or_installment(): void
+    public function test_index_filters_month_by_transaction_date(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();
         $account = FinancialAccount::factory()->for($workspace)->create();
-        $inPeriod = $this->createEntry(
+        $inMonth = $this->createEntry(
             $workspace,
             $account,
             FinancialTransactionType::Expense,
             [
-                'description' => 'Competência de setembro',
-                'transaction_date' => '2026-08-20',
-                'competence_date' => '2026-09-05',
+                'description' => 'Compra de setembro',
+                'transaction_date' => '2026-09-12',
             ],
         );
+        $installmentPurchase = $this->createEntry(
+            $workspace,
+            $account,
+            FinancialTransactionType::Expense,
+            [
+                'description' => 'Compra parcelada de agosto',
+                'transaction_date' => '2026-08-20',
+                'competence_date' => '2026-08-20',
+            ],
+        );
+        $installmentPurchase->installments()->create([
+            'workspace_id' => $workspace->id,
+            'installment_number' => 2,
+            'total_installments' => 3,
+            'amount' => '30.00',
+            'competence_month' => '2026-09-01',
+            'due_date' => '2026-09-10',
+            'status' => TransactionInstallmentStatus::Open,
+        ]);
         $this->createEntry(
             $workspace,
             $account,
             FinancialTransactionType::Expense,
             [
-                'description' => 'Fora do período',
+                'description' => 'Fora do mês',
                 'transaction_date' => '2026-07-10',
-                'competence_date' => '2026-07-10',
             ],
         );
 
@@ -251,16 +280,59 @@ class FinancialEntryTest extends TestCase
             ->withSession([
                 CurrentWorkspace::SESSION_KEY => $workspace->id,
             ])
-            ->get(route('transactions.index', [
-                'from' => '2026-09-01',
-                'to' => '2026-09-30',
-            ]))
+            ->get(route('transactions.index', ['period' => '2026-09']))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('transactions/index')
                 ->has('entries', 1)
-                ->where('entries.0.id', $inPeriod->id)
+                ->where('filters.period', '2026-09')
+                ->where('entries.0.id', $inMonth->id)
             );
+    }
+
+    public function test_index_defaults_to_the_current_month(): void
+    {
+        CarbonImmutable::setTestNow('2026-08-15');
+
+        try {
+            [$user, $workspace] = $this->userAndWorkspace();
+            $account = FinancialAccount::factory()->for($workspace)->create();
+            $currentMonth = $this->createEntry(
+                $workspace,
+                $account,
+                FinancialTransactionType::Expense,
+                [
+                    'description' => 'Agosto',
+                    'transaction_date' => '2026-08-10',
+                    'competence_date' => '2026-08-10',
+                ],
+            );
+            $this->createEntry(
+                $workspace,
+                $account,
+                FinancialTransactionType::Expense,
+                [
+                    'description' => 'Setembro',
+                    'transaction_date' => '2026-09-10',
+                    'competence_date' => '2026-09-10',
+                ],
+            );
+
+            $this->actingAs($user)
+                ->withSession([
+                    CurrentWorkspace::SESSION_KEY => $workspace->id,
+                ])
+                ->get(route('transactions.index'))
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->component('transactions/index')
+                    ->has('entries', 1)
+                    ->where('filters.period', '2026-08')
+                    ->where('entries.0.id', $currentMonth->id)
+                );
+        } finally {
+            CarbonImmutable::setTestNow();
+        }
     }
 
     public function test_user_can_create_confirmed_pix_expense_with_payment_instructions(): void

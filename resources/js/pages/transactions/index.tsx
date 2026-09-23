@@ -8,12 +8,14 @@ import {
     ReceiptText,
     Repeat2,
 } from 'lucide-react';
+import { MonthSelector } from '@/components/dashboard/month-selector';
 import { ListingEmpty } from '@/components/listing/listing-empty';
 import { ListingToolbar } from '@/components/listing/listing-toolbar';
 import { SortableColumn } from '@/components/listing/sortable-column';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
 import { sortListing } from '@/lib/listing';
 import {
     createExpense,
@@ -325,18 +327,16 @@ export default function TransactionsIndex() {
                                     allLabel: 'Todas',
                                 },
                             ]}
-                            dates={[
-                                {
-                                    key: 'from',
-                                    label: 'De',
-                                    value: filters.from,
-                                },
-                                {
-                                    key: 'to',
-                                    label: 'Até',
-                                    value: filters.to,
-                                },
-                            ]}
+                            end={
+                                <div className="grid gap-1.5">
+                                    <Label>Mês</Label>
+                                    <MonthSelector
+                                        currentPeriod={`${String(filters.period).slice(0, 7)}-01`}
+                                        url={listUrl}
+                                        query={filters}
+                                    />
+                                </div>
+                            }
                         />
 
                         {entries.length === 0 ? (

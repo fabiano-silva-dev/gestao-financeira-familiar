@@ -17,6 +17,8 @@ use App\Services\Imports\FinancialDocumentImportService;
 use App\Services\Imports\ImportedFileDestinationService;
 use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -37,7 +39,16 @@ class FinancialImportController extends Controller
         $workspace = $this->workspace();
         $listing = ListingQuery::from(
             $request,
-            ['filename', 'kind', 'status'],
+            [
+                'filename',
+                'target',
+                'start',
+                'end',
+                'kind',
+                'status',
+                'reconciliation',
+                'summary',
+            ],
             'recent',
             'desc',
             ['kind', 'status'],
@@ -46,6 +57,20 @@ class FinancialImportController extends Controller
             ->with([
                 'financialAccount:id,name',
                 'creditCard:id,name,last_four',
+            ])
+            ->withCount([
+                'bankStatementEntries as bank_total',
+                'bankStatementEntries as bank_resolved' => fn (Builder $query) => $query->where(
+                    fn (Builder $resolved) => $resolved
+                        ->where('is_reconciled', true)
+                        ->orWhere('is_ignored', true),
+                ),
+                'cardStatementEntries as card_total',
+                'cardStatementEntries as card_resolved' => fn (Builder $query) => $query->where(
+                    fn (Builder $resolved) => $resolved
+                        ->where('is_reconciled', true)
+                        ->orWhere('is_ignored', true),
+                ),
             ]);
         $listing->applySearch($importQuery, ['source_filename']);
 
@@ -65,15 +90,7 @@ class FinancialImportController extends Controller
             $importQuery->where('status', $importStatus);
         }
 
-        if (in_array($listing->sort, ['filename', 'kind', 'status'], true)) {
-            $listing->applySort($importQuery, [
-                'filename' => 'source_filename',
-                'kind' => 'type',
-                'status' => 'status',
-            ]);
-        } else {
-            $importQuery->latest('id');
-        }
+        $this->applyListingSort($importQuery, $listing);
 
         $imports = $importQuery
             ->limit(20)
@@ -299,11 +316,130 @@ class FinancialImportController extends Controller
         return $workspace;
     }
 
+    /**
+     * @param  Builder<\App\Models\FinancialImport>|\Illuminate\Database\Eloquent\Relations\Relation<\App\Models\FinancialImport, *, *>  $query
+     */
+    private function applyListingSort(Builder|Relation $query, ListingQuery $listing): void
+    {
+        if ($listing->sort === 'recent') {
+            $query->latest('id');
+
+            return;
+        }
+
+        $listing->applySort($query, [
+            'filename' => 'source_filename',
+            'kind' => 'type',
+            'status' => 'status',
+            'start' => 'statement_start_on',
+            'end' => 'statement_end_on',
+            'target' => function (Builder $builder, string $direction): void {
+                $builder->orderByRaw(
+                    'lower(coalesce(
+                        (select financial_accounts.name from financial_accounts where financial_accounts.id = financial_imports.financial_account_id),
+                        (select credit_cards.name from credit_cards where credit_cards.id = financial_imports.credit_card_id),
+                        \'\'
+                    )) '.$this->sortDirection($direction),
+                );
+            },
+            'reconciliation' => function (Builder $builder, string $direction): void {
+                $builder->orderByRaw(
+                    $this->reconciliationRankSql().' '.$this->sortDirection($direction),
+                );
+            },
+            'summary' => function (Builder $builder, string $direction): void {
+                $builder->orderByRaw(
+                    "coalesce((financial_imports.metadata->'processing_summary'->>'new_transactions_created')::integer, financial_imports.imported_records) ".$this->sortDirection($direction),
+                );
+            },
+        ]);
+    }
+
+    private function sortDirection(string $direction): string
+    {
+        return $direction === 'asc' ? 'asc' : 'desc';
+    }
+
+    private function reconciliationStatus(
+        FinancialImport $import,
+        int $statementRecords,
+        int $resolvedRecords,
+    ): string {
+        if (
+            $import->status !== FinancialImportStatus::Completed
+            || $import->type === FinancialImportType::Document
+            || $statementRecords === 0
+        ) {
+            return 'unavailable';
+        }
+
+        $pendingRecords = $statementRecords - $resolvedRecords;
+
+        if ($pendingRecords <= 0) {
+            return 'reconciled';
+        }
+
+        if ($resolvedRecords === 0) {
+            return 'pending';
+        }
+
+        return 'partial';
+    }
+
+    private function reconciliationRankSql(): string
+    {
+        $bankTotal = $this->entryCountSql('bank_statement_entries');
+        $bankPending = $this->entryCountSql(
+            'bank_statement_entries',
+            'and is_reconciled = false and is_ignored = false',
+        );
+        $bankResolved = $this->entryCountSql(
+            'bank_statement_entries',
+            'and (is_reconciled = true or is_ignored = true)',
+        );
+        $cardTotal = $this->entryCountSql('card_statement_entries');
+        $cardPending = $this->entryCountSql(
+            'card_statement_entries',
+            'and is_reconciled = false and is_ignored = false',
+        );
+        $cardResolved = $this->entryCountSql(
+            'card_statement_entries',
+            'and (is_reconciled = true or is_ignored = true)',
+        );
+
+        return "case
+            when financial_imports.status <> 'completed' or financial_imports.type = 'document' then 0
+            when financial_imports.type = 'card_statement' and {$cardTotal} = 0 then 0
+            when financial_imports.type = 'ofx' and {$bankTotal} = 0 then 0
+            when financial_imports.type = 'card_statement' and {$cardPending} = 0 then 1
+            when financial_imports.type = 'ofx' and {$bankPending} = 0 then 1
+            when financial_imports.type = 'card_statement' and {$cardResolved} = 0 then 3
+            when financial_imports.type = 'ofx' and {$bankResolved} = 0 then 3
+            else 2
+        end";
+    }
+
+    private function entryCountSql(string $table, string $condition = ''): string
+    {
+        return "(select count(*) from {$table} where {$table}.financial_import_id = financial_imports.id {$condition})";
+    }
+
     /** @return array<string, mixed> */
     private function importData(FinancialImport $import): array
     {
         $isInvoice = $import->type === FinancialImportType::CardStatement;
         $isDocument = $import->type === FinancialImportType::Document;
+        $statementRecords = $isInvoice
+            ? (int) ($import->card_total ?? 0)
+            : ($isDocument ? 0 : (int) ($import->bank_total ?? 0));
+        $resolvedRecords = $isInvoice
+            ? (int) ($import->card_resolved ?? 0)
+            : ($isDocument ? 0 : (int) ($import->bank_resolved ?? 0));
+        $reconciliationStatus = $this->reconciliationStatus(
+            $import,
+            $statementRecords,
+            $resolvedRecords,
+        );
         $metadata = $import->metadata ?? [];
         $detection = is_array($metadata['autodetection'] ?? null)
             ? $metadata['autodetection']
@@ -331,6 +467,9 @@ class FinancialImportController extends Controller
             'total_records' => $import->total_records,
             'imported_records' => $import->imported_records,
             'duplicate_records' => $import->duplicate_records,
+            'statement_records' => $statementRecords,
+            'resolved_records' => $resolvedRecords,
+            'reconciliation_status' => $reconciliationStatus,
             'statement_start_on' => $import->statement_start_on?->toDateString(),
             'statement_end_on' => $import->statement_end_on?->toDateString(),
             'statement_amount' => $metadata['statement_amount'] ?? null,
