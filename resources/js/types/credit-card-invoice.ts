@@ -32,7 +32,9 @@ export type CreditCardInvoicePayment = {
 };
 
 export type CreditCardInvoiceStatementCandidate = {
-    installment_id: number;
+    kind: 'installment' | 'recurrence';
+    installment_id: number | null;
+    recurrence_transaction_id: number | null;
     transaction_id: number;
     transaction_date: string;
     description: string;
@@ -44,6 +46,8 @@ export type CreditCardInvoiceStatementCandidate = {
     confidence_label: string;
     date_distance: number;
     is_suggestion: boolean;
+    is_recurrence_forecast: boolean;
+    amount_difference: string;
 };
 
 export type CreditCardInvoiceLinkedInstallment = {

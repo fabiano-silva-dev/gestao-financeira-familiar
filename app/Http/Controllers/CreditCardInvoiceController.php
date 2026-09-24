@@ -13,6 +13,7 @@ use App\Models\Category;
 use App\Models\CreditCardInvoice;
 use App\Models\CreditCardInvoicePayment;
 use App\Models\FinancialAccount;
+use App\Models\FinancialTransaction;
 use App\Models\TransactionInstallment;
 use App\Models\User;
 use App\Models\Workspace;
@@ -184,6 +185,12 @@ class CreditCardInvoiceController extends Controller
         $availableInstallments = $creditCardInvoice->installments
             ->filter(fn (TransactionInstallment $installment): bool => $installment->cardStatementEntry === null)
             ->values();
+        $plannedRecurrences = $workspace->financialTransactions()
+            ->where('credit_card_id', $creditCardInvoice->credit_card_id)
+            ->whereNotNull('financial_recurrence_id')
+            ->where('status', 'planned')
+            ->whereDoesntHave('installments')
+            ->get();
 
         return Inertia::render('credit-card-invoices/show', [
             'invoice' => [
@@ -213,6 +220,7 @@ class CreditCardInvoiceController extends Controller
                     ->map(fn (CardStatementEntry $entry): array => $this->statementEntryData(
                         $entry,
                         $availableInstallments,
+                        $plannedRecurrences,
                     ))
                     ->all(),
             ],
@@ -385,11 +393,13 @@ class CreditCardInvoiceController extends Controller
 
     /**
      * @param  Collection<int, TransactionInstallment>  $availableInstallments
+     * @param  Collection<int, FinancialTransaction>  $plannedRecurrences
      * @return array<string, mixed>
      */
     private function statementEntryData(
         CardStatementEntry $entry,
         Collection $availableInstallments,
+        Collection $plannedRecurrences,
     ): array {
         $linkedInstallment = $entry->transactionInstallment;
         $linkedTransaction = $linkedInstallment?->transaction;
@@ -417,10 +427,20 @@ class CreditCardInvoiceController extends Controller
                 ],
             'candidates' => $entry->is_reconciled
                 ? []
-                : $this->reconciliationSuggestionService->candidates(
-                    $entry,
-                    $availableInstallments,
-                ),
+                : collect([
+                    ...$this->reconciliationSuggestionService->candidates(
+                        $entry,
+                        $availableInstallments,
+                    ),
+                    ...$this->reconciliationSuggestionService->recurrenceCandidates(
+                        $entry,
+                        $plannedRecurrences,
+                    ),
+                ])
+                    ->sortByDesc('score')
+                    ->take(20)
+                    ->values()
+                    ->all(),
         ];
     }
 }

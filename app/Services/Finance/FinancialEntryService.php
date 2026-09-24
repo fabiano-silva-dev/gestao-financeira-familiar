@@ -182,6 +182,7 @@ class FinancialEntryService
         if (
             $entry->type === FinancialTransactionType::Expense
             && $entry->credit_card_id !== null
+            && $entry->status === FinancialTransactionStatus::Confirmed
         ) {
             $this->cardPurchaseService->sync(
                 $entry,

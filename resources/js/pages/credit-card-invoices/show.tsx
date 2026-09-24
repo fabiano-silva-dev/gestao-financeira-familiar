@@ -96,7 +96,10 @@ export default function CreditCardInvoiceShow() {
             );
 
             if (suggestion) {
-                selected[entry.id] = String(suggestion.installment_id);
+                selected[entry.id] =
+                    suggestion.kind === 'recurrence'
+                        ? `recurrence:${suggestion.recurrence_transaction_id}`
+                        : `installment:${suggestion.installment_id}`;
             }
 
             return selected;
@@ -456,15 +459,10 @@ export default function CreditCardInvoiceShow() {
                                                             }
                                                         </p>
                                                         <p className="text-muted-foreground mt-1 text-xs">
-                                                            Parcela{' '}
-                                                            {
-                                                                suggestion.installment_number
-                                                            }
-                                                            /
-                                                            {
-                                                                suggestion.total_installments
-                                                            }{' '}
-                                                            · compra em{' '}
+                                                            {suggestion.is_recurrence_forecast
+                                                                ? 'Previsão recorrente'
+                                                                : `Parcela ${suggestion.installment_number}/${suggestion.total_installments}`}{' '}
+                                                            · {suggestion.is_recurrence_forecast ? 'prevista' : 'compra'} em{' '}
                                                             {formatDate(
                                                                 suggestion.transaction_date,
                                                             )}
@@ -496,7 +494,26 @@ export default function CreditCardInvoiceShow() {
                                                                         type="hidden"
                                                                         name="transaction_installment_id"
                                                                         value={
-                                                                            selected
+                                                                            selected.startsWith(
+                                                                                'installment:',
+                                                                            )
+                                                                                ? selected.split(
+                                                                                      ':',
+                                                                                  )[1]
+                                                                                : ''
+                                                                        }
+                                                                    />
+                                                                    <input
+                                                                        type="hidden"
+                                                                        name="recurrence_transaction_id"
+                                                                        value={
+                                                                            selected.startsWith(
+                                                                                'recurrence:',
+                                                                            )
+                                                                                ? selected.split(
+                                                                                      ':',
+                                                                                  )[1]
+                                                                                : ''
                                                                         }
                                                                     />
                                                                     <Select
@@ -526,25 +543,21 @@ export default function CreditCardInvoiceShow() {
                                                                                     candidate,
                                                                                 ) => (
                                                                                     <SelectItem
-                                                                                        key={
-                                                                                            candidate.installment_id
+                                                                                        key={`${candidate.kind}:${candidate.transaction_id}`}
+                                                                                        value={
+                                                                                            candidate.kind ===
+                                                                                            'recurrence'
+                                                                                                ? `recurrence:${candidate.recurrence_transaction_id}`
+                                                                                                : `installment:${candidate.installment_id}`
                                                                                         }
-                                                                                        value={String(
-                                                                                            candidate.installment_id,
-                                                                                        )}
                                                                                     >
                                                                                         {
                                                                                             candidate.description
                                                                                         }{' '}
                                                                                         ·{' '}
-                                                                                        parcela{' '}
-                                                                                        {
-                                                                                            candidate.installment_number
-                                                                                        }
-                                                                                        /
-                                                                                        {
-                                                                                            candidate.total_installments
-                                                                                        }{' '}
+                                                                                        {candidate.is_recurrence_forecast
+                                                                                            ? 'previsão recorrente'
+                                                                                            : `parcela ${candidate.installment_number}/${candidate.total_installments}`}{' '}
                                                                                         ·{' '}
                                                                                         {formatDate(
                                                                                             candidate.transaction_date,
@@ -586,8 +599,9 @@ export default function CreditCardInvoiceShow() {
                                                                 </p>
                                                                 <p className="text-muted-foreground mt-1 text-xs">
                                                                     Cadastre a
-                                                                    compra no
-                                                                    cartão e
+                                                                    compra ou
+                                                                    uma recorrência
+                                                                    no cartão e
                                                                     volte para
                                                                     confirmar o
                                                                     vínculo.

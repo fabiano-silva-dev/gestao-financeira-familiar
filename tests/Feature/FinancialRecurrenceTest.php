@@ -379,7 +379,7 @@ class FinancialRecurrenceTest extends TestCase
         );
     }
 
-    public function test_card_recurrence_materializes_only_the_due_occurrence(): void
+    public function test_card_recurrence_generates_twelve_months_as_planned_without_creating_invoices(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-09-20 12:00:00'));
 
@@ -412,20 +412,24 @@ class FinancialRecurrenceTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $recurrence = FinancialRecurrence::query()->sole();
-        $transaction = $recurrence->transactions()->sole();
+        $transactions = $recurrence->transactions()
+            ->orderBy('recurrence_occurrence_date')
+            ->get();
 
-        $this->assertSame(
-            FinancialTransactionStatus::Confirmed,
-            $transaction->status,
-        );
-        $this->assertSame($card->id, $transaction->credit_card_id);
-        $this->assertNull($transaction->settled_on);
-        $this->assertDatabaseCount('transaction_installments', 1);
-        $this->assertDatabaseCount('credit_card_invoices', 1);
+        $this->assertCount(12, $transactions);
+        $this->assertSame('2026-09-20', $transactions->first()?->recurrence_occurrence_date?->toDateString());
+        $this->assertSame('2027-08-20', $transactions->last()?->recurrence_occurrence_date?->toDateString());
+
+        foreach ($transactions as $transaction) {
+            $this->assertSame(FinancialTransactionStatus::Planned, $transaction->status);
+            $this->assertSame($card->id, $transaction->credit_card_id);
+            $this->assertNull($transaction->settled_on);
+            $this->assertCount(0, $transaction->installments);
+        }
+
+        $this->assertDatabaseCount('transaction_installments', 0);
+        $this->assertDatabaseCount('credit_card_invoices', 0);
         $this->assertDatabaseCount('account_movements', 0);
-
-        $invoice = CreditCardInvoice::query()->sole();
-        $this->assertSame('2026-10-12', $invoice->due_date->toDateString());
     }
 
     public function test_recurrence_index_returns_six_month_projection(): void
