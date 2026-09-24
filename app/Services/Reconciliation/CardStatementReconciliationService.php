@@ -2,16 +2,23 @@
 
 namespace App\Services\Reconciliation;
 
+use App\Enums\FinancialTransactionStatus;
 use App\Models\CardStatementEntry;
 use App\Models\CreditCardInvoice;
+use App\Models\FinancialTransaction;
 use App\Models\TransactionInstallment;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Finance\FinancialEntryService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 final class CardStatementReconciliationService
 {
+    public function __construct(
+        private readonly FinancialEntryService $entryService,
+    ) {}
+
     public function reconcile(
         Workspace $workspace,
         CreditCardInvoice $invoice,
@@ -98,6 +105,86 @@ final class CardStatementReconciliationService
             ]);
 
             return $lockedEntry->refresh();
+        });
+    }
+
+    public function reconcilePlannedRecurrence(
+        Workspace $workspace,
+        CreditCardInvoice $invoice,
+        CardStatementEntry $entry,
+        FinancialTransaction $transaction,
+        User $user,
+    ): CardStatementEntry {
+        return DB::transaction(function () use ($workspace, $invoice, $entry, $transaction, $user): CardStatementEntry {
+            $lockedEntry = CardStatementEntry::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereKey($entry->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $lockedTransaction = FinancialTransaction::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereKey($transaction->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (
+                $lockedEntry->credit_card_invoice_id !== $invoice->id
+                || $lockedEntry->credit_card_id !== $invoice->credit_card_id
+                || $lockedTransaction->credit_card_id !== $invoice->credit_card_id
+                || $lockedTransaction->financial_recurrence_id === null
+                || $lockedTransaction->status !== FinancialTransactionStatus::Planned
+            ) {
+                throw ValidationException::withMessages([
+                    'recurrence_transaction_id' => 'A previsão recorrente não é compatível com esta linha da fatura.',
+                ]);
+            }
+
+            if ($lockedEntry->is_reconciled) {
+                throw ValidationException::withMessages([
+                    'recurrence_transaction_id' => 'Esta linha da fatura já foi conciliada.',
+                ]);
+            }
+
+            $expectedAmount = $lockedTransaction->amount;
+            $notes = $lockedTransaction->notes;
+            if ($this->moneyToCents($expectedAmount) !== $this->moneyToCents($lockedEntry->amount)) {
+                $variation = 'Previsto: R$ '.str_replace('.', ',', $expectedAmount)
+                    .' · realizado: R$ '.str_replace('.', ',', $lockedEntry->amount).'.';
+                $notes = trim(($notes ? $notes."\n" : '').'Variação da recorrência na conciliação. '.$variation);
+            }
+
+            $confirmed = $this->entryService->update($lockedTransaction, [
+                'type' => $lockedTransaction->type->value,
+                'transaction_date' => $lockedEntry->purchased_on->toDateString(),
+                'competence_date' => $lockedTransaction->competence_date?->toDateString()
+                    ?? $lockedEntry->purchased_on->toDateString(),
+                'description' => $lockedTransaction->description,
+                'amount' => $lockedEntry->amount,
+                'financial_account_id' => null,
+                'credit_card_id' => $lockedTransaction->credit_card_id,
+                'category_id' => $lockedTransaction->category_id,
+                'family_member_id' => $lockedTransaction->family_member_id,
+                'payment_method' => $lockedTransaction->payment_method?->value,
+                'payee_name' => $lockedTransaction->payee_name,
+                'payment_instructions' => $lockedTransaction->payment_instructions,
+                'due_date' => null,
+                'settled_on' => null,
+                'status' => FinancialTransactionStatus::Confirmed->value,
+                'installment_count' => 1,
+                'notes' => $notes,
+            ]);
+
+            $installment = $confirmed->installments()
+                ->where('credit_card_invoice_id', $invoice->id)
+                ->first();
+
+            if ($installment === null) {
+                throw ValidationException::withMessages([
+                    'recurrence_transaction_id' => 'A cobrança real pertence a outro ciclo de fatura. Confira a data prevista.',
+                ]);
+            }
+
+            return $this->reconcile($workspace, $invoice, $lockedEntry, $installment, $user);
         });
     }
 
