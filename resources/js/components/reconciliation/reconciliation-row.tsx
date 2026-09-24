@@ -723,13 +723,10 @@ export function ReconciliationRow({
 
         setActionError(null);
         router.post(
-            listingUrl(
-                BankReconciliationController.recurrence.url(entry.id),
-                query,
-            ),
+            listingUrl(`/conciliacao/${entry.id}/recorrencia`, query),
             { financial_transaction_id: recurrenceTransactionId },
             {
-                ...completeOptions(),
+                ...visitOptions(),
                 onError: reportActionError,
             },
         );
@@ -1240,10 +1237,7 @@ export function ReconciliationRow({
                     </label>
                     {entry.kind === 'statement' &&
                         !entry.is_reconciled &&
-                        !entry.is_ignored &&
-                        !showInvoicePayment &&
-                        !showRefund &&
-                        !isTransferLine && (
+                        !entry.is_ignored && (
                             <div className="grid min-w-0 gap-1 sm:col-span-2">
                                 <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
                                     Vincular a lançamento recorrente
