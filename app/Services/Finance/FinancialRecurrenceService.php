@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\DB;
 
 class FinancialRecurrenceService
 {
-    public const GENERATION_HORIZON_DAYS = 90;
+    public const GENERATION_HORIZON_MONTHS = 12;
 
     public function __construct(
         private readonly FinancialEntryService $entryService,
@@ -37,7 +37,7 @@ class FinancialRecurrenceService
             $this->prepareCurrentDueGeneration($recurrence, $alreadySettled, $today);
             $this->generate(
                 $recurrence->refresh(),
-                $today->addDays(self::GENERATION_HORIZON_DAYS),
+                $today->addMonths(self::GENERATION_HORIZON_MONTHS),
                 $alreadySettled,
             );
 
@@ -76,7 +76,7 @@ class FinancialRecurrenceService
                 );
                 $this->generate(
                     $recurrence->refresh(),
-                    $today->addDays(self::GENERATION_HORIZON_DAYS),
+                    $today->addMonths(self::GENERATION_HORIZON_MONTHS),
                     $alreadySettled,
                 );
                 $this->settleCurrentDueOccurrence(
@@ -116,7 +116,7 @@ class FinancialRecurrenceService
                 $today = CarbonImmutable::today();
                 $this->generate(
                     $recurrence->refresh(),
-                    $today->addDays(self::GENERATION_HORIZON_DAYS),
+                    $today->addMonths(self::GENERATION_HORIZON_MONTHS),
                 );
             }
 
@@ -126,7 +126,7 @@ class FinancialRecurrenceService
 
     public function generateActive(?CarbonImmutable $through = null): int
     {
-        $through ??= CarbonImmutable::today()->addDays(self::GENERATION_HORIZON_DAYS);
+        $through ??= CarbonImmutable::today()->addMonths(self::GENERATION_HORIZON_MONTHS);
         $generated = 0;
 
         FinancialRecurrence::query()
@@ -146,7 +146,7 @@ class FinancialRecurrenceService
         Workspace $workspace,
         ?CarbonImmutable $through = null,
     ): int {
-        $through ??= CarbonImmutable::today()->addDays(self::GENERATION_HORIZON_DAYS);
+        $through ??= CarbonImmutable::today()->addMonths(self::GENERATION_HORIZON_MONTHS);
         $generated = 0;
 
         $workspace->financialRecurrences()
@@ -186,10 +186,6 @@ class FinancialRecurrenceService
             $usesCreditCard = $recurrence->type === FinancialTransactionType::Expense
                 && $recurrence->payment_method === PaymentMethod::CreditCard;
 
-            if ($usesCreditCard && $occurrence->greaterThan($today)) {
-                continue;
-            }
-
             $exists = $recurrence->transactions()
                 ->whereDate('recurrence_occurrence_date', $occurrenceDate)
                 ->exists();
@@ -225,7 +221,7 @@ class FinancialRecurrenceService
                     'settled_on' => $shouldSettle
                         ? $this->settledOnForOccurrence($occurrence, $today)
                         : null,
-                    'status' => $usesCreditCard || $shouldSettle
+                    'status' => $shouldSettle
                         ? FinancialTransactionStatus::Confirmed->value
                         : FinancialTransactionStatus::Planned->value,
                     'installment_count' => $usesCreditCard ? 1 : null,
