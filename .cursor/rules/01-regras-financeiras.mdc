@@ -26,6 +26,7 @@ Considere `GESTAO_FINANCEIRA_FAMILIAR.md` a referência principal do produto.
 - Recorrências sem cartão podem gerar compromissos planejados antecipadamente. Recorrências pagas por cartão só devem materializar a compra quando a ocorrência chegar; projeções futuras não devem criar faturas antecipadamente.
 - Pausar uma recorrência interrompe a geração futura, preservando ocorrências já confirmadas, liquidadas ou históricas.
 - Conciliações devem manter vínculo entre movimento real e obrigação/transação correspondente, preservando o histórico.
+- Ao vincular explicitamente um movimento bancário a uma ocorrência materializada de recorrência, o valor real do extrato pode ajustar somente aquela ocorrência. Preserve o valor-base da recorrência e as ocorrências futuras; a data do extrato representa a liquidação e não substitui competência ou vencimento.
 - Importações precisam ser idempotentes sempre que possível: reimportar o mesmo arquivo não deve duplicar movimentos.
 - Faturas devem ser entidades próprias, ligadas ao cartão e às compras/parcelas do ciclo.
 - Preserve a possibilidade de consultar compromissos futuros independentemente do que já foi pago.
