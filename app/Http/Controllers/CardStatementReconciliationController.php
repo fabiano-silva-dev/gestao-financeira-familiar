@@ -31,18 +31,30 @@ class CardStatementReconciliationController extends Controller
         $workspace = $this->workspace();
         $creditCardInvoice = $this->findInvoice($workspace, $invoice);
         $statementEntry = $this->findEntry($creditCardInvoice, $entry);
-        $installment = $creditCardInvoice->installments()
-            ->findOrFail($request->integer('transaction_installment_id'));
         $user = $request->user();
         abort_unless($user instanceof User, 403);
 
-        $this->reconciliationService->reconcile(
-            $workspace,
-            $creditCardInvoice,
-            $statementEntry,
-            $installment,
-            $user,
-        );
+        if ($request->filled('recurrence_transaction_id')) {
+            $transaction = $workspace->financialTransactions()
+                ->findOrFail($request->integer('recurrence_transaction_id'));
+            $this->reconciliationService->reconcilePlannedRecurrence(
+                $workspace,
+                $creditCardInvoice,
+                $statementEntry,
+                $transaction,
+                $user,
+            );
+        } else {
+            $installment = $creditCardInvoice->installments()
+                ->findOrFail($request->integer('transaction_installment_id'));
+            $this->reconciliationService->reconcile(
+                $workspace,
+                $creditCardInvoice,
+                $statementEntry,
+                $installment,
+                $user,
+            );
+        }
         $this->entryActions->applyDraftToRelatedCard(
             $statementEntry->refresh()->load('transactionInstallment.transaction'),
         );
