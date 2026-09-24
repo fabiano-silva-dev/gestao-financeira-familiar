@@ -56,6 +56,17 @@ export type ReconciliationCandidate = {
     related_is_transfer?: boolean;
 };
 
+export type ReconciliationRecurringCandidate = {
+    transaction_id: number;
+    recurrence_id: number;
+    recurrence_description: string;
+    occurrence_date: string;
+    planned_amount: string;
+    actual_amount: string;
+    difference_amount: string;
+    payee_name: string | null;
+};
+
 export type ReconciliationPendingEntry = {
     id: number;
     kind: ReconciliationKind;
