@@ -296,6 +296,18 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::post('conciliacao/lote/ajustar', [BankReconciliationController::class, 'bulkAdjust'])
         ->name('reconciliation.bulk-adjust');
     Route::get(
+        'conciliacao/{entry}/recorrencias',
+        [BankReconciliationController::class, 'recurrenceCandidates'],
+    )
+        ->whereNumber('entry')
+        ->name('reconciliation.recurrence-candidates');
+    Route::post(
+        'conciliacao/{entry}/recorrencia',
+        [BankReconciliationController::class, 'recurrence'],
+    )
+        ->whereNumber('entry')
+        ->name('reconciliation.recurrence');
+    Route::get(
         'conciliacao/{entry}/candidatos-reembolso',
         [BankReconciliationController::class, 'refundCandidates'],
     )
