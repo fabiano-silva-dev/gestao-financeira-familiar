@@ -20,8 +20,10 @@ use App\Models\FinancialImport;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Finance\FinancialEntryService;
+use App\Services\Finance\FinancialRecurrenceService;
 use App\Services\Finance\TransferService;
 use App\Support\Workspaces\CurrentWorkspace;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -340,6 +342,93 @@ class BankReconciliationTest extends TestCase
 
         $this->assertFalse($entry->fresh()->is_reconciled);
         $this->assertDatabaseCount('financial_transactions', 1);
+    }
+
+    public function test_user_can_link_bank_entry_to_recurring_occurrence_and_adjust_only_that_occurrence(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-01 12:00:00'));
+
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $category = Category::factory()->for($workspace)->create([
+            'name' => 'Moradia',
+            'type' => CategoryType::Expense,
+        ]);
+        $recurrence = app(FinancialRecurrenceService::class)->create($workspace, [
+            'type' => FinancialTransactionType::Expense->value,
+            'description' => 'Condomínio',
+            'amount' => '650.00',
+            'financial_account_id' => $account->id,
+            'credit_card_id' => null,
+            'category_id' => $category->id,
+            'family_member_id' => null,
+            'payment_method' => PaymentMethod::Pix->value,
+            'payee_name' => 'Condomínio Edifício',
+            'payment_instructions' => null,
+            'frequency' => 'monthly',
+            'interval' => 1,
+            'starts_on' => '2026-09-10',
+            'generation_started_on' => '2026-09-10',
+            'ends_on' => null,
+            'already_settled' => false,
+            'notes' => null,
+        ]);
+        $occurrence = $recurrence->transactions()
+            ->whereDate('recurrence_occurrence_date', '2026-09-10')
+            ->firstOrFail();
+        $nextOccurrence = $recurrence->transactions()
+            ->whereDate('recurrence_occurrence_date', '2026-10-10')
+            ->firstOrFail();
+        $entry = $this->bankEntry(
+            $workspace,
+            $account,
+            '-673.42',
+            '2026-09-12',
+            'PIX CONDOMINIO',
+        );
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->getJson(route('reconciliation.recurrence-candidates', $entry))
+            ->assertOk()
+            ->assertJsonPath('candidates.0.transaction_id', $occurrence->id)
+            ->assertJsonPath('candidates.0.recurrence_description', 'Condomínio')
+            ->assertJsonPath('candidates.0.planned_amount', '650.00')
+            ->assertJsonPath('candidates.0.actual_amount', '673.42')
+            ->assertJsonPath('candidates.0.difference_amount', '23.42');
+
+        $request->post(route('reconciliation.store', $entry), [
+            'financial_transaction_id' => $occurrence->id,
+        ])->assertSessionHasErrors('financial_transaction_id');
+
+        $this->assertFalse($entry->fresh()->is_reconciled);
+        $this->assertSame('650.00', $occurrence->fresh()->amount);
+
+        $request->post(route('reconciliation.recurrence', $entry), [
+            'financial_transaction_id' => $occurrence->id,
+        ])
+            ->assertRedirect(route('reconciliation.index'))
+            ->assertSessionHasNoErrors();
+
+        $recurrence->refresh();
+        $occurrence->refresh();
+        $nextOccurrence->refresh();
+        $entry->refresh();
+        $movement = $entry->accountMovement;
+
+        $this->assertTrue($entry->is_reconciled);
+        $this->assertSame('650.00', $recurrence->amount);
+        $this->assertSame('673.42', $occurrence->amount);
+        $this->assertTrue($occurrence->recurrence_is_overridden);
+        $this->assertSame(FinancialTransactionStatus::Confirmed, $occurrence->status);
+        $this->assertSame('2026-09-12', $occurrence->settled_on?->toDateString());
+        $this->assertSame('2026-09-10', $occurrence->transaction_date->toDateString());
+        $this->assertSame('650.00', $nextOccurrence->amount);
+        $this->assertSame(FinancialTransactionStatus::Planned, $nextOccurrence->status);
+        $this->assertFalse($nextOccurrence->recurrence_is_overridden);
+        $this->assertSame('-673.42', $movement?->amount);
+        $this->assertSame('2026-09-12', $movement?->occurred_on->toDateString());
+        $this->assertTrue((bool) $movement?->is_reconciled);
     }
 
     public function test_early_payment_suggests_the_planned_expense_instead_of_an_old_transfer(): void
