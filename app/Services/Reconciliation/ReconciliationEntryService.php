@@ -1019,9 +1019,6 @@ final class ReconciliationEntryService
         return is_array($first) && (int) ($first['score'] ?? 0) >= $minimum;
     }
 
-    /**
-     * @return Collection<int, AccountMovement>
-     */
     private function moneyFromCents(int $cents): string
     {
         $negative = $cents < 0;
@@ -1041,6 +1038,9 @@ final class ReconciliationEntryService
             : $amount;
     }
 
+    /**
+     * @return Collection<int, AccountMovement>
+     */
     private function unmatchedMovements(Workspace $workspace, int $accountId): Collection
     {
         return $workspace->accountMovements()
