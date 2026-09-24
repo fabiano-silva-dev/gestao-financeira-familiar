@@ -20,7 +20,6 @@ use App\Services\Finance\ClassificationRuleMatcher;
 use App\Services\Reconciliation\BankReconciliationService;
 use App\Services\Reconciliation\BankReconciliationSuggestionService;
 use App\Services\Reconciliation\CardStatementReconciliationSuggestionService;
-use App\Services\Reconciliation\ExpenseRefundSuggestionService;
 use App\Services\Reconciliation\ImportedMovementInterpreter;
 use App\Services\Reconciliation\InvoicePaymentSuggestionService;
 use App\Services\Reconciliation\ReconciliationEntryService;
@@ -38,7 +37,6 @@ final class FinancialImportProcessor
         private readonly ReconciliationEntryService $entryActions,
         private readonly ClassificationRuleMatcher $ruleMatcher,
         private readonly InvoicePaymentSuggestionService $invoicePaymentSuggestions,
-        private readonly ExpenseRefundSuggestionService $refundSuggestions,
         private readonly ImportedMovementInterpreter $interpreter,
     ) {}
 
@@ -188,12 +186,6 @@ final class FinancialImportProcessor
 
             if ($this->tryInvoicePayment($workspace, $entry, $user)) {
                 $counters['invoice_payments_identified']++;
-
-                return;
-            }
-
-            if ($this->tryRefund($workspace, $entry, $user)) {
-                $counters['refunds_identified']++;
 
                 return;
             }
@@ -690,52 +682,7 @@ final class FinancialImportProcessor
         }
     }
 
-    private function tryRefund(
-        Workspace $workspace,
-        BankStatementEntry $entry,
-        User $user,
-    ): bool {
-        if (
-            $this->interpreter->moneyToCents($entry->amount) <= 0
-            || ! $this->interpreter->isLikelyRefund(
-                $entry->description.' '.($entry->memo ?? ''),
-            )
-        ) {
-            return false;
-        }
 
-        $candidates = $this->refundSuggestions->candidates($workspace, $entry);
-        $first = $candidates[0] ?? null;
-
-        if (! is_array($first) || (int) ($first['score'] ?? 0) < 90) {
-            return false;
-        }
-
-        $second = $candidates[1] ?? null;
-
-        if (
-            is_array($second)
-            && ((int) $first['score'] - (int) ($second['score'] ?? 0)) < 15
-        ) {
-            return false;
-        }
-
-        $transaction = $workspace->financialTransactions()
-            ->find($first['transaction_id'] ?? null);
-
-        if (! $transaction instanceof FinancialTransaction) {
-            return false;
-        }
-
-        $this->entryActions->reconcileRefund(
-            $workspace,
-            $entry,
-            $transaction,
-            $user,
-        );
-
-        return $entry->refresh()->is_reconciled;
-    }
 
     private function tryInvoicePayment(
         Workspace $workspace,

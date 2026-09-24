@@ -39,6 +39,7 @@ use App\Services\Reconciliation\ReconciliationEntryService;
 use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -454,6 +455,22 @@ class BankReconciliationController extends Controller
         ]);
 
         return to_route('reconciliation.index', $this->filterQuery($request));
+    }
+
+    public function refundCandidates(int $entry): JsonResponse
+    {
+        $workspace = $this->workspace();
+        $statementEntry = $this->findEntry($workspace, $entry);
+
+        abort_if($statementEntry->is_reconciled || $statementEntry->is_ignored, 422);
+        abort_if($this->interpreter->moneyToCents($statementEntry->amount) <= 0, 422);
+
+        return response()->json([
+            'candidates' => $this->refundSuggestionService->candidates(
+                $workspace,
+                $statementEntry,
+            ),
+        ]);
     }
 
     public function refund(
@@ -1148,13 +1165,8 @@ class BankReconciliationController extends Controller
         $invoiceCandidates = collect(
             $this->invoicePaymentSuggestion->candidates($entry, $invoices, $claimedInvoiceIds),
         );
-        $refundCandidates = collect(
-            $this->refundSuggestionService->candidates($this->workspace(), $entry),
-        );
-
         return $movementCandidates
             ->concat($invoiceCandidates)
-            ->concat($refundCandidates)
             ->sort(function (array $left, array $right): int {
                 return [$right['score'], $left['date_distance'], $right['invoice_id'] ?? $right['movement_id'] ?? $right['transaction_id'] ?? 0]
                     <=> [$left['score'], $right['date_distance'], $left['invoice_id'] ?? $left['movement_id'] ?? $left['transaction_id'] ?? 0];
@@ -1512,13 +1524,10 @@ class BankReconciliationController extends Controller
                 fn (array $candidate): bool => (bool) ($candidate['is_invoice_payment'] ?? false)
                     && (bool) ($candidate['is_suggestion'] ?? false),
             );
-        $isRefund = $this->interpreter->moneyToCents($entry['amount']) > 0
-            && (
-                $this->interpreter->isLikelyRefund($entry['description'])
-                || collect($candidates)->contains(
-                    fn (array $candidate): bool => (bool) ($candidate['is_refund'] ?? false)
-                        && (bool) ($candidate['is_suggestion'] ?? false),
-                )
+        $isRefund = ($entry['related_type'] ?? null) === AccountMovementType::Refund->value
+            || collect($candidates)->contains(
+                fn (array $candidate): bool => (bool) ($candidate['is_refund'] ?? false)
+                    && (bool) ($candidate['is_suggestion'] ?? false),
             );
 
         if ($isInvoicePayment || $isRefund) {

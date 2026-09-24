@@ -272,12 +272,14 @@ class ExpenseRefundTest extends TestCase
         ]))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('entries.0.is_likely_refund', true)
-                ->where('entries.0.has_suggestion', true)
-                ->where('entries.0.candidates.0.is_refund', true)
-                ->where('entries.0.candidates.0.is_suggestion', true)
-                ->where('entries.0.candidates.0.transaction_id', $expense->id)
+                ->where('entries.0.is_likely_refund', false)
             );
+
+        $request->getJson(route('reconciliation.refund-candidates', $entry))
+            ->assertOk()
+            ->assertJsonPath('candidates.0.is_refund', true)
+            ->assertJsonPath('candidates.0.is_suggestion', true)
+            ->assertJsonPath('candidates.0.transaction_id', $expense->id);
 
         $request->post(route('reconciliation.refund', $entry), [
             'financial_transaction_id' => $expense->id,
@@ -300,7 +302,7 @@ class ExpenseRefundTest extends TestCase
     {
         [$user, $workspace] = $this->userAndWorkspace();
         $account = FinancialAccount::factory()->for($workspace)->create();
-        $expense = $this->createExpense(
+        $this->createExpense(
             $workspace,
             $account,
             '150.00',
@@ -326,9 +328,6 @@ class ExpenseRefundTest extends TestCase
                 ->where('entries.0.has_suggestion', false)
                 ->where('entries.0.suggestion_description', null)
                 ->where('entries.0.related_payee_name', null)
-                ->where('entries.0.candidates.0.is_refund', true)
-                ->where('entries.0.candidates.0.is_suggestion', false)
-                ->where('entries.0.candidates.0.transaction_id', $expense->id)
             );
     }
 
@@ -393,49 +392,54 @@ class ExpenseRefundTest extends TestCase
         $this->assertDatabaseCount('account_movements', 2);
     }
 
-    public function test_ofx_import_can_identify_unambiguous_refund_without_creating_income(): void
+    public function test_ofx_import_leaves_refund_pending_for_manual_identification(): void
     {
         Storage::fake('local');
         [$user, $workspace] = $this->userAndWorkspace();
         $account = FinancialAccount::factory()->for($workspace)->create();
-        $this->createExpense(
+        $expense = $this->createExpense(
             $workspace,
             $account,
             '200.00',
             'LOJA IMPORTADA',
         );
 
-        $this->actingAs($user)
-            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
-            ->post(route('imports.ofx.store'), [
-                'financial_account_id' => $account->id,
-                'file' => UploadedFile::fake()->createWithContent(
-                    'reembolso.ofx',
-                    $this->ofxRefundFile(),
-                ),
-            ])
-            ->assertSessionHasNoErrors();
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('imports.ofx.store'), [
+            'financial_account_id' => $account->id,
+            'file' => UploadedFile::fake()->createWithContent(
+                'reembolso.ofx',
+                $this->ofxRefundFile(),
+            ),
+        ])->assertSessionHasNoErrors();
 
         $import = FinancialImport::query()->sole();
         $entry = BankStatementEntry::query()
             ->where('external_id', 'refund-001')
             ->sole();
 
-        $this->assertTrue($entry->is_reconciled);
-        $this->assertDatabaseCount('expense_refunds', 1);
+        $this->assertFalse($entry->is_reconciled);
+        $this->assertDatabaseCount('expense_refunds', 0);
         $this->assertDatabaseCount('financial_transactions', 1);
         $this->assertDatabaseMissing('financial_transactions', [
             'workspace_id' => $workspace->id,
             'type' => FinancialTransactionType::Income->value,
         ]);
         $this->assertSame(
-            1,
+            0,
             data_get($import->metadata, 'processing_summary.refunds_identified'),
         );
         $this->assertSame(
             0,
             data_get($import->metadata, 'processing_summary.new_transactions_created'),
         );
+
+        $request->getJson(route('reconciliation.refund-candidates', $entry))
+            ->assertOk()
+            ->assertJsonPath('candidates.0.is_refund', true)
+            ->assertJsonPath('candidates.0.transaction_id', $expense->id);
     }
 
     private function createExpense(

@@ -13,6 +13,7 @@ Considere `GESTAO_FINANCEIRA_FAMILIAR.md` a referência principal do produto.
 - O sistema deve conseguir analisar separadamente: gasto/competência, obrigações futuras e fluxo de caixa.
 - Pagamento de fatura de cartão não é nova despesa. Ele liquida uma obrigação formada por compras já registradas.
 - Reembolso não é receita nem transferência. Preserve a compra/despesa original e registre o reembolso como fato financeiro vinculado à transação de origem.
+- A conciliação não deve pesquisar automaticamente despesas candidatas a reembolso em toda entrada positiva. O usuário primeiro aciona explicitamente o fluxo de reembolso; somente então o sistema busca possíveis despesas de origem. Reembolsos já registrados podem continuar sendo conciliados como movimentos existentes.
 - Para análise gerencial, use despesa líquida = valor original da compra/despesa - reembolsos confirmados, sem alterar destrutivamente o valor original.
 - Reembolso creditado em conta própria aumenta o saldo dessa conta por movimento de reembolso e não reduz a fatura do cartão. Estorno diretamente no cartão reduz a obrigação da fatura correspondente e não cria movimento bancário fictício.
 - Em compra parcelada, o reembolso pertence à transação principal; qualquer distribuição por competência deve ser determinística e não pode duplicar compra, parcela, fatura ou reembolso.

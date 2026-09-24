@@ -184,7 +184,15 @@ export function ReconciliationRow({
     const [matchId, setMatchId] = useState(() =>
         suggestion ? candidateMatchId(entry, suggestion) : '',
     );
-    const selectedCandidate = entry.candidates.find(
+    const [refundMode, setRefundMode] = useState(false);
+    const [refundCandidates, setRefundCandidates] = useState<
+        ReconciliationCandidate[]
+    >([]);
+    const [refundLoading, setRefundLoading] = useState(false);
+    const availableCandidates = refundMode
+        ? refundCandidates
+        : entry.candidates;
+    const selectedCandidate = availableCandidates.find(
         (candidate) => candidateMatchId(entry, candidate) === matchId,
     );
     const outflow = isOutflow(entry);
@@ -252,6 +260,9 @@ export function ReconciliationRow({
 
         matchOverrideEntryId.current = null;
         setSuggestionDismissed(false);
+        setRefundMode(false);
+        setRefundCandidates([]);
+        setRefundLoading(false);
         const nextSuggestion = entry.candidates.find(
             (candidate) => candidate.is_suggestion,
         );
@@ -364,9 +375,10 @@ export function ReconciliationRow({
               }
             : null;
     const showInvoicePayment =
+        !refundMode &&
         !suggestionDismissed &&
         (entry.is_likely_invoice_payment || selectedInvoice !== null);
-    const showRefund = Boolean(selectedCandidate?.is_refund);
+    const showRefund = refundMode || Boolean(selectedCandidate?.is_refund);
     const canRegisterPendingCardPayment =
         entry.kind === 'statement' &&
         showInvoicePayment &&
@@ -517,6 +529,88 @@ export function ReconciliationRow({
         ...visitOptions(),
         onSuccess: askCreateRuleIfNeeded,
     });
+
+    const beginRefund = async () => {
+        if (
+            entry.kind !== 'statement' ||
+            Number(entry.amount) <= 0 ||
+            entry.is_reconciled ||
+            entry.is_ignored
+        ) {
+            return;
+        }
+
+        setActionError(null);
+        setRefundMode(true);
+        setRefundCandidates([]);
+        setRefundLoading(true);
+        setSuggestionDismissed(true);
+        setMatchId('');
+
+        try {
+            const response = await fetch(
+                `/conciliacao/${entry.id}/candidatos-reembolso`,
+                {
+                    headers: {
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                },
+            );
+
+            if (!response.ok) {
+                throw new Error('Falha ao buscar despesas para o reembolso.');
+            }
+
+            const payload = (await response.json()) as {
+                candidates?: ReconciliationCandidate[];
+            };
+            const candidates = Array.isArray(payload.candidates)
+                ? payload.candidates
+                : [];
+
+            setRefundCandidates(candidates);
+
+            const nextSuggestion = candidates.find(
+                (candidate) => candidate.is_suggestion,
+            );
+            setMatchId(
+                nextSuggestion
+                    ? candidateMatchId(entry, nextSuggestion)
+                    : '',
+            );
+
+            if (candidates.length === 0) {
+                toast.info(
+                    'Nenhuma despesa compatível foi encontrada para este reembolso.',
+                );
+            }
+        } catch {
+            setRefundMode(false);
+            setRefundCandidates([]);
+            setSuggestionDismissed(false);
+            setActionError(
+                'Não foi possível buscar as despesas candidatas ao reembolso.',
+            );
+        } finally {
+            setRefundLoading(false);
+        }
+    };
+
+    const cancelRefund = () => {
+        const nextSuggestion = entry.candidates.find(
+            (candidate) => candidate.is_suggestion,
+        );
+
+        setRefundMode(false);
+        setRefundCandidates([]);
+        setRefundLoading(false);
+        setSuggestionDismissed(false);
+        setActionError(null);
+        setMatchId(
+            nextSuggestion ? candidateMatchId(entry, nextSuggestion) : '',
+        );
+    };
 
     const conciliate = () => {
         if (entry.kind === 'statement') {
@@ -811,8 +905,8 @@ export function ReconciliationRow({
                     {showInvoicePayment && (
                         <Badge variant="outline">Pagamento de fatura</Badge>
                     )}
-                    {entry.is_likely_refund && (
-                        <Badge variant="outline">Possível reembolso</Badge>
+                    {(entry.is_likely_refund || refundMode) && (
+                        <Badge variant="outline">Reembolso</Badge>
                     )}
                     {entry.is_likely_transfer && (
                         <Badge variant="outline">Transferência</Badge>
@@ -834,6 +928,7 @@ export function ReconciliationRow({
                 {(entry.has_suggestion ||
                     entry.matcher_category_name ||
                     entry.suggestion_description) &&
+                    !refundMode &&
                     !suggestionDismissed &&
                     !entry.is_reconciled && (
                         <p className="text-primary flex items-start gap-1.5 text-xs">
@@ -971,13 +1066,16 @@ export function ReconciliationRow({
                         <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
                             {showInvoicePayment
                                 ? 'Fatura correspondente'
-                                : 'Lançamento relacionado'}
+                                : refundMode
+                                  ? 'Despesa original do reembolso'
+                                  : 'Lançamento relacionado'}
                         </span>
                         <Select
                             value={matchId === '' ? 'none' : matchId}
                             disabled={
                                 entry.is_reconciled ||
-                                entry.candidates.length === 0
+                                refundLoading ||
+                                availableCandidates.length === 0
                             }
                             onValueChange={(value) => {
                                 if (value === 'none') {
@@ -992,7 +1090,13 @@ export function ReconciliationRow({
                             }}
                         >
                             <SelectTrigger size="sm" className="w-full">
-                                <SelectValue placeholder="Selecionar" />
+                                <SelectValue
+                                    placeholder={
+                                        refundLoading
+                                            ? 'Buscando despesas...'
+                                            : 'Selecionar'
+                                    }
+                                />
                             </SelectTrigger>
                             <SelectContent
                                 align="start"
@@ -1001,7 +1105,7 @@ export function ReconciliationRow({
                                 <SelectItem value="none">
                                     Sem correspondência
                                 </SelectItem>
-                                {entry.candidates.map((candidate) => {
+                                {availableCandidates.map((candidate) => {
                                     const id = candidateMatchId(
                                         entry,
                                         candidate,
@@ -1233,6 +1337,30 @@ export function ReconciliationRow({
                             <Plus />
                             Criar lançamento
                         </Button>
+                        {entry.kind === 'statement' &&
+                            Number(entry.amount) > 0 &&
+                            !showRefund && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={refundLoading}
+                                    onClick={beginRefund}
+                                >
+                                    Reembolso
+                                </Button>
+                            )}
+                        {refundMode && (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                disabled={refundLoading}
+                                onClick={cancelRefund}
+                            >
+                                Cancelar reembolso
+                            </Button>
+                        )}
                         {needsCategory &&
                             !entry.is_reconciled &&
                             leafCategoryId === null &&
