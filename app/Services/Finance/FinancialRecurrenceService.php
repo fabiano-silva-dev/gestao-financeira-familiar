@@ -534,7 +534,7 @@ class FinancialRecurrenceService
         CarbonImmutable $today,
     ): CarbonImmutable {
         return $this->usesCreditCard($recurrence)
-            ? $today->addMonths(self::CARD_GENERATION_HORIZON_MONTHS)
+            ? $today->addMonths(self::CARD_GENERATION_HORIZON_MONTHS)->subDay()
             : $today->addDays(self::GENERATION_HORIZON_DAYS);
     }
 
