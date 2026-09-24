@@ -648,6 +648,19 @@ export function ReconciliationRow({
         );
     };
 
+    const reportActionError = (errors: Record<string, string | string[]>) => {
+        const value =
+            errors.entry ?? errors.category_id ?? Object.values(errors)[0];
+        const message = Array.isArray(value) ? value[0] : value;
+
+        if (typeof message !== 'string' || message === '') {
+            return;
+        }
+
+        setActionError(message);
+        toast.error(message);
+    };
+
     const loadRecurrenceCandidates = async () => {
         if (
             recurrenceLoaded ||
@@ -796,19 +809,6 @@ export function ReconciliationRow({
             { transaction_installment_id: Number(matchId) },
             completeOptions(),
         );
-    };
-
-    const reportActionError = (errors: Record<string, string | string[]>) => {
-        const value =
-            errors.entry ?? errors.category_id ?? Object.values(errors)[0];
-        const message = Array.isArray(value) ? value[0] : value;
-
-        if (typeof message !== 'string' || message === '') {
-            return;
-        }
-
-        setActionError(message);
-        toast.error(message);
     };
 
     const createPayload = () => ({
