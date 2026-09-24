@@ -44,6 +44,7 @@ import type {
     ReconciliationCardOption,
     ReconciliationCategoryOption,
     ReconciliationPendingEntry,
+    ReconciliationRecurringCandidate,
 } from '@/types';
 
 const currency = new Intl.NumberFormat('pt-BR', {
@@ -150,6 +151,22 @@ function candidateOptionLabel(candidate: ReconciliationCandidate): string {
     return parts.join(' · ');
 }
 
+function recurringCandidateOptionLabel(
+    candidate: ReconciliationRecurringCandidate,
+): string {
+    return [
+        candidate.recurrence_description,
+        candidate.payee_name &&
+        candidate.payee_name !== candidate.recurrence_description
+            ? candidate.payee_name
+            : null,
+        formatReconciliationDate(candidate.occurrence_date),
+        `previsto ${currency.format(Number(candidate.planned_amount))}`,
+    ]
+        .filter((part): part is string => Boolean(part))
+        .join(' · ');
+}
+
 function visitOptions() {
     return {
         preserveScroll: true,
@@ -189,12 +206,26 @@ export function ReconciliationRow({
         ReconciliationCandidate[]
     >([]);
     const [refundLoading, setRefundLoading] = useState(false);
+    const [recurrenceCandidates, setRecurrenceCandidates] = useState<
+        ReconciliationRecurringCandidate[]
+    >([]);
+    const [recurrenceLoading, setRecurrenceLoading] = useState(false);
+    const [recurrenceLoaded, setRecurrenceLoaded] = useState(false);
+    const [recurrenceQuery, setRecurrenceQuery] = useState('');
+    const [recurrenceTransactionId, setRecurrenceTransactionId] = useState<
+        number | null
+    >(null);
     const availableCandidates = refundMode
         ? refundCandidates
         : entry.candidates;
     const selectedCandidate = availableCandidates.find(
         (candidate) => candidateMatchId(entry, candidate) === matchId,
     );
+    const selectedRecurringCandidate =
+        recurrenceCandidates.find(
+            (candidate) =>
+                candidate.transaction_id === recurrenceTransactionId,
+        ) ?? null;
     const outflow = isOutflow(entry);
     const categoryType = outflow ? 'expense' : 'income';
     const parents = useMemo(
@@ -263,6 +294,11 @@ export function ReconciliationRow({
         setRefundMode(false);
         setRefundCandidates([]);
         setRefundLoading(false);
+        setRecurrenceCandidates([]);
+        setRecurrenceLoading(false);
+        setRecurrenceLoaded(false);
+        setRecurrenceQuery('');
+        setRecurrenceTransactionId(null);
         const nextSuggestion = entry.candidates.find(
             (candidate) => candidate.is_suggestion,
         );
@@ -609,6 +645,80 @@ export function ReconciliationRow({
         setActionError(null);
         setMatchId(
             nextSuggestion ? candidateMatchId(entry, nextSuggestion) : '',
+        );
+    };
+
+    const loadRecurrenceCandidates = async () => {
+        if (
+            recurrenceLoaded ||
+            recurrenceLoading ||
+            entry.kind !== 'statement' ||
+            entry.is_reconciled ||
+            entry.is_ignored
+        ) {
+            return;
+        }
+
+        setActionError(null);
+        setRecurrenceLoading(true);
+
+        try {
+            const response = await fetch(
+                `/conciliacao/${entry.id}/recorrencias`,
+                {
+                    headers: {
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                },
+            );
+
+            if (!response.ok) {
+                throw new Error('Falha ao buscar recorrências.');
+            }
+
+            const payload = (await response.json()) as {
+                candidates?: ReconciliationRecurringCandidate[];
+            };
+            const candidates = Array.isArray(payload.candidates)
+                ? payload.candidates
+                : [];
+
+            setRecurrenceCandidates(candidates);
+            setRecurrenceLoaded(true);
+        } catch {
+            setActionError(
+                'Não foi possível carregar os lançamentos recorrentes pendentes.',
+            );
+        } finally {
+            setRecurrenceLoading(false);
+        }
+    };
+
+    const chooseRecurrence = (value: string) => {
+        setRecurrenceQuery(value);
+        const candidate = recurrenceCandidates.find(
+            (item) => recurringCandidateOptionLabel(item) === value,
+        );
+        setRecurrenceTransactionId(candidate?.transaction_id ?? null);
+    };
+
+    const conciliateRecurrence = () => {
+        if (recurrenceTransactionId === null) {
+            return;
+        }
+
+        setActionError(null);
+        router.post(
+            listingUrl(
+                BankReconciliationController.recurrence.url(entry.id),
+                query,
+            ),
+            { financial_transaction_id: recurrenceTransactionId },
+            {
+                ...completeOptions(),
+                onError: reportActionError,
+            },
         );
     };
 
@@ -1128,6 +1238,97 @@ export function ReconciliationRow({
                             </SelectContent>
                         </Select>
                     </label>
+                    {entry.kind === 'statement' &&
+                        !entry.is_reconciled &&
+                        !entry.is_ignored &&
+                        !showInvoicePayment &&
+                        !showRefund &&
+                        !isTransferLine && (
+                            <div className="grid min-w-0 gap-1 sm:col-span-2">
+                                <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
+                                    Vincular a lançamento recorrente
+                                </span>
+                                <div className="flex flex-col gap-2 sm:flex-row">
+                                    <Input
+                                        list={`recurrence-options-${entry.id}`}
+                                        value={recurrenceQuery}
+                                        disabled={recurrenceLoading}
+                                        onFocus={loadRecurrenceCandidates}
+                                        onChange={(event) =>
+                                            chooseRecurrence(event.target.value)
+                                        }
+                                        placeholder={
+                                            recurrenceLoading
+                                                ? 'Buscando recorrências...'
+                                                : 'Pesquisar recorrência por nome'
+                                        }
+                                        className="h-8"
+                                    />
+                                    <datalist
+                                        id={`recurrence-options-${entry.id}`}
+                                    >
+                                        {recurrenceCandidates.map(
+                                            (candidate) => (
+                                                <option
+                                                    key={
+                                                        candidate.transaction_id
+                                                    }
+                                                    value={recurringCandidateOptionLabel(
+                                                        candidate,
+                                                    )}
+                                                />
+                                            ),
+                                        )}
+                                    </datalist>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={
+                                            recurrenceTransactionId === null
+                                        }
+                                        onClick={conciliateRecurrence}
+                                    >
+                                        <Link2 />
+                                        Vincular e ajustar
+                                    </Button>
+                                </div>
+                                {selectedRecurringCandidate && (
+                                    <p className="text-muted-foreground text-xs">
+                                        Previsto{' '}
+                                        {currency.format(
+                                            Number(
+                                                selectedRecurringCandidate.planned_amount,
+                                            ),
+                                        )}{' '}
+                                        · extrato{' '}
+                                        {currency.format(
+                                            Number(
+                                                selectedRecurringCandidate.actual_amount,
+                                            ),
+                                        )}{' '}
+                                        · diferença{' '}
+                                        {currency.format(
+                                            Number(
+                                                selectedRecurringCandidate.difference_amount,
+                                            ),
+                                        )}{' '}
+                                        · vencimento{' '}
+                                        {formatReconciliationDate(
+                                            selectedRecurringCandidate.occurrence_date,
+                                        )}
+                                    </p>
+                                )}
+                                {recurrenceLoaded &&
+                                    recurrenceCandidates.length === 0 && (
+                                        <p className="text-muted-foreground text-xs">
+                                            Nenhuma recorrência pendente desta
+                                            conta foi encontrada próxima a esta
+                                            data.
+                                        </p>
+                                    )}
+                            </div>
+                        )}
                     {canRegisterPendingCardPayment && (
                         <label className="grid min-w-0 gap-1">
                             <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
