@@ -27,6 +27,7 @@ use App\Services\Finance\ExpenseCategoryMatcher;
 use App\Services\Finance\ExpenseRefundService;
 use App\Services\Finance\FinancialEntryService;
 use App\Services\Finance\TransferService;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -640,6 +641,175 @@ final class ReconciliationEntryService
         });
     }
 
+    /**
+     * @return list<array{
+     *     transaction_id: int,
+     *     recurrence_id: int,
+     *     recurrence_description: string,
+     *     occurrence_date: string,
+     *     planned_amount: string,
+     *     actual_amount: string,
+     *     difference_amount: string,
+     *     payee_name: string|null
+     * }>
+     */
+    public function recurringBankCandidates(
+        Workspace $workspace,
+        BankStatementEntry $entry,
+    ): array {
+        $this->assertSameWorkspace($workspace, $entry->workspace_id);
+        $this->guardPendingBankEntry($entry);
+
+        $entryCents = $this->interpreter->moneyToCents($entry->amount);
+
+        if ($entryCents === 0) {
+            return [];
+        }
+
+        $type = $entryCents < 0
+            ? FinancialTransactionType::Expense
+            : FinancialTransactionType::Income;
+        $occurredOn = CarbonImmutable::parse($entry->occurred_on->toDateString());
+        $from = $occurredOn->subDays(180)->toDateString();
+        $through = $occurredOn->addDays(180)->toDateString();
+        $actualCents = abs($entryCents);
+
+        return $workspace->financialTransactions()
+            ->whereNotNull('financial_recurrence_id')
+            ->where('status', FinancialTransactionStatus::Planned->value)
+            ->where('type', $type->value)
+            ->where('financial_account_id', $entry->financial_account_id)
+            ->whereNull('credit_card_id')
+            ->where(function ($query) use ($from, $through): void {
+                $query
+                    ->whereBetween('due_date', [$from, $through])
+                    ->orWhere(function ($fallback) use ($from, $through): void {
+                        $fallback
+                            ->whereNull('due_date')
+                            ->whereBetween('transaction_date', [$from, $through]);
+                    });
+            })
+            ->with('recurrence:id,description,amount')
+            ->get()
+            ->sortBy(function (FinancialTransaction $transaction) use ($occurredOn): int {
+                $scheduled = $transaction->due_date ?? $transaction->transaction_date;
+
+                return (int) abs($occurredOn->diffInDays($scheduled, false));
+            })
+            ->unique('financial_recurrence_id')
+            ->take(50)
+            ->map(function (FinancialTransaction $transaction) use ($actualCents): array {
+                $plannedCents = abs($this->interpreter->moneyToCents((string) $transaction->amount));
+                $scheduled = $transaction->due_date ?? $transaction->transaction_date;
+
+                return [
+                    'transaction_id' => $transaction->id,
+                    'recurrence_id' => (int) $transaction->financial_recurrence_id,
+                    'recurrence_description' => $transaction->recurrence?->description
+                        ?? $transaction->description,
+                    'occurrence_date' => $scheduled->toDateString(),
+                    'planned_amount' => $this->moneyFromCents($plannedCents),
+                    'actual_amount' => $this->moneyFromCents($actualCents),
+                    'difference_amount' => $this->moneyFromCents($actualCents - $plannedCents),
+                    'payee_name' => $transaction->payee_name,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    public function reconcileRecurringBankEntry(
+        Workspace $workspace,
+        BankStatementEntry $entry,
+        User $user,
+        int $transactionId,
+    ): BankStatementEntry {
+        $this->assertSameWorkspace($workspace, $entry->workspace_id);
+        $this->guardPendingBankEntry($entry);
+
+        $entryCents = $this->interpreter->moneyToCents($entry->amount);
+
+        if ($entryCents === 0) {
+            throw ValidationException::withMessages([
+                'financial_transaction_id' => 'Não é possível vincular uma recorrência a um movimento de valor zero.',
+            ]);
+        }
+
+        $type = $entryCents < 0
+            ? FinancialTransactionType::Expense
+            : FinancialTransactionType::Income;
+        $transaction = $workspace->financialTransactions()->find($transactionId);
+        $scheduled = $transaction instanceof FinancialTransaction
+            ? ($transaction->due_date ?? $transaction->transaction_date)
+            : null;
+        $days = $scheduled === null
+            ? null
+            : (int) abs($entry->occurred_on->diffInDays($scheduled, false));
+
+        if (
+            ! $transaction instanceof FinancialTransaction
+            || $transaction->financial_recurrence_id === null
+            || $transaction->status !== FinancialTransactionStatus::Planned
+            || $transaction->type !== $type
+            || $transaction->financial_account_id !== $entry->financial_account_id
+            || $transaction->credit_card_id !== null
+            || $days === null
+            || $days > 180
+        ) {
+            throw ValidationException::withMessages([
+                'financial_transaction_id' => 'Selecione uma ocorrência recorrente pendente desta conta e com data próxima.',
+            ]);
+        }
+
+        return DB::transaction(function () use (
+            $workspace,
+            $entry,
+            $user,
+            $transaction,
+        ): BankStatementEntry {
+            $actualAmount = $this->interpreter->unsignedAmount($entry->amount);
+            $actualCents = $this->interpreter->moneyToCents($actualAmount);
+            $plannedCents = $this->interpreter->moneyToCents((string) $transaction->amount);
+
+            if ($actualCents !== $plannedCents) {
+                $transaction = $this->entryService->update($transaction, [
+                    'type' => $transaction->type->value,
+                    'transaction_date' => $transaction->transaction_date->toDateString(),
+                    'competence_date' => $transaction->competence_date?->toDateString()
+                        ?? $transaction->transaction_date->toDateString(),
+                    'description' => $transaction->description,
+                    'amount' => $actualAmount,
+                    'financial_account_id' => $transaction->financial_account_id,
+                    'credit_card_id' => null,
+                    'category_id' => $transaction->category_id,
+                    'family_member_id' => $transaction->family_member_id,
+                    'payment_method' => $transaction->payment_method?->value,
+                    'payee_name' => $transaction->payee_name,
+                    'payment_instructions' => $transaction->payment_instructions,
+                    'due_date' => $transaction->due_date?->toDateString(),
+                    'settled_on' => null,
+                    'status' => FinancialTransactionStatus::Planned->value,
+                    'notes' => $transaction->notes,
+                ]);
+            }
+
+            $settled = $this->entryService->settle(
+                $transaction,
+                $entry->occurred_on->toDateString(),
+            );
+            $movement = $settled->accountMovements()
+                ->where('financial_account_id', $entry->financial_account_id)
+                ->firstOrFail();
+
+            return $this->bankReconciliation->reconcile(
+                $workspace,
+                $entry->refresh(),
+                $movement,
+                $user,
+            );
+        });
+    }
+
     public function createCardTransaction(
         Workspace $workspace,
         CardStatementEntry $entry,
@@ -852,6 +1022,16 @@ final class ReconciliationEntryService
     /**
      * @return Collection<int, AccountMovement>
      */
+    private function moneyFromCents(int $cents): string
+    {
+        $negative = $cents < 0;
+        $absolute = abs($cents);
+        $whole = intdiv($absolute, 100);
+        $decimal = $absolute % 100;
+
+        return ($negative ? '-' : '').$whole.'.'.str_pad((string) $decimal, 2, '0', STR_PAD_LEFT);
+    }
+
     private function signedTransactionAmount(FinancialTransaction $transaction): string
     {
         $amount = ltrim((string) $transaction->amount, '-');
