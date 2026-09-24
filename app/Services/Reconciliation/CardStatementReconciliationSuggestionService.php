@@ -2,7 +2,9 @@
 
 namespace App\Services\Reconciliation;
 
+use App\Enums\FinancialTransactionStatus;
 use App\Models\CardStatementEntry;
+use App\Models\FinancialTransaction;
 use App\Models\TransactionInstallment;
 use Illuminate\Support\Collection;
 
@@ -70,7 +72,9 @@ final class CardStatementReconciliationSuggestionService
                 };
 
                 return [
+                    'kind' => 'installment',
                     'installment_id' => $installment->id,
+                    'recurrence_transaction_id' => null,
                     'transaction_id' => $transaction->id,
                     'transaction_date' => $transaction->transaction_date->toDateString(),
                     'description' => $transaction->description,
@@ -82,12 +86,91 @@ final class CardStatementReconciliationSuggestionService
                     'confidence_label' => $confidenceLabel,
                     'date_distance' => $dateDistance,
                     'is_suggestion' => $score >= 75,
+                    'is_recurrence_forecast' => false,
+                    'amount_difference' => '0.00',
                 ];
             })
             ->sort(function (array $left, array $right): int {
                 return [$right['score'], $left['date_distance'], $right['installment_id']]
                     <=> [$left['score'], $right['date_distance'], $left['installment_id']];
             })
+            ->take(20)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, FinancialTransaction>  $transactions
+     * @return array<int, array<string, mixed>>
+     */
+    public function recurrenceCandidates(
+        CardStatementEntry $entry,
+        Collection $transactions,
+    ): array {
+        $entryCents = $this->moneyToCents($entry->amount);
+
+        return $transactions
+            ->filter(function (FinancialTransaction $transaction) use ($entry, $entryCents): bool {
+                if (
+                    $transaction->status !== FinancialTransactionStatus::Planned
+                    || $transaction->financial_recurrence_id === null
+                    || $transaction->credit_card_id !== $entry->credit_card_id
+                    || $transaction->installments()->exists()
+                ) {
+                    return false;
+                }
+
+                $expectedCents = $this->moneyToCents($transaction->amount);
+                $tolerance = min(5000, max(500, (int) round($expectedCents * 0.10)));
+
+                return abs($entryCents - $expectedCents) <= $tolerance;
+            })
+            ->map(function (FinancialTransaction $transaction) use ($entry, $entryCents): array {
+                $expectedCents = $this->moneyToCents($transaction->amount);
+                $difference = abs($entryCents - $expectedCents);
+                $dateDistance = (int) abs(
+                    $entry->purchased_on->diffInDays($transaction->transaction_date, false),
+                );
+                $descriptionScore = (int) round(
+                    $this->descriptionSimilarity($entry->description, $transaction->description) * 30,
+                );
+                $amountScore = $difference === 0
+                    ? 45
+                    : max(15, 45 - (int) round(($difference / max(1, $expectedCents)) * 300));
+                $dateScore = match (true) {
+                    $dateDistance === 0 => 20,
+                    $dateDistance <= 3 => 15,
+                    $dateDistance <= 7 => 10,
+                    $dateDistance <= 15 => 5,
+                    default => 0,
+                };
+                $score = min(100, $amountScore + $dateScore + $descriptionScore);
+                [$confidence, $confidenceLabel] = match (true) {
+                    $score >= 85 => ['high', 'Alta confiança'],
+                    $score >= 70 => ['medium', 'Média confiança'],
+                    default => ['low', 'Conferência manual'],
+                };
+
+                return [
+                    'kind' => 'recurrence',
+                    'installment_id' => null,
+                    'recurrence_transaction_id' => $transaction->id,
+                    'transaction_id' => $transaction->id,
+                    'transaction_date' => $transaction->transaction_date->toDateString(),
+                    'description' => $transaction->description,
+                    'amount' => $transaction->amount,
+                    'installment_number' => 1,
+                    'total_installments' => 1,
+                    'score' => $score,
+                    'confidence' => $confidence,
+                    'confidence_label' => $confidenceLabel,
+                    'date_distance' => $dateDistance,
+                    'is_suggestion' => $score >= 70,
+                    'is_recurrence_forecast' => true,
+                    'amount_difference' => $this->centsToMoney($entryCents - $expectedCents),
+                ];
+            })
+            ->sortByDesc('score')
             ->take(20)
             ->values()
             ->all();
@@ -131,6 +214,15 @@ final class CardStatementReconciliationSuggestionService
         $value = preg_replace('/[^a-z0-9]+/u', ' ', $value) ?? $value;
 
         return trim(preg_replace('/\s+/u', ' ', $value) ?? $value);
+    }
+
+    private function centsToMoney(int $cents): string
+    {
+        $negative = $cents < 0;
+        $absolute = abs($cents);
+        $formatted = sprintf('%d.%02d', intdiv($absolute, 100), $absolute % 100);
+
+        return $negative ? '-'.$formatted : $formatted;
     }
 
     private function moneyToCents(string $amount): int
