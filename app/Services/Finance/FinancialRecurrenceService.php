@@ -14,7 +14,8 @@ use Illuminate\Support\Facades\DB;
 
 class FinancialRecurrenceService
 {
-    public const GENERATION_HORIZON_MONTHS = 12;
+    public const GENERATION_HORIZON_DAYS = 90;
+    public const CARD_GENERATION_HORIZON_MONTHS = 12;
 
     public function __construct(
         private readonly FinancialEntryService $entryService,
@@ -37,7 +38,7 @@ class FinancialRecurrenceService
             $this->prepareCurrentDueGeneration($recurrence, $alreadySettled, $today);
             $this->generate(
                 $recurrence->refresh(),
-                $today->addMonths(self::GENERATION_HORIZON_MONTHS),
+                $this->generationThrough($recurrence->refresh(), $today),
                 $alreadySettled,
             );
 
@@ -76,7 +77,7 @@ class FinancialRecurrenceService
                 );
                 $this->generate(
                     $recurrence->refresh(),
-                    $today->addMonths(self::GENERATION_HORIZON_MONTHS),
+                    $this->generationThrough($recurrence->refresh(), $today),
                     $alreadySettled,
                 );
                 $this->settleCurrentDueOccurrence(
@@ -116,7 +117,7 @@ class FinancialRecurrenceService
                 $today = CarbonImmutable::today();
                 $this->generate(
                     $recurrence->refresh(),
-                    $today->addMonths(self::GENERATION_HORIZON_MONTHS),
+                    $this->generationThrough($recurrence->refresh(), $today),
                 );
             }
 
@@ -126,17 +127,21 @@ class FinancialRecurrenceService
 
     public function generateActive(?CarbonImmutable $through = null): int
     {
-        $through ??= CarbonImmutable::today()->addMonths(self::GENERATION_HORIZON_MONTHS);
         $generated = 0;
+        $today = CarbonImmutable::today();
 
         FinancialRecurrence::query()
             ->where('is_active', true)
             ->orderBy('id')
             ->each(function (FinancialRecurrence $recurrence) use (
                 $through,
+                $today,
                 &$generated,
             ): void {
-                $generated += $this->generate($recurrence, $through);
+                $generated += $this->generate(
+                    $recurrence,
+                    $through ?? $this->generationThrough($recurrence, $today),
+                );
             });
 
         return $generated;
@@ -146,17 +151,21 @@ class FinancialRecurrenceService
         Workspace $workspace,
         ?CarbonImmutable $through = null,
     ): int {
-        $through ??= CarbonImmutable::today()->addMonths(self::GENERATION_HORIZON_MONTHS);
         $generated = 0;
+        $today = CarbonImmutable::today();
 
         $workspace->financialRecurrences()
             ->where('is_active', true)
             ->orderBy('id')
             ->each(function (FinancialRecurrence $recurrence) use (
                 $through,
+                $today,
                 &$generated,
             ): void {
-                $generated += $this->generate($recurrence, $through);
+                $generated += $this->generate(
+                    $recurrence,
+                    $through ?? $this->generationThrough($recurrence, $today),
+                );
             });
 
         return $generated;
@@ -518,6 +527,15 @@ class FinancialRecurrenceService
         return $occurrence->greaterThan($today)
             ? $today->toDateString()
             : $occurrence->toDateString();
+    }
+
+    private function generationThrough(
+        FinancialRecurrence $recurrence,
+        CarbonImmutable $today,
+    ): CarbonImmutable {
+        return $this->usesCreditCard($recurrence)
+            ? $today->addMonths(self::CARD_GENERATION_HORIZON_MONTHS)
+            : $today->addDays(self::GENERATION_HORIZON_DAYS);
     }
 
     private function usesCreditCard(FinancialRecurrence $recurrence): bool
