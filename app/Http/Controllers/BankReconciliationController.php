@@ -431,6 +431,30 @@ class BankReconciliationController extends Controller
         return to_route('reconciliation.index', $this->filterQuery($request));
     }
 
+    public function recurrence(
+        StoreBankReconciliationRequest $request,
+        int $entry,
+    ): RedirectResponse {
+        $workspace = $this->workspace();
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $statementEntry = $this->findEntry($workspace, $entry);
+
+        $this->entryActions->reconcileRecurringBankEntry(
+            $workspace,
+            $statementEntry,
+            $user,
+            $request->integer('financial_transaction_id'),
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Recorrência vinculada e ajustada pelo valor real do extrato.',
+        ]);
+
+        return to_route('reconciliation.index', $this->filterQuery($request));
+    }
+
     public function invoicePayment(
         StoreReconciliationInvoicePaymentRequest $request,
         int $entry,
@@ -455,6 +479,19 @@ class BankReconciliationController extends Controller
         ]);
 
         return to_route('reconciliation.index', $this->filterQuery($request));
+    }
+
+    public function recurrenceCandidates(int $entry): JsonResponse
+    {
+        $workspace = $this->workspace();
+        $statementEntry = $this->findEntry($workspace, $entry);
+
+        return response()->json([
+            'candidates' => $this->entryActions->recurringBankCandidates(
+                $workspace,
+                $statementEntry,
+            ),
+        ]);
     }
 
     public function refundCandidates(int $entry): JsonResponse
