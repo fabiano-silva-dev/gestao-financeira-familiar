@@ -122,8 +122,12 @@ final class CardStatementReconciliationSuggestionService
 
                 $expectedCents = $this->moneyToCents($transaction->amount);
                 $tolerance = min(5000, max(500, (int) round($expectedCents * 0.10)));
+                $dateDistance = (int) abs(
+                    $entry->purchased_on->diffInDays($transaction->transaction_date, false),
+                );
 
-                return abs($entryCents - $expectedCents) <= $tolerance;
+                return $dateDistance <= 15
+                    && abs($entryCents - $expectedCents) <= $tolerance;
             })
             ->map(function (FinancialTransaction $transaction) use ($entry, $entryCents): array {
                 $expectedCents = $this->moneyToCents($transaction->amount);
