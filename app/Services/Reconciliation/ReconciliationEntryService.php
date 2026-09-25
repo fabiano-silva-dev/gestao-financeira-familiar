@@ -650,7 +650,9 @@ final class ReconciliationEntryService
      *     planned_amount: string,
      *     actual_amount: string,
      *     difference_amount: string,
-     *     payee_name: string|null
+     *     payee_name: string|null,
+     *     planned_account_id: int|null,
+     *     planned_account_name: string|null
      * }>
      */
     public function recurringBankCandidates(
@@ -678,7 +680,6 @@ final class ReconciliationEntryService
             ->whereNotNull('financial_recurrence_id')
             ->where('status', FinancialTransactionStatus::Planned->value)
             ->where('type', $type->value)
-            ->where('financial_account_id', $entry->financial_account_id)
             ->whereNull('credit_card_id')
             ->where(function ($query) use ($from, $through): void {
                 $query
@@ -689,7 +690,10 @@ final class ReconciliationEntryService
                             ->whereBetween('transaction_date', [$from, $through]);
                     });
             })
-            ->with('recurrence:id,description,amount')
+            ->with([
+                'recurrence:id,description,amount',
+                'account:id,name',
+            ])
             ->get()
             ->sortBy(function (FinancialTransaction $transaction) use ($occurredOn): int {
                 $scheduled = $transaction->due_date ?? $transaction->transaction_date;
@@ -712,6 +716,8 @@ final class ReconciliationEntryService
                     'actual_amount' => $this->moneyFromCents($actualCents),
                     'difference_amount' => $this->moneyFromCents($actualCents - $plannedCents),
                     'payee_name' => $transaction->payee_name,
+                    'planned_account_id' => $transaction->financial_account_id,
+                    'planned_account_name' => $transaction->account?->name,
                 ];
             })
             ->values()
@@ -751,13 +757,12 @@ final class ReconciliationEntryService
             || $transaction->financial_recurrence_id === null
             || $transaction->status !== FinancialTransactionStatus::Planned
             || $transaction->type !== $type
-            || $transaction->financial_account_id !== $entry->financial_account_id
             || $transaction->credit_card_id !== null
             || $days === null
             || $days > 180
         ) {
             throw ValidationException::withMessages([
-                'financial_transaction_id' => 'Selecione uma ocorrência recorrente pendente desta conta e com data próxima.',
+                'financial_transaction_id' => 'Selecione uma ocorrência recorrente pendente, do mesmo tipo e com data próxima.',
             ]);
         }
 
@@ -771,7 +776,9 @@ final class ReconciliationEntryService
             $actualCents = $this->interpreter->moneyToCents($actualAmount);
             $plannedCents = $this->interpreter->moneyToCents((string) $transaction->amount);
 
-            if ($actualCents !== $plannedCents) {
+            $accountChanged = $transaction->financial_account_id !== $entry->financial_account_id;
+
+            if ($actualCents !== $plannedCents || $accountChanged) {
                 $transaction = $this->entryService->update($transaction, [
                     'type' => $transaction->type->value,
                     'transaction_date' => $transaction->transaction_date->toDateString(),
@@ -779,7 +786,7 @@ final class ReconciliationEntryService
                         ?? $transaction->transaction_date->toDateString(),
                     'description' => $transaction->description,
                     'amount' => $actualAmount,
-                    'financial_account_id' => $transaction->financial_account_id,
+                    'financial_account_id' => $entry->financial_account_id,
                     'credit_card_id' => null,
                     'category_id' => $transaction->category_id,
                     'family_member_id' => $transaction->family_member_id,
