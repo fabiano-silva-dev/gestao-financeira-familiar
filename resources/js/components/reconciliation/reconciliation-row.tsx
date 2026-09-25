@@ -161,6 +161,9 @@ function recurringCandidateOptionLabel(
             ? candidate.payee_name
             : null,
         formatReconciliationDate(candidate.occurrence_date),
+        candidate.planned_account_name
+            ? `conta prevista ${candidate.planned_account_name}`
+            : null,
         `previsto ${currency.format(Number(candidate.planned_amount))}`,
     ]
         .filter((part): part is string => Boolean(part))
@@ -1310,6 +1313,15 @@ export function ReconciliationRow({
                                         · vencimento{' '}
                                         {formatReconciliationDate(
                                             selectedRecurringCandidate.occurrence_date,
+                                        )}
+                                        {selectedRecurringCandidate.planned_account_name && (
+                                            <>
+                                                {' '}
+                                                · conta prevista{' '}
+                                                {
+                                                    selectedRecurringCandidate.planned_account_name
+                                                }
+                                            </>
                                         )}
                                     </p>
                                 )}
