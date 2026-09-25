@@ -344,12 +344,17 @@ class BankReconciliationTest extends TestCase
         $this->assertDatabaseCount('financial_transactions', 1);
     }
 
-    public function test_user_can_link_bank_entry_to_recurring_occurrence_and_adjust_only_that_occurrence(): void
+    public function test_user_can_link_bank_entry_to_recurring_occurrence_from_another_account_and_adjust_only_that_occurrence(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-09-01 12:00:00'));
 
         [$user, $workspace] = $this->userAndWorkspace();
-        $account = FinancialAccount::factory()->for($workspace)->create();
+        $plannedAccount = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Conta prevista',
+        ]);
+        $actualAccount = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Conta do extrato',
+        ]);
         $category = Category::factory()->for($workspace)->create([
             'name' => 'Moradia',
             'type' => CategoryType::Expense,
@@ -358,7 +363,7 @@ class BankReconciliationTest extends TestCase
             'type' => FinancialTransactionType::Expense->value,
             'description' => 'Condomínio',
             'amount' => '650.00',
-            'financial_account_id' => $account->id,
+            'financial_account_id' => $plannedAccount->id,
             'credit_card_id' => null,
             'category_id' => $category->id,
             'family_member_id' => null,
@@ -367,23 +372,23 @@ class BankReconciliationTest extends TestCase
             'payment_instructions' => null,
             'frequency' => 'monthly',
             'interval' => 1,
-            'starts_on' => '2026-09-10',
-            'generation_started_on' => '2026-09-10',
+            'starts_on' => '2026-09-07',
+            'generation_started_on' => '2026-09-07',
             'ends_on' => null,
             'already_settled' => false,
             'notes' => null,
         ]);
         $occurrence = $recurrence->transactions()
-            ->whereDate('recurrence_occurrence_date', '2026-09-10')
+            ->whereDate('recurrence_occurrence_date', '2026-09-07')
             ->firstOrFail();
         $nextOccurrence = $recurrence->transactions()
-            ->whereDate('recurrence_occurrence_date', '2026-10-10')
+            ->whereDate('recurrence_occurrence_date', '2026-10-07')
             ->firstOrFail();
         $entry = $this->bankEntry(
             $workspace,
-            $account,
+            $actualAccount,
             '-673.42',
-            '2026-09-12',
+            '2026-09-04',
             'PIX CONDOMINIO',
         );
         $request = $this->actingAs($user)
@@ -393,6 +398,9 @@ class BankReconciliationTest extends TestCase
             ->assertOk()
             ->assertJsonPath('candidates.0.transaction_id', $occurrence->id)
             ->assertJsonPath('candidates.0.recurrence_description', 'Condomínio')
+            ->assertJsonPath('candidates.0.occurrence_date', '2026-09-07')
+            ->assertJsonPath('candidates.0.planned_account_id', $plannedAccount->id)
+            ->assertJsonPath('candidates.0.planned_account_name', 'Conta prevista')
             ->assertJsonPath('candidates.0.planned_amount', '650.00')
             ->assertJsonPath('candidates.0.actual_amount', '673.42')
             ->assertJsonPath('candidates.0.difference_amount', '23.42');
@@ -402,6 +410,7 @@ class BankReconciliationTest extends TestCase
         ])->assertSessionHasErrors('financial_transaction_id');
 
         $this->assertFalse($entry->fresh()->is_reconciled);
+        $this->assertSame($plannedAccount->id, $occurrence->fresh()->financial_account_id);
         $this->assertSame('650.00', $occurrence->fresh()->amount);
 
         $request->post(route('reconciliation.recurrence', $entry), [
@@ -417,17 +426,21 @@ class BankReconciliationTest extends TestCase
         $movement = $entry->accountMovement;
 
         $this->assertTrue($entry->is_reconciled);
+        $this->assertSame($plannedAccount->id, $recurrence->financial_account_id);
         $this->assertSame('650.00', $recurrence->amount);
+        $this->assertSame($actualAccount->id, $occurrence->financial_account_id);
         $this->assertSame('673.42', $occurrence->amount);
         $this->assertTrue($occurrence->recurrence_is_overridden);
         $this->assertSame(FinancialTransactionStatus::Confirmed, $occurrence->status);
-        $this->assertSame('2026-09-12', $occurrence->settled_on?->toDateString());
-        $this->assertSame('2026-09-10', $occurrence->transaction_date->toDateString());
+        $this->assertSame('2026-09-04', $occurrence->settled_on?->toDateString());
+        $this->assertSame('2026-09-07', $occurrence->transaction_date->toDateString());
+        $this->assertSame($plannedAccount->id, $nextOccurrence->financial_account_id);
         $this->assertSame('650.00', $nextOccurrence->amount);
         $this->assertSame(FinancialTransactionStatus::Planned, $nextOccurrence->status);
         $this->assertFalse($nextOccurrence->recurrence_is_overridden);
         $this->assertSame('-673.42', $movement?->amount);
-        $this->assertSame('2026-09-12', $movement?->occurred_on->toDateString());
+        $this->assertSame($actualAccount->id, $movement?->financial_account_id);
+        $this->assertSame('2026-09-04', $movement?->occurred_on->toDateString());
         $this->assertTrue((bool) $movement?->is_reconciled);
     }
 
