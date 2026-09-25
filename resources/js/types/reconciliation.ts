@@ -65,6 +65,8 @@ export type ReconciliationRecurringCandidate = {
     actual_amount: string;
     difference_amount: string;
     payee_name: string | null;
+    planned_account_id: number | null;
+    planned_account_name: string | null;
 };
 
 export type ReconciliationPendingEntry = {
