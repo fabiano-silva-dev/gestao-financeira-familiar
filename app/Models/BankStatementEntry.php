@@ -14,6 +14,8 @@ use Illuminate\Support\Carbon;
  * @property bool $is_ignored
  * @property Carbon|null $ignored_at
  * @property string|null $suggested_payee_name
+ * @property string|null $manual_action_type
+ * @property int|null $manual_counterpart_account_id
  * @property string|null $automation_level_applied
  * @property string|null $automation_result
  * @property int|null $automation_score
@@ -46,6 +48,8 @@ use Illuminate\Support\Carbon;
     'ignored_at',
     'suggested_payee_name',
     'suggested_category_id',
+    'manual_action_type',
+    'manual_counterpart_account_id',
     'matched_classification_rule_id',
     'automation_level_applied',
     'automation_result',
@@ -97,6 +101,12 @@ class BankStatementEntry extends Model
     public function suggestedCategory(): BelongsTo
     {
         return $this->belongsTo(Category::class, 'suggested_category_id');
+    }
+
+    /** @return BelongsTo<FinancialAccount, $this> */
+    public function manualCounterpartAccount(): BelongsTo
+    {
+        return $this->belongsTo(FinancialAccount::class, 'manual_counterpart_account_id');
     }
 
     /** @return array<string, string> */

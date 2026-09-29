@@ -273,12 +273,16 @@ export function ReconciliationRow({
         '';
     const [payee, setPayee] = useState(displayedPayee);
     const [showTransfer, setShowTransfer] = useState(
-        entry.kind === 'statement' && entry.matcher_action_type === 'transfer',
+        entry.kind === 'statement' &&
+            (entry.manual_action_type === 'transfer' ||
+                entry.matcher_action_type === 'transfer'),
     );
     const [counterpartId, setCounterpartId] = useState(
-        entry.matcher_counterpart_account_id
-            ? String(entry.matcher_counterpart_account_id)
-            : '',
+        entry.manual_counterpart_account_id
+            ? String(entry.manual_counterpart_account_id)
+            : entry.matcher_counterpart_account_id
+              ? String(entry.matcher_counterpart_account_id)
+              : '',
     );
     const [cardPaymentCardId, setCardPaymentCardId] = useState(
         cardOptions.length === 1 ? String(cardOptions[0].id) : '',
@@ -327,12 +331,15 @@ export function ReconciliationRow({
         setSelectedSubId(nextSub ? String(nextSub) : '');
         setShowTransfer(
             entry.kind === 'statement' &&
-                entry.matcher_action_type === 'transfer',
+                (entry.manual_action_type === 'transfer' ||
+                    entry.matcher_action_type === 'transfer'),
         );
         setCounterpartId(
-            entry.matcher_counterpart_account_id
-                ? String(entry.matcher_counterpart_account_id)
-                : '',
+            entry.manual_counterpart_account_id
+                ? String(entry.manual_counterpart_account_id)
+                : entry.matcher_counterpart_account_id
+                  ? String(entry.matcher_counterpart_account_id)
+                  : '',
         );
         setCardPaymentCardId(
             cardOptions.length === 1 ? String(cardOptions[0].id) : '',
@@ -349,6 +356,8 @@ export function ReconciliationRow({
         entry.matcher_payee_name,
         entry.matcher_action_type,
         entry.matcher_counterpart_account_id,
+        entry.manual_action_type,
+        entry.manual_counterpart_account_id,
         entry.candidates,
         cardOptions,
     ]);
@@ -424,6 +433,8 @@ export function ReconciliationRow({
         selectedInvoice === null &&
         !entry.is_reconciled;
     const isTransferLine =
+        showTransfer ||
+        entry.manual_action_type === 'transfer' ||
         entry.is_likely_transfer ||
         entry.related_is_transfer ||
         entry.matcher_action_type === 'transfer';
@@ -653,7 +664,10 @@ export function ReconciliationRow({
 
     const reportActionError = (errors: Record<string, string | string[]>) => {
         const value =
-            errors.entry ?? errors.category_id ?? Object.values(errors)[0];
+            errors.entry ??
+            errors.counterpart_account_id ??
+            errors.category_id ??
+            Object.values(errors)[0];
         const message = Array.isArray(value) ? value[0] : value;
 
         if (typeof message !== 'string' || message === '') {
@@ -945,6 +959,25 @@ export function ReconciliationRow({
         );
     };
 
+    const rememberTransfer = (marked: boolean, accountId: string) => {
+        setActionError(null);
+        router.patch(
+            listingUrl(
+                BankReconciliationController.rememberTransfer.url(entry.id),
+                query,
+            ),
+            {
+                marked,
+                counterpart_account_id:
+                    accountId === '' ? null : Number(accountId),
+            },
+            {
+                ...visitOptions(),
+                onError: reportActionError,
+            },
+        );
+    };
+
     const markTransfer = () => {
         if (counterpartId === '') {
             return;
@@ -956,7 +989,10 @@ export function ReconciliationRow({
                 query,
             ),
             { counterpart_account_id: Number(counterpartId) },
-            completeOptions(),
+            {
+                ...completeOptions(),
+                onError: reportActionError,
+            },
         );
     };
 
@@ -1534,16 +1570,18 @@ export function ReconciliationRow({
                             <Link2 />
                             {showRefund ? 'Vincular como reembolso' : 'Conciliar'}
                         </Button>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={!canCreate}
-                            onClick={createEntry}
-                        >
-                            <Plus />
-                            Criar lançamento
-                        </Button>
+                        {!showTransfer && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={!canCreate}
+                                onClick={createEntry}
+                            >
+                                <Plus />
+                                Criar lançamento
+                            </Button>
+                        )}
                         {entry.kind === 'statement' &&
                             Number(entry.amount) > 0 &&
                             !showRefund && (
@@ -1568,7 +1606,8 @@ export function ReconciliationRow({
                                 Cancelar reembolso
                             </Button>
                         )}
-                        {needsCategory &&
+                        {!showTransfer &&
+                            needsCategory &&
                             !entry.is_reconciled &&
                             leafCategoryId === null &&
                             !selectedHasCategory && (
@@ -1604,11 +1643,12 @@ export function ReconciliationRow({
                                                 ? 'none'
                                                 : counterpartId
                                         }
-                                        onValueChange={(value) =>
-                                            setCounterpartId(
-                                                value === 'none' ? '' : value,
-                                            )
-                                        }
+                                        onValueChange={(value) => {
+                                            const next =
+                                                value === 'none' ? '' : value;
+                                            setCounterpartId(next);
+                                            rememberTransfer(true, next);
+                                        }}
                                     >
                                         <SelectTrigger
                                             size="sm"
@@ -1634,6 +1674,12 @@ export function ReconciliationRow({
                                             )}
                                         </SelectContent>
                                     </Select>
+                                    <p className="text-muted-foreground text-xs">
+                                        {entry.manual_action_type ===
+                                        'transfer'
+                                            ? 'Marcada como transferência e salva nesta linha.'
+                                            : 'A marcação fica salva nesta linha para o fechamento.'}
+                                    </p>
                                     <Button
                                         type="button"
                                         variant="secondary"
@@ -1641,15 +1687,33 @@ export function ReconciliationRow({
                                         disabled={counterpartId === ''}
                                         onClick={markTransfer}
                                     >
-                                        Confirmar transferência
+                                        Salvar como transferência
                                     </Button>
+                                    {entry.manual_action_type ===
+                                        'transfer' && (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => {
+                                                setShowTransfer(false);
+                                                setCounterpartId('');
+                                                rememberTransfer(false, '');
+                                            }}
+                                        >
+                                            Desmarcar transferência
+                                        </Button>
+                                    )}
                                 </div>
                             ) : (
                                 <Button
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    onClick={() => setShowTransfer(true)}
+                                    onClick={() => {
+                                        setShowTransfer(true);
+                                        rememberTransfer(true, counterpartId);
+                                    }}
                                 >
                                     <ArrowLeftRight />
                                     Marcar como transferência

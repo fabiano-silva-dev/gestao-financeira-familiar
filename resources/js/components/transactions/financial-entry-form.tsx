@@ -1,9 +1,17 @@
-import { Form, Link } from '@inertiajs/react';
+import { Form, Link, router } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import FinancialTransactionController from '@/actions/App/Http/Controllers/FinancialTransactionController';
 import { AlreadySettledToggle } from '@/components/finance/already-settled-toggle';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -63,6 +71,9 @@ export default function FinancialEntryForm({
     const [alreadySettled, setAlreadySettled] = useState(
         entry ? entry.is_settled : true,
     );
+    const [confirmRevertOpen, setConfirmRevertOpen] = useState(false);
+    const [revertingSettlement, setRevertingSettlement] = useState(false);
+    const [revertError, setRevertError] = useState<string | null>(null);
     const [status, setStatus] = useState(entry?.status ?? 'confirmed');
     const [settlementDate, setSettlementDate] = useState(
         entry?.settled_on ?? (!entry ? (defaultDate ?? '') : ''),
@@ -134,7 +145,7 @@ export default function FinancialEntryForm({
         setCardSelection('');
     }, [entryType, categoryOptions, paymentMethods]);
 
-    function changeAlreadySettled(checked: boolean) {
+    function applyAlreadySettled(checked: boolean) {
         setAlreadySettled(checked);
 
         if (isCancelled) {
@@ -143,6 +154,48 @@ export default function FinancialEntryForm({
 
         setStatus(checked ? 'confirmed' : 'planned');
         setSettlementDate(checked ? settlementDate || defaultDate || '' : '');
+    }
+
+    function changeAlreadySettled(checked: boolean) {
+        if (
+            !checked &&
+            entry?.financial_recurrence_id != null &&
+            entry.is_settled &&
+            !isCancelled
+        ) {
+            setRevertError(null);
+            setConfirmRevertOpen(true);
+
+            return;
+        }
+
+        applyAlreadySettled(checked);
+    }
+
+    function confirmRevertSettlement() {
+        if (entry == null) {
+            return;
+        }
+
+        setRevertingSettlement(true);
+        setRevertError(null);
+        router.patch(
+            FinancialTransactionController.revertRecurrenceSettlement.url(
+                entry.id,
+            ),
+            {},
+            {
+                preserveScroll: true,
+                onError: (errors) => {
+                    setRevertError(
+                        errors.settlement ??
+                            'Não foi possível excluir o lançamento.',
+                    );
+                },
+                onSuccess: () => setConfirmRevertOpen(false),
+                onFinish: () => setRevertingSettlement(false),
+            },
+        );
     }
     const form = entry
         ? FinancialTransactionController.update.form(entry.id)
@@ -642,6 +695,49 @@ export default function FinancialEntryForm({
                                 : `Cadastrar ${isExpense ? 'despesa' : 'receita'}`}
                         </Button>
                     </div>
+
+                    <Dialog
+                        open={confirmRevertOpen}
+                        onOpenChange={(open) => {
+                            if (!revertingSettlement) {
+                                setConfirmRevertOpen(open);
+                            }
+                        }}
+                    >
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Excluir o lançamento?</DialogTitle>
+                                <DialogDescription>
+                                    Isso exclui o lançamento{' '}
+                                    {isExpense ? 'pago' : 'recebido'} e grava a
+                                    ocorrência da recorrência como pendente.
+                                    {entry?.origin_source.filename != null
+                                        ? ' A conciliação bancária também será desfeita.'
+                                        : ''}
+                                </DialogDescription>
+                            </DialogHeader>
+                            <InputError message={revertError ?? undefined} />
+                            <DialogFooter>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={revertingSettlement}
+                                    onClick={() => setConfirmRevertOpen(false)}
+                                >
+                                    Cancelar
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="destructive"
+                                    disabled={revertingSettlement}
+                                    data-test="confirm-revert-recurrence-settlement"
+                                    onClick={confirmRevertSettlement}
+                                >
+                                    Excluir e salvar
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                 </>
             )}
         </Form>

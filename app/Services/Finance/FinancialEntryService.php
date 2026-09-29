@@ -8,14 +8,18 @@ use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
 use App\Models\AccountMovement;
+use App\Models\BankStatementEntry;
 use App\Models\FinancialTransaction;
 use App\Models\Workspace;
+use App\Services\Reconciliation\BankReconciliationService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class FinancialEntryService
 {
     public function __construct(
         private readonly CardPurchaseService $cardPurchaseService,
+        private readonly BankReconciliationService $bankReconciliation,
     ) {}
 
     /**
@@ -127,6 +131,59 @@ class FinancialEntryService
                 'settled_on' => $entry->settled_on === null
                     ? now()->toDateString()
                     : null,
+            ]);
+
+            $this->syncMovement($entry->refresh());
+
+            return $entry->refresh();
+        });
+    }
+
+    public function revertRecurrenceSettlement(
+        FinancialTransaction $entry,
+    ): FinancialTransaction {
+        if ($entry->financial_recurrence_id === null) {
+            throw ValidationException::withMessages([
+                'settlement' => 'Este lançamento não pertence a uma recorrência.',
+            ]);
+        }
+
+        if ($entry->credit_card_id !== null) {
+            throw ValidationException::withMessages([
+                'settlement' => 'Compras no cartão são liquidadas pelo pagamento da fatura.',
+            ]);
+        }
+
+        if ($entry->settled_on === null) {
+            throw ValidationException::withMessages([
+                'settlement' => 'Esta ocorrência já está pendente.',
+            ]);
+        }
+
+        if ($entry->refunds()->exists()) {
+            throw ValidationException::withMessages([
+                'settlement' => 'Remova os reembolsos antes de excluir este lançamento.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($entry): FinancialTransaction {
+            $workspace = $entry->workspace()->firstOrFail();
+            $entry->load('accountMovements.bankStatementEntry');
+
+            foreach ($entry->accountMovements as $movement) {
+                $statement = $movement->bankStatementEntry;
+
+                if ($statement instanceof BankStatementEntry) {
+                    $this->bankReconciliation->undo($workspace, $statement);
+                }
+            }
+
+            $entry->update([
+                'status' => FinancialTransactionStatus::Planned,
+                'settled_on' => null,
+                'due_date' => $entry->due_date?->toDateString()
+                    ?? $entry->recurrence_occurrence_date?->toDateString()
+                    ?? $entry->transaction_date->toDateString(),
             ]);
 
             $this->syncMovement($entry->refresh());

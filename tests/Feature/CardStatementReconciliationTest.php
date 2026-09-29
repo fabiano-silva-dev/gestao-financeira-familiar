@@ -555,6 +555,78 @@ class CardStatementReconciliationTest extends TestCase
         $this->assertDatabaseCount('financial_transactions', 1);
     }
 
+    public function test_user_can_create_card_purchases_in_bulk_from_category_suggestions(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+        $invoice = $this->invoice($workspace, $card);
+        $category = Category::factory()->for($workspace)->create([
+            'name' => 'Mercado',
+            'type' => CategoryType::Expense,
+        ]);
+        ClassificationRule::factory()->for($workspace)->create([
+            'name' => 'UFFA',
+            'match_type' => ClassificationRuleMatchType::Contains,
+            'pattern' => 'UFFA',
+            'action_type' => FinancialTransactionType::Expense,
+            'automation_level' => ClassificationRuleAutomationLevel::ClassifyOnly,
+            'payee_name' => 'UFFA',
+            'category_id' => $category->id,
+        ]);
+        $fromRule = $this->statementEntry(
+            $workspace,
+            $card,
+            $invoice,
+            '5.95',
+            '2026-08-24',
+            'UFFA REDE DE LOJAS',
+            1,
+            1,
+        );
+        $stored = $this->statementEntry(
+            $workspace,
+            $card,
+            $invoice,
+            '8.00',
+            '2026-08-22',
+            'Outra loja',
+            1,
+            1,
+        );
+        $stored->update(['suggested_category_id' => $category->id]);
+        $withoutCategory = $this->statementEntry(
+            $workspace,
+            $card,
+            $invoice,
+            '3.00',
+            '2026-08-21',
+            'Sem classificacao',
+            1,
+            1,
+        );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('reconciliation.bulk-create', ['period' => '2026-08']), [
+                'entries' => [
+                    ['kind' => 'invoice', 'id' => $fromRule->id],
+                    ['kind' => 'invoice', 'id' => $stored->id],
+                    ['kind' => 'invoice', 'id' => $withoutCategory->id],
+                ],
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $fromRule->refresh();
+        $stored->refresh();
+        $this->assertTrue($fromRule->is_reconciled);
+        $this->assertTrue($stored->is_reconciled);
+        $this->assertFalse($withoutCategory->fresh()->is_reconciled);
+        $this->assertSame($category->id, $fromRule->transactionInstallment?->transaction?->category_id);
+        $this->assertSame($category->id, $stored->transactionInstallment?->transaction?->category_id);
+        $this->assertDatabaseCount('financial_transactions', 2);
+    }
+
     public function test_reconciliation_index_keeps_card_relation_path(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();

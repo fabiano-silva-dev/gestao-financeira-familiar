@@ -8,6 +8,7 @@ use App\Enums\ClassificationRuleAutomationLevel;
 use App\Enums\ClassificationRuleMatchType;
 use App\Enums\FinancialImportStatus;
 use App\Enums\FinancialImportType;
+use App\Enums\FinancialTransactionOrigin;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
@@ -17,6 +18,7 @@ use App\Models\Category;
 use App\Models\ClassificationRule;
 use App\Models\FinancialAccount;
 use App\Models\FinancialImport;
+use App\Models\FinancialRecurrence;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Finance\FinancialEntryService;
@@ -180,7 +182,7 @@ class BankReconciliationTest extends TestCase
             'account_movement_id' => $movement->id,
         ])->assertSessionHasNoErrors();
         $request->delete(route('reconciliation.destroy', $entry))
-            ->assertRedirect(route('reconciliation.index'))
+            ->assertRedirect()
             ->assertSessionHasNoErrors();
 
         $entry->refresh();
@@ -670,6 +672,147 @@ class BankReconciliationTest extends TestCase
         );
     }
 
+    public function test_undoing_a_created_bank_transaction_removes_it(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $category = Category::factory()->for($workspace)->create([
+            'type' => CategoryType::Expense->value,
+        ]);
+        $entry = $this->bankEntry($workspace, $account, '-70.00', description: 'Pix handebol');
+        $entry->update(['suggested_category_id' => $category->id]);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('reconciliation.create', $entry))
+            ->assertSessionHasNoErrors();
+        $request->delete(route('reconciliation.destroy', $entry))
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $entry->refresh();
+        $this->assertFalse($entry->is_reconciled);
+        $this->assertNull($entry->account_movement_id);
+        $this->assertDatabaseCount('financial_transactions', 0);
+        $this->assertDatabaseCount('account_movements', 0);
+    }
+
+    public function test_undoing_a_created_transfer_removes_both_sides_when_only_one_is_linked(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $source = FinancialAccount::factory()->for($workspace)->create();
+        $destination = FinancialAccount::factory()->for($workspace)->create();
+        $entry = $this->bankEntry($workspace, $source, '-300.00', description: 'TED reserva');
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('reconciliation.transfer', $entry), [
+            'counterpart_account_id' => $destination->id,
+        ])->assertSessionHasNoErrors();
+        $request->delete(route('reconciliation.destroy', $entry))
+            ->assertSessionHasNoErrors();
+
+        $entry->refresh();
+        $this->assertFalse($entry->is_reconciled);
+        $this->assertNull($entry->account_movement_id);
+        $this->assertDatabaseCount('financial_transactions', 0);
+        $this->assertDatabaseCount('account_movements', 0);
+    }
+
+    public function test_undo_keeps_a_created_transfer_while_the_other_bank_entry_stays_linked(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $source = FinancialAccount::factory()->for($workspace)->create();
+        $destination = FinancialAccount::factory()->for($workspace)->create();
+        $sourceEntry = $this->bankEntry($workspace, $source, '-300.00', description: 'TED reserva');
+        $destinationEntry = $this->bankEntry($workspace, $destination, '300.00', description: 'TED reserva');
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('reconciliation.transfer', $sourceEntry), [
+            'counterpart_account_id' => $destination->id,
+        ])->assertSessionHasNoErrors();
+
+        $incomingId = $sourceEntry->fresh()->accountMovement
+            ?->transaction
+            ?->accountMovements()
+            ->where('type', AccountMovementType::TransferIn)
+            ->value('id');
+        $this->assertNotNull($incomingId);
+
+        $request->post(route('reconciliation.store', $destinationEntry), [
+            'account_movement_id' => $incomingId,
+        ])->assertSessionHasNoErrors();
+        $request->delete(route('reconciliation.destroy', $sourceEntry))
+            ->assertSessionHasNoErrors();
+
+        $sourceEntry->refresh();
+        $destinationEntry->refresh();
+        $this->assertFalse($sourceEntry->is_reconciled);
+        $this->assertNull($sourceEntry->account_movement_id);
+        $this->assertTrue($destinationEntry->is_reconciled);
+        $this->assertSame($incomingId, $destinationEntry->account_movement_id);
+        $this->assertDatabaseCount('financial_transactions', 1);
+        $this->assertDatabaseCount('account_movements', 2);
+    }
+
+    public function test_reconciled_recurrence_exposes_its_name(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $recurrence = FinancialRecurrence::query()->create([
+            'workspace_id' => $workspace->id,
+            'type' => FinancialTransactionType::Expense,
+            'description' => 'Handebol',
+            'amount' => '70.00',
+            'financial_account_id' => $account->id,
+            'payment_method' => PaymentMethod::Pix,
+            'frequency' => 'monthly',
+            'interval' => 1,
+            'starts_on' => '2026-09-04',
+            'generation_started_on' => '2026-09-04',
+            'is_active' => true,
+        ]);
+        $transaction = app(FinancialEntryService::class)->create(
+            $workspace,
+            [
+                'type' => FinancialTransactionType::Expense->value,
+                'transaction_date' => '2026-09-04',
+                'description' => 'Handebol setembro',
+                'amount' => '70.00',
+                'financial_account_id' => $account->id,
+                'payment_method' => PaymentMethod::Pix->value,
+                'status' => FinancialTransactionStatus::Confirmed->value,
+                'settled_on' => '2026-09-04',
+                'financial_recurrence_id' => $recurrence->id,
+            ],
+            FinancialTransactionOrigin::Recurrence,
+        );
+        $movement = $transaction->accountMovements()->sole();
+        $entry = $this->bankEntry(
+            $workspace,
+            $account,
+            '-70.00',
+            '2026-09-04',
+            'Pix enviado Associacao Handebol',
+        );
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('reconciliation.store', $entry), [
+            'account_movement_id' => $movement->id,
+        ])->assertSessionHasNoErrors();
+
+        $request->get(route('reconciliation.index', $this->workbenchQuery($account, [
+            'view' => 'reconciled',
+        ])))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('entries.0.related_recurrence_name', 'Handebol')
+                ->where('entries.0.is_invoice_payment', false)
+            );
+    }
+
     public function test_create_bank_transaction_uses_category_sent_with_the_request(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();
@@ -820,6 +963,96 @@ class BankReconciliationTest extends TestCase
         );
         $this->assertDatabaseCount('financial_transactions', 1);
         $this->assertDatabaseCount('account_movements', 2);
+    }
+
+    public function test_user_can_remember_a_transfer_mark_before_saving_it(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $source = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Mercado Pago Fabiano',
+        ]);
+        $destination = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Banrisul Fabiano',
+        ]);
+        $entry = $this->bankEntry(
+            $workspace,
+            $source,
+            '180.00',
+            description: 'Pix recebido LIDIANE RIBEIRO FERRO DA SILVA',
+        );
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->patch(route('reconciliation.remember-transfer', $entry), [
+            'marked' => true,
+        ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $entry->refresh();
+        $this->assertFalse($entry->is_reconciled);
+        $this->assertSame(FinancialTransactionType::Transfer->value, $entry->manual_action_type);
+        $this->assertNull($entry->manual_counterpart_account_id);
+        $this->assertDatabaseCount('financial_transactions', 0);
+
+        $request->patch(route('reconciliation.remember-transfer', $entry), [
+            'marked' => true,
+            'counterpart_account_id' => $destination->id,
+        ])->assertSessionHasNoErrors();
+
+        $entry->refresh();
+        $this->assertSame($destination->id, $entry->manual_counterpart_account_id);
+        $this->assertFalse($entry->is_reconciled);
+
+        $request->get(route('reconciliation.index', $this->workbenchQuery($source)))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('entries.0.id', $entry->id)
+                ->where('entries.0.manual_action_type', 'transfer')
+                ->where('entries.0.manual_counterpart_account_id', $destination->id)
+                ->where('entries.0.manual_counterpart_account_name', 'Banrisul Fabiano')
+                ->where('entries.0.is_likely_transfer', true)
+            );
+
+        $request->post(route('reconciliation.transfer', $entry), [
+            'counterpart_account_id' => $destination->id,
+        ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $entry->refresh();
+        $this->assertTrue($entry->is_reconciled);
+        $this->assertSame(
+            FinancialTransactionType::Transfer->value,
+            $entry->accountMovement?->transaction?->type->value,
+        );
+        $this->assertSame($destination->id, $entry->accountMovement?->transaction?->source_account_id);
+        $this->assertSame($source->id, $entry->accountMovement?->transaction?->destination_account_id);
+    }
+
+    public function test_user_can_clear_a_saved_transfer_mark(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $source = FinancialAccount::factory()->for($workspace)->create();
+        $destination = FinancialAccount::factory()->for($workspace)->create();
+        $entry = $this->bankEntry($workspace, $source, '180.00', description: 'Pix recebido');
+        $entry->update([
+            'manual_action_type' => FinancialTransactionType::Transfer->value,
+            'manual_counterpart_account_id' => $destination->id,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->patch(route('reconciliation.remember-transfer', $entry), [
+                'marked' => false,
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $entry->refresh();
+        $this->assertNull($entry->manual_action_type);
+        $this->assertNull($entry->manual_counterpart_account_id);
+        $this->assertFalse($entry->is_reconciled);
     }
 
     public function test_user_can_classify_bank_entry_without_changing_origin(): void
@@ -1122,6 +1355,40 @@ class BankReconciliationTest extends TestCase
 
         $this->assertSame($category->id, $first->fresh()->suggested_category_id);
         $this->assertSame($category->id, $second->fresh()->suggested_category_id);
+    }
+
+    public function test_user_can_create_transactions_in_bulk_from_category_suggestions(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $category = Category::factory()->for($workspace)->create([
+            'name' => 'Mercado',
+            'type' => CategoryType::Expense,
+        ]);
+        $first = $this->bankEntry($workspace, $account, '-40.00', '2026-09-10', 'Mercado A');
+        $second = $this->bankEntry($workspace, $account, '-60.00', '2026-09-11', 'Mercado B');
+        $withoutCategory = $this->bankEntry($workspace, $account, '-15.00', '2026-09-12', 'Sem categoria');
+        $first->update(['suggested_category_id' => $category->id]);
+        $second->update(['suggested_category_id' => $category->id]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('reconciliation.bulk-create', ['period' => '2026-09']), [
+                'entries' => [
+                    ['kind' => 'statement', 'id' => $first->id],
+                    ['kind' => 'statement', 'id' => $second->id],
+                    ['kind' => 'statement', 'id' => $withoutCategory->id],
+                ],
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $first->refresh();
+        $this->assertTrue($first->is_reconciled);
+        $this->assertTrue($second->fresh()->is_reconciled);
+        $this->assertFalse($withoutCategory->fresh()->is_reconciled);
+        $this->assertSame($category->id, $first->accountMovement?->transaction?->category_id);
+        $this->assertDatabaseCount('financial_transactions', 2);
     }
 
     public function test_guest_cannot_reprocess_an_import(): void

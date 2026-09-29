@@ -387,6 +387,9 @@ final class CardStatementMaterializationService
             $entry->total_installments ?? 1,
         );
         $currentInstallment = null;
+        $purchaseMonth = CarbonImmutable::parse(
+            $transaction->competence_date ?? $transaction->transaction_date,
+        )->startOfMonth();
 
         for ($number = $currentNumber; $number <= $totalInstallments; $number++) {
             $offset = $number - $currentNumber;
@@ -406,7 +409,7 @@ final class CardStatementMaterializationService
                 'installment_number' => $number,
                 'total_installments' => $totalInstallments,
                 'amount' => $entry->amount,
-                'competence_month' => $invoice->reference_month->toDateString(),
+                'competence_month' => $purchaseMonth->addMonths($offset)->toDateString(),
                 'due_date' => $invoice->due_date->toDateString(),
                 'expected_payment_date' => $invoice->due_date->toDateString(),
                 'paid_at' => $invoiceAlreadyPaid

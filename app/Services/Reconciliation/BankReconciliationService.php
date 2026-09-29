@@ -2,8 +2,10 @@
 
 namespace App\Services\Reconciliation;
 
+use App\Enums\FinancialTransactionOrigin;
 use App\Models\AccountMovement;
 use App\Models\BankStatementEntry;
+use App\Models\FinancialTransaction;
 use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Support\Facades\DB;
@@ -85,8 +87,13 @@ final class BankReconciliationService
     public function undo(
         Workspace $workspace,
         BankStatementEntry $entry,
+        bool $removeGeneratedTransaction = false,
     ): BankStatementEntry {
-        return DB::transaction(function () use ($workspace, $entry): BankStatementEntry {
+        return DB::transaction(function () use (
+            $workspace,
+            $entry,
+            $removeGeneratedTransaction,
+        ): BankStatementEntry {
             $lockedEntry = BankStatementEntry::query()
                 ->where('workspace_id', $workspace->id)
                 ->whereKey($entry->id)
@@ -101,27 +108,67 @@ final class BankReconciliationService
                 'is_reconciled' => false,
             ]);
 
-            if ($movementId !== null) {
-                $movement = AccountMovement::query()
-                    ->where('workspace_id', $workspace->id)
-                    ->whereKey($movementId)
-                    ->lockForUpdate()
-                    ->first();
+            if ($movementId === null) {
+                return $lockedEntry->refresh();
+            }
 
-                if ($movement instanceof AccountMovement) {
-                    $movement->update(['is_reconciled' => false]);
+            $movement = AccountMovement::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereKey($movementId)
+                ->lockForUpdate()
+                ->first();
 
-                    if ($movement->expense_refund_id !== null) {
-                        $movement->refund()->update([
-                            'linked_by' => null,
-                            'linked_at' => null,
-                        ]);
-                    }
-                }
+            if (! $movement instanceof AccountMovement) {
+                return $lockedEntry->refresh();
+            }
+
+            $transaction = $movement->transaction()->lockForUpdate()->first();
+            $removed = $removeGeneratedTransaction
+                && $this->removeGeneratedTransaction($workspace, $transaction);
+
+            if ($removed) {
+                return $lockedEntry->refresh();
+            }
+
+            $movement->update(['is_reconciled' => false]);
+
+            if ($movement->expense_refund_id !== null) {
+                $movement->refund()->update([
+                    'linked_by' => null,
+                    'linked_at' => null,
+                ]);
             }
 
             return $lockedEntry->refresh();
         });
+    }
+
+    private function removeGeneratedTransaction(
+        Workspace $workspace,
+        ?FinancialTransaction $transaction,
+    ): bool {
+        if (
+            ! $transaction instanceof FinancialTransaction
+            || $transaction->origin !== FinancialTransactionOrigin::Ofx
+            || $transaction->refunds()->exists()
+            || $transaction->installments()->exists()
+        ) {
+            return false;
+        }
+
+        $movementIds = $transaction->accountMovements()->pluck('id');
+        $stillLinked = BankStatementEntry::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereIn('account_movement_id', $movementIds)
+            ->exists();
+
+        if ($stillLinked) {
+            return false;
+        }
+
+        $transaction->delete();
+
+        return true;
     }
 
     private function moneyToCents(string $amount): int

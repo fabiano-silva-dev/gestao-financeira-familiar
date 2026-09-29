@@ -22,6 +22,52 @@ const currency = new Intl.NumberFormat('pt-BR', {
     currency: 'BRL',
 });
 
+function invoicePeriod(label: string, cardName: string | null): string {
+    const prefix = cardName ? `Fatura ${cardName} ` : 'Fatura ';
+
+    if (label.startsWith(prefix)) {
+        return label.slice(prefix.length);
+    }
+
+    if (label.startsWith('Fatura ')) {
+        return label.slice('Fatura '.length);
+    }
+
+    return label;
+}
+
+function reconciledLinkSentence(
+    entry: ReconciliationPendingEntry,
+): string | null {
+    if (!entry.is_reconciled) {
+        return null;
+    }
+
+    if (entry.is_invoice_payment) {
+        const card = entry.card_name ?? 'cartão';
+        const due = entry.invoice_due_date
+            ? formatReconciliationDate(entry.invoice_due_date)
+            : null;
+        const identified =
+            entry.invoice_label !== null &&
+            entry.invoice_label !== 'Aguardando fatura';
+
+        if (identified && due) {
+            const period = invoicePeriod(entry.invoice_label ?? '', card);
+
+            return `Conciliado com o pagamento da fatura ${period} do cartão ${card}, vencimento ${due}.`;
+        }
+
+        return `Conciliado com o pagamento do cartão ${card}. A fatura ainda não foi identificada.`;
+    }
+
+    if (entry.related_recurrence_name) {
+        return `Conciliado com a recorrência ${entry.related_recurrence_name}.`;
+    }
+
+    return null;
+}
+
 const dateTime = new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
     month: '2-digit',
@@ -54,6 +100,7 @@ export function ReconciliationDialog({
         : entry?.is_reconciled
           ? 'Conciliado'
           : 'Pendente';
+    const linkSentence = entry ? reconciledLinkSentence(entry) : null;
 
     return (
         <Dialog
@@ -85,6 +132,12 @@ export function ReconciliationDialog({
                                 financeiro e das ações disponíveis para esta linha.
                             </DialogDescription>
                         </DialogHeader>
+
+                        {linkSentence && (
+                            <p className="bg-muted/35 rounded-lg border px-4 py-3 text-sm">
+                                {linkSentence}
+                            </p>
+                        )}
 
                         <section className="bg-muted/35 grid gap-3 rounded-lg border p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
                             <div>

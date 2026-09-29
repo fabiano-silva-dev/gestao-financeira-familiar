@@ -2,17 +2,22 @@
 
 namespace Tests\Feature;
 
+use App\Enums\FinancialImportStatus;
+use App\Enums\FinancialImportType;
 use App\Enums\FinancialTransactionOrigin;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
+use App\Models\BankStatementEntry;
 use App\Models\CreditCard;
 use App\Models\CreditCardInvoice;
 use App\Models\FinancialAccount;
+use App\Models\FinancialImport;
 use App\Models\FinancialRecurrence;
 use App\Models\FinancialTransaction;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Finance\FinancialEntryService;
 use App\Support\Workspaces\CurrentWorkspace;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -248,6 +253,142 @@ class FinancialRecurrenceTest extends TestCase
                 ->where('upcomingEntries.0.description', 'Aluguel')
                 ->where('upcomingEntries.0.date', '2026-10-08')
             );
+    }
+
+    public function test_unchecking_paid_recurrence_deletes_settlement_and_keeps_occurrence_pending(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-21 12:00:00'));
+
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'opening_balance' => '1000.00',
+        ]);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('recurrences.store'), [
+            ...$this->validRecurrenceData($account),
+            'description' => 'Condomínio',
+            'amount' => '569.19',
+            'starts_on' => '2026-08-10',
+            'already_settled' => '1',
+        ])->assertSessionHasNoErrors();
+
+        $occurrence = FinancialRecurrence::query()->sole()
+            ->transactions()
+            ->whereDate('recurrence_occurrence_date', '2026-09-10')
+            ->firstOrFail();
+
+        $this->assertNotNull($occurrence->settled_on);
+        $this->assertSame(1, $occurrence->accountMovements()->count());
+
+        $request->patch(route('transactions.revert-recurrence-settlement', $occurrence))
+            ->assertRedirect(route('transactions.edit', $occurrence))
+            ->assertSessionHasNoErrors();
+
+        $occurrence->refresh();
+
+        $this->assertSame(FinancialTransactionStatus::Planned, $occurrence->status);
+        $this->assertNull($occurrence->settled_on);
+        $this->assertFalse($occurrence->recurrence_is_overridden);
+        $this->assertSame('2026-09-10', $occurrence->due_date?->toDateString());
+        $this->assertSame(0, $occurrence->accountMovements()->count());
+        $this->assertNotNull(FinancialTransaction::query()->find($occurrence->id));
+    }
+
+    public function test_unchecking_paid_recurrence_undoes_bank_reconciliation(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-21 12:00:00'));
+
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'opening_balance' => '1000.00',
+        ]);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('recurrences.store'), [
+            ...$this->validRecurrenceData($account),
+            'description' => 'Condomínio',
+            'amount' => '569.19',
+            'starts_on' => '2026-08-10',
+            'already_settled' => '1',
+        ])->assertSessionHasNoErrors();
+
+        $occurrence = FinancialRecurrence::query()->sole()
+            ->transactions()
+            ->whereDate('recurrence_occurrence_date', '2026-09-10')
+            ->firstOrFail();
+        $movement = $occurrence->accountMovements()->sole();
+        $import = FinancialImport::query()->create([
+            'workspace_id' => $workspace->id,
+            'financial_account_id' => $account->id,
+            'type' => FinancialImportType::Ofx,
+            'status' => FinancialImportStatus::Completed,
+            'source_filename' => 'account_statement.csv',
+            'file_hash' => hash('sha256', 'statement-file'),
+            'deduplication_key' => hash('sha256', 'statement-import'),
+            'total_records' => 1,
+            'imported_records' => 1,
+            'duplicate_records' => 0,
+            'imported_at' => now(),
+        ]);
+        $bankEntry = BankStatementEntry::query()->create([
+            'workspace_id' => $workspace->id,
+            'financial_import_id' => $import->id,
+            'financial_account_id' => $account->id,
+            'external_id' => 'fit-condominio',
+            'deduplication_key' => hash('sha256', 'statement-entry'),
+            'occurred_on' => '2026-09-10',
+            'amount' => '-569.19',
+            'transaction_type' => 'DEBIT',
+            'description' => 'Condomínio',
+            'memo' => null,
+            'is_reconciled' => false,
+        ]);
+
+        $request->post(route('reconciliation.store', $bankEntry), [
+            'account_movement_id' => $movement->id,
+        ])->assertSessionHasNoErrors();
+
+        $request->patch(route('transactions.revert-recurrence-settlement', $occurrence))
+            ->assertRedirect(route('transactions.edit', $occurrence))
+            ->assertSessionHasNoErrors();
+
+        $occurrence->refresh();
+        $bankEntry->refresh();
+
+        $this->assertSame(FinancialTransactionStatus::Planned, $occurrence->status);
+        $this->assertNull($occurrence->settled_on);
+        $this->assertFalse($occurrence->recurrence_is_overridden);
+        $this->assertSame(0, $occurrence->accountMovements()->count());
+        $this->assertFalse($bankEntry->is_reconciled);
+        $this->assertNull($bankEntry->account_movement_id);
+    }
+
+    public function test_manual_entry_cannot_revert_recurrence_settlement(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $entry = app(FinancialEntryService::class)->create($workspace, [
+            'type' => FinancialTransactionType::Expense->value,
+            'transaction_date' => '2026-09-10',
+            'competence_date' => '2026-09-10',
+            'description' => 'Mercado',
+            'amount' => '40.00',
+            'financial_account_id' => $account->id,
+            'payment_method' => PaymentMethod::Pix->value,
+            'due_date' => '2026-09-10',
+            'settled_on' => '2026-09-10',
+            'status' => FinancialTransactionStatus::Confirmed->value,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->patch(route('transactions.revert-recurrence-settlement', $entry))
+            ->assertSessionHasErrors('settlement');
+
+        $this->assertNotNull($entry->fresh()?->settled_on);
     }
 
     public function test_recurrence_generation_is_idempotent(): void

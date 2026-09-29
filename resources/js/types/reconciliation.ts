@@ -121,6 +121,10 @@ export type ReconciliationPendingEntry = {
     related_subcategory_id: number | null;
     related_subcategory_name: string | null;
     related_is_transfer: boolean;
+    related_recurrence_name: string | null;
+    manual_action_type?: 'income' | 'expense' | 'transfer' | null;
+    manual_counterpart_account_id?: number | null;
+    manual_counterpart_account_name?: string | null;
     matcher_rule_id: number | null;
     matcher_payee_name: string | null;
     matcher_action_type: 'income' | 'expense' | 'transfer' | null;

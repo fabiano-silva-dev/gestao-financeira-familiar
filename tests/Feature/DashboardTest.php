@@ -345,6 +345,61 @@ class DashboardTest extends TestCase
             );
     }
 
+    public function test_dashboard_counts_card_purchases_by_competence_month(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-20 12:00:00'));
+
+        $user = User::factory()->create();
+        $workspace = Workspace::factory()->create();
+        $user->workspaces()->attach($workspace, ['role' => 'owner']);
+        $category = Category::factory()->for($workspace)->create([
+            'name' => 'Mercado',
+        ]);
+        $card = CreditCard::factory()->for($workspace)->create([
+            'closing_day' => 5,
+            'due_day' => 12,
+        ]);
+        $service = app(FinancialEntryService::class);
+        $purchase = [
+            'type' => FinancialTransactionType::Expense->value,
+            'financial_account_id' => null,
+            'credit_card_id' => $card->id,
+            'category_id' => $category->id,
+            'family_member_id' => null,
+            'payment_method' => PaymentMethod::CreditCard->value,
+            'payee_name' => null,
+            'payment_instructions' => null,
+            'due_date' => null,
+            'status' => FinancialTransactionStatus::Confirmed->value,
+            'notes' => null,
+            'installment_count' => 1,
+        ];
+
+        $service->create($workspace, [
+            ...$purchase,
+            'transaction_date' => '2026-08-20',
+            'description' => 'Supermercado de agosto',
+            'amount' => '50.00',
+        ]);
+        $service->create($workspace, [
+            ...$purchase,
+            'transaction_date' => '2026-09-18',
+            'description' => 'Supermercado de setembro',
+            'amount' => '189.90',
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('dashboard')
+                ->has('categoryExpenses', 1)
+                ->where('categoryExpenses.0.name', 'Mercado')
+                ->where('categoryExpenses.0.amount', '189.90')
+            );
+    }
+
     public function test_dashboard_shows_overdue_commitments_and_keeps_them_out_of_recent_entries(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-09-21 12:00:00'));

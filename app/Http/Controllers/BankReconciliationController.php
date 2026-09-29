@@ -7,8 +7,10 @@ use App\Enums\CategoryType;
 use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\FinancialImportStatus;
 use App\Enums\FinancialImportType;
+use App\Enums\FinancialTransactionOrigin;
 use App\Enums\FinancialTransactionType;
 use App\Http\Requests\ClassifyReconciliationEntryRequest;
+use App\Http\Requests\RememberReconciliationTransferRequest;
 use App\Http\Requests\StoreBankReconciliationRequest;
 use App\Http\Requests\StoreReconciliationCardPaymentRequest;
 use App\Http\Requests\StoreReconciliationInvoicePaymentRequest;
@@ -43,6 +45,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -268,7 +271,7 @@ class BankReconciliationController extends Controller
                     $user,
                 );
                 $confirmed++;
-            } catch (\Illuminate\Validation\ValidationException) {
+            } catch (ValidationException) {
                 $skipped++;
             }
         }
@@ -302,7 +305,7 @@ class BankReconciliationController extends Controller
             : null;
 
         if ($action === 'category' && $categoryId === null) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
+            throw ValidationException::withMessages([
                 'category_id' => 'Selecione uma categoria para o ajuste em lote.',
             ]);
         }
@@ -371,7 +374,7 @@ class BankReconciliationController extends Controller
                 }
 
                 $updated++;
-            } catch (\Illuminate\Validation\ValidationException) {
+            } catch (ValidationException) {
                 $skipped++;
             }
         }
@@ -382,6 +385,62 @@ class BankReconciliationController extends Controller
                 ? "{$updated} item(ns) ajustado(s) em lote."
                     .($skipped > 0 ? " {$skipped} ficaram sem alteração." : '')
                 : 'Nenhum dos itens selecionados pôde ser ajustado.',
+        ]);
+
+        return to_route('reconciliation.index', $this->filterQuery($request));
+    }
+
+    public function bulkCreate(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'entries' => ['required', 'array', 'min:1', 'max:1000'],
+            'entries.*.kind' => ['required', 'string', 'in:statement,invoice'],
+            'entries.*.id' => ['required', 'integer'],
+        ]);
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $workspace = $this->workspace();
+        $created = 0;
+        $skipped = 0;
+
+        foreach ($validated['entries'] as $selection) {
+            try {
+                if ($selection['kind'] === 'statement') {
+                    $entry = $workspace->bankStatementEntries()->find((int) $selection['id']);
+
+                    if (! $entry instanceof BankStatementEntry) {
+                        $skipped++;
+
+                        continue;
+                    }
+
+                    $this->entryActions->createBankTransaction($workspace, $entry, $user);
+                } else {
+                    $entry = $workspace->cardStatementEntries()
+                        ->with(['creditCard', 'invoice'])
+                        ->find((int) $selection['id']);
+
+                    if (! $entry instanceof CardStatementEntry) {
+                        $skipped++;
+
+                        continue;
+                    }
+
+                    $this->entryActions->createCardTransaction($workspace, $entry, $user);
+                }
+
+                $created++;
+            } catch (ValidationException) {
+                $skipped++;
+            }
+        }
+
+        Inertia::flash('toast', [
+            'type' => $created > 0 ? 'success' : 'warning',
+            'message' => $created > 0
+                ? "{$created} lançamento(s) criado(s) com a categoria sugerida."
+                    .($skipped > 0 ? " {$skipped} ficaram para revisão." : '')
+                : 'Nenhum dos itens selecionados pôde gerar lançamento. Confira categoria, duplicidade ou vínculo já existente.',
         ]);
 
         return to_route('reconciliation.index', $this->filterQuery($request));
@@ -565,14 +624,26 @@ class BankReconciliationController extends Controller
     public function destroy(Request $request, int $entry): RedirectResponse
     {
         $workspace = $this->workspace();
+        $statementEntry = $this->findEntry($workspace, $entry);
+        $statementEntry->load('accountMovement.transaction');
+        $generatedId = $statementEntry->accountMovement?->transaction?->origin === FinancialTransactionOrigin::Ofx
+            ? $statementEntry->accountMovement->transaction->id
+            : null;
+
         $this->reconciliationService->undo(
             $workspace,
-            $this->findEntry($workspace, $entry),
+            $statementEntry,
+            removeGeneratedTransaction: true,
         );
+
+        $removed = $generatedId !== null
+            && ! FinancialTransaction::query()->whereKey($generatedId)->exists();
 
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => 'Conciliação desfeita. Os dois movimentos voltaram a ficar pendentes.',
+            'message' => $removed
+                ? 'Conciliação desfeita. O lançamento criado a partir deste movimento foi removido.'
+                : 'Conciliação desfeita. Os dois movimentos voltaram a ficar pendentes.',
         ]);
 
         return to_route('reconciliation.index', $this->filterQuery($request));
@@ -680,6 +751,34 @@ class BankReconciliationController extends Controller
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => 'Transferência entre contas próprias registrada, sem criar receita ou despesa.',
+        ]);
+
+        return to_route('reconciliation.index', $this->filterQuery($request));
+    }
+
+    public function rememberTransfer(
+        RememberReconciliationTransferRequest $request,
+        int $entry,
+    ): RedirectResponse {
+        $marked = $request->boolean('marked');
+        $this->entryActions->rememberBankTransfer(
+            $this->workspace(),
+            $this->findEntry($this->workspace(), $entry),
+            $marked,
+            $request->filled('counterpart_account_id')
+                ? $request->integer('counterpart_account_id')
+                : null,
+        );
+
+        $message = match (true) {
+            ! $marked => 'Marcação de transferência removida.',
+            $request->filled('counterpart_account_id') => 'Outra conta da transferência salva nesta linha.',
+            default => 'Movimento marcado como transferência. A escolha permanece para o fechamento.',
+        };
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => $message,
         ]);
 
         return to_route('reconciliation.index', $this->filterQuery($request));
@@ -876,12 +975,14 @@ class BankReconciliationController extends Controller
             'accountMovement.account:id,name',
             'accountMovement.invoicePayment.creditCard:id,name,institution,last_four,payment_account_id',
             'accountMovement.invoicePayment.invoice.creditCard:id,name,institution,last_four,payment_account_id',
-            'accountMovement.transaction:id,description,type,payee_name,category_id,competence_date,financial_account_id,credit_card_id,source_account_id,destination_account_id',
+            'accountMovement.transaction:id,description,type,payee_name,category_id,competence_date,financial_account_id,credit_card_id,source_account_id,destination_account_id,financial_recurrence_id',
+            'accountMovement.transaction.recurrence:id,description,payee_name',
             'accountMovement.transaction.sourceAccount:id,name',
             'accountMovement.transaction.destinationAccount:id,name',
             'accountMovement.transaction.creditCard:id,name',
             'accountMovement.transaction.category:id,name,parent_id',
             'accountMovement.transaction.category.parent:id,name',
+            'manualCounterpartAccount:id,name',
             'reconciler:id,name',
         ]);
         $listing->applySearch($query, ['description']);
@@ -930,7 +1031,8 @@ class BankReconciliationController extends Controller
             'financialImport:id,source_filename,type,metadata',
             'suggestedCategory:id,name,parent_id',
             'suggestedCategory.parent:id,name',
-            'transactionInstallment.transaction:id,description,transaction_date,type,payee_name,category_id,competence_date,credit_card_id',
+            'transactionInstallment.transaction:id,description,transaction_date,type,payee_name,category_id,competence_date,credit_card_id,financial_recurrence_id',
+            'transactionInstallment.transaction.recurrence:id,description,payee_name',
             'transactionInstallment.transaction.category:id,name,parent_id',
             'transactionInstallment.transaction.category.parent:id,name',
             'transactionInstallment.transaction.creditCard:id,name,last_four',
@@ -1038,6 +1140,7 @@ class BankReconciliationController extends Controller
             ...$related,
             ...$this->matcherPayload($matcher),
             'candidates' => [],
+            'related_recurrence_name' => $this->recurrenceName($transaction),
             'is_reconciled' => true,
             'is_ignored' => false,
             'reconciled_by_name' => $entry->reconciler?->name,
@@ -1065,11 +1168,20 @@ class BankReconciliationController extends Controller
             ...$related,
             ...$this->matcherPayload($matcher),
             'candidates' => [],
+            'related_recurrence_name' => $this->recurrenceName($transaction),
             'is_reconciled' => true,
             'is_ignored' => false,
             'reconciled_by_name' => $entry->reconciler?->name,
             'reconciled_at' => $entry->reconciled_at?->toIso8601String(),
         ], []);
+    }
+
+    private function recurrenceName(?FinancialTransaction $transaction): ?string
+    {
+        $recurrence = $transaction?->recurrence;
+        $name = trim((string) ($recurrence?->description ?: $recurrence?->payee_name));
+
+        return $name !== '' ? $name : null;
     }
 
     /** @return array<string, mixed> */
@@ -1107,6 +1219,9 @@ class BankReconciliationController extends Controller
             'transaction_type' => $entry->transaction_type,
             'installment_label' => null,
             'relation_path' => "Movimento bancário → {$accountName}",
+            'manual_action_type' => $entry->manual_action_type,
+            'manual_counterpart_account_id' => $entry->manual_counterpart_account_id,
+            'manual_counterpart_account_name' => $entry->manualCounterpartAccount?->name,
         ];
     }
 
@@ -1567,7 +1682,13 @@ class BankReconciliationController extends Controller
                     && (bool) ($candidate['is_suggestion'] ?? false),
             );
 
-        if ($isInvoicePayment || $isRefund) {
+        $manualTransfer = ($entry['manual_action_type'] ?? null) === FinancialTransactionType::Transfer->value;
+
+        if ($manualTransfer) {
+            $isTransfer = true;
+            $isInvoicePayment = false;
+            $isRefund = false;
+        } elseif ($isInvoicePayment || $isRefund) {
             $isTransfer = false;
         }
 
@@ -1588,6 +1709,7 @@ class BankReconciliationController extends Controller
             'suggestion_description' => is_array($best)
                 ? ($best['related_description'] ?? $best['description'] ?? null)
                 : null,
+            'related_recurrence_name' => $entry['related_recurrence_name'] ?? null,
         ];
     }
 

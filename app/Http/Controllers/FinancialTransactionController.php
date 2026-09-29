@@ -375,6 +375,19 @@ class FinancialTransactionController extends Controller
         return to_route('transactions.index');
     }
 
+    public function revertRecurrenceSettlement(int $entry): RedirectResponse
+    {
+        $financialEntry = $this->findEntry($entry);
+        $this->entryService->revertRecurrenceSettlement($financialEntry);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Lançamento excluído. A ocorrência da recorrência ficou pendente.',
+        ]);
+
+        return to_route('transactions.edit', $entry);
+    }
+
     private function createResponse(FinancialTransactionType $type): Response
     {
         return Inertia::render('transactions/create', [

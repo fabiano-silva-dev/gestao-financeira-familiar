@@ -8,6 +8,7 @@ import {
     CheckCheck,
     Filter,
     ListFilter,
+    Plus,
     Search,
     SlidersHorizontal,
     X,
@@ -110,6 +111,25 @@ function entryKey(entry: ReconciliationPendingEntry): string {
     return `${entry.kind}:${entry.id}`;
 }
 
+function canCreateFromSuggestion(entry: ReconciliationPendingEntry): boolean {
+    if (entry.is_reconciled || entry.is_ignored || entry.has_suggestion) {
+        return false;
+    }
+
+    if (
+        entry.is_likely_transfer ||
+        entry.related_is_transfer ||
+        entry.matcher_action_type === 'transfer' ||
+        entry.is_invoice_payment ||
+        entry.is_likely_invoice_payment ||
+        entry.is_likely_refund
+    ) {
+        return false;
+    }
+
+    return (entry.category_id ?? entry.matcher_category_id) !== null;
+}
+
 function categoryParts(entry: ReconciliationPendingEntry): string[] {
     const parent =
         entry.parent_category_name ??
@@ -131,8 +151,12 @@ function categoryParts(entry: ReconciliationPendingEntry): string[] {
 
 function entryCategoryOrLink(entry: ReconciliationPendingEntry): string {
     if (entry.related_is_transfer || entry.is_likely_transfer) {
-        return entry.related_counterpart_account_name
-            ? `Contrapartida: ${entry.related_counterpart_account_name}`
+        const counterpart =
+            entry.related_counterpart_account_name ??
+            entry.manual_counterpart_account_name;
+
+        return counterpart
+            ? `Contrapartida: ${counterpart}`
             : 'Transferência entre contas';
     }
 
@@ -387,6 +411,7 @@ export default function ReconciliationIndex({
     const bulkCategories = categoryOptions.filter(
         (category) => category.type === bulkCategoryType,
     );
+    const creatable = selectedEntries.filter(canCreateFromSuggestion);
     const ignorable = selectedEntries.filter(
         (entry) => !entry.is_reconciled && !entry.is_ignored,
     );
@@ -430,6 +455,21 @@ export default function ReconciliationIndex({
                     setSelected([]);
                     setBulkCategoryId('');
                 },
+            },
+        );
+    };
+
+    const createEntries = () => {
+        if (creatable.length === 0) {
+            return;
+        }
+
+        router.post(
+            listingUrl('/conciliacao/lote/lancamentos', filters),
+            { entries: selectionPayload(creatable) },
+            {
+                preserveScroll: true,
+                onSuccess: () => setSelected([]),
             },
         );
     };
@@ -627,6 +667,15 @@ export default function ReconciliationIndex({
                         >
                             <SlidersHorizontal />
                             Aplicar categoria
+                        </Button>
+                        <Button
+                            type="button"
+                            size="sm"
+                            disabled={creatable.length === 0}
+                            onClick={createEntries}
+                        >
+                            <Plus />
+                            Criar lançamento ({creatable.length})
                         </Button>
                         <Button
                             type="button"

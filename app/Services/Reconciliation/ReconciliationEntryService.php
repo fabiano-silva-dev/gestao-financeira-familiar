@@ -148,6 +148,52 @@ final class ReconciliationEntryService
         return $entry->refresh();
     }
 
+    public function rememberBankTransfer(
+        Workspace $workspace,
+        BankStatementEntry $entry,
+        bool $marked,
+        ?int $counterpartAccountId,
+    ): BankStatementEntry {
+        $this->assertSameWorkspace($workspace, $entry->workspace_id);
+        $this->guardPendingBankEntry($entry);
+
+        if (! $marked) {
+            $entry->update([
+                'manual_action_type' => null,
+                'manual_counterpart_account_id' => null,
+            ]);
+
+            return $entry->refresh();
+        }
+
+        $counterpartId = null;
+
+        if ($counterpartAccountId !== null) {
+            $counterpart = $workspace->financialAccounts()->find($counterpartAccountId);
+
+            if (! $counterpart instanceof FinancialAccount) {
+                throw ValidationException::withMessages([
+                    'counterpart_account_id' => 'Selecione uma conta própria válida.',
+                ]);
+            }
+
+            if ($counterpart->id === $entry->financial_account_id) {
+                throw ValidationException::withMessages([
+                    'counterpart_account_id' => 'A outra conta da transferência deve ser diferente da conta de origem.',
+                ]);
+            }
+
+            $counterpartId = $counterpart->id;
+        }
+
+        $entry->update([
+            'manual_action_type' => FinancialTransactionType::Transfer->value,
+            'manual_counterpart_account_id' => $counterpartId,
+        ]);
+
+        return $entry->refresh();
+    }
+
     public function classifyCardEntry(
         Workspace $workspace,
         CardStatementEntry $entry,
@@ -176,6 +222,21 @@ final class ReconciliationEntryService
         User $user,
     ): BankStatementEntry {
         $this->guardPendingBankEntry($entry);
+
+        if ($entry->manual_action_type === FinancialTransactionType::Transfer->value) {
+            if ($entry->manual_counterpart_account_id === null) {
+                throw ValidationException::withMessages([
+                    'entry' => 'Escolha a outra conta da transferência antes de salvar.',
+                ]);
+            }
+
+            return $this->createBankTransfer(
+                $workspace,
+                $entry,
+                $user,
+                $entry->manual_counterpart_account_id,
+            );
+        }
 
         if ($this->interpreter->isInvoicePayment($entry->description, $this->workspaceCardTokens($workspace))) {
             throw ValidationException::withMessages([

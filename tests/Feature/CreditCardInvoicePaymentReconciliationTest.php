@@ -65,7 +65,7 @@ class CreditCardInvoicePaymentReconciliationTest extends TestCase
             ->post(route('reconciliation.invoice-payment', $entry), [
                 'credit_card_invoice_id' => $invoice->id,
             ])
-            ->assertRedirect(route('reconciliation.index'))
+            ->assertRedirect()
             ->assertSessionHasNoErrors();
 
         $invoice->refresh();
@@ -94,6 +94,20 @@ class CreditCardInvoicePaymentReconciliationTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('accounts.0.current_balance', '3000.00'));
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('reconciliation.index', $this->workbenchQuery($account, [
+                'view' => 'reconciled',
+            ])))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('entries.0.is_invoice_payment', true)
+                ->where('entries.0.card_name', 'Nubank')
+                ->where('entries.0.invoice_label', 'Fatura Nubank Setembro')
+                ->where('entries.0.invoice_due_date', $invoice->due_date?->toDateString())
+                ->where('entries.0.related_recurrence_name', null)
+            );
     }
 
     public function test_partial_bank_payment_leaves_invoice_partially_paid(): void

@@ -104,6 +104,10 @@ class CreditCardInvoiceTest extends TestCase
         $this->assertSame(FinancialTransactionOrigin::Manual, $transaction->origin);
         $this->assertSame($category->id, $transaction->category_id);
         $this->assertSame('189.90', $transaction->amount);
+        $this->assertSame(
+            '2026-09-01',
+            $transaction->installments()->sole()->competence_month->toDateString(),
+        );
         $this->assertDatabaseCount('transaction_installments', 1);
         $this->assertDatabaseCount('account_movements', 0);
     }

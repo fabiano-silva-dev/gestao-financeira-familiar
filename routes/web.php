@@ -203,6 +203,9 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::patch('lancamentos/{entry}/liquidacao', [FinancialTransactionController::class, 'toggleSettlement'])
         ->whereNumber('entry')
         ->name('transactions.toggle-settlement');
+    Route::patch('lancamentos/{entry}/recorrencia/pendente', [FinancialTransactionController::class, 'revertRecurrenceSettlement'])
+        ->whereNumber('entry')
+        ->name('transactions.revert-recurrence-settlement');
 
     Route::get('recorrencias', [FinancialRecurrenceController::class, 'index'])
         ->name('recurrences.index');
@@ -295,6 +298,8 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->name('reconciliation.bulk-confirm-rules');
     Route::post('conciliacao/lote/ajustar', [BankReconciliationController::class, 'bulkAdjust'])
         ->name('reconciliation.bulk-adjust');
+    Route::post('conciliacao/lote/lancamentos', [BankReconciliationController::class, 'bulkCreate'])
+        ->name('reconciliation.bulk-create');
     Route::get(
         'conciliacao/{entry}/recorrencias',
         [BankReconciliationController::class, 'recurrenceCandidates'],
@@ -334,6 +339,9 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::post('conciliacao/{entry}/transferencia', [BankReconciliationController::class, 'transfer'])
         ->whereNumber('entry')
         ->name('reconciliation.transfer');
+    Route::patch('conciliacao/{entry}/marcacao-transferencia', [BankReconciliationController::class, 'rememberTransfer'])
+        ->whereNumber('entry')
+        ->name('reconciliation.remember-transfer');
     Route::post('conciliacao/{entry}/pagamento-fatura', [BankReconciliationController::class, 'invoicePayment'])
         ->whereNumber('entry')
         ->name('reconciliation.invoice-payment');
