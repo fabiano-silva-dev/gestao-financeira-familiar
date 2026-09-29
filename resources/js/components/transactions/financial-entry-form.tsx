@@ -309,7 +309,11 @@ export default function FinancialEntryForm({
                         </div>
 
                         <div className="grid gap-2">
-                            <Label htmlFor="amount">Valor total</Label>
+                            <Label htmlFor="amount">
+                                {cashInstallmentPlan
+                                    ? 'Valor de cada parcela'
+                                    : 'Valor total'}
+                            </Label>
                             <Input
                                 id="amount"
                                 name="amount"
@@ -588,9 +592,9 @@ export default function FinancialEntryForm({
                                         required
                                     />
                                     <p className="text-muted-foreground text-xs">
-                                        O valor total será dividido entre as
-                                        parcelas. As próximas vencem
-                                        mensalmente no mesmo dia.
+                                        O valor informado será lançado em cada
+                                        parcela. Ex.: 12 parcelas de R$ 3.000
+                                        geram R$ 3.000 em cada mês.
                                     </p>
                                     <InputError
                                         message={errors.installment_count}

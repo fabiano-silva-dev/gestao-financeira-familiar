@@ -231,7 +231,9 @@ class FinancialEntryService
             'transaction_date' => $data['transaction_date'],
             'competence_date' => $data['competence_date'] ?? $data['transaction_date'],
             'description' => $data['description'],
-            'amount' => $data['amount'],
+            'amount' => $isCashInstallmentPlan
+                ? $this->multiplyMoney((string) $data['amount'], $installmentCount)
+                : $data['amount'],
             'financial_account_id' => $data['financial_account_id'] ?? null,
             'source_account_id' => null,
             'destination_account_id' => null,
@@ -304,7 +306,10 @@ class FinancialEntryService
             ->lockForUpdate()
             ->get();
 
-        $amounts = $this->splitAmount((string) $entry->amount, $installmentCount);
+        $installmentAmount = $this->centsToMoney(
+            $this->moneyToCents((string) $data['amount']),
+        );
+        $amounts = array_fill(0, $installmentCount, $installmentAmount);
         $dueBase = CarbonImmutable::parse(
             (string) ($data['due_date'] ?? $entry->due_date?->toDateString() ?? $entry->transaction_date->toDateString()),
         );
@@ -625,30 +630,17 @@ class FinancialEntryService
             ]);
     }
 
-    /**
-     * @return array<int, string>
-     */
-    private function splitAmount(string $amount, int $count): array
+    private function multiplyMoney(string $amount, int $count): string
     {
-        $totalCents = $this->moneyToCents($amount);
+        $totalCents = $this->moneyToCents($amount) * $count;
 
-        if ($totalCents < $count) {
+        if ($totalCents > 999999999999999) {
             throw ValidationException::withMessages([
-                'installment_count' => 'A quantidade de parcelas não pode gerar parcelas com valor zero.',
+                'amount' => 'O valor total do parcelamento excede o limite permitido.',
             ]);
         }
 
-        $base = intdiv($totalCents, $count);
-        $remainder = $totalCents % $count;
-        $amounts = [];
-
-        for ($index = 0; $index < $count; $index++) {
-            $amounts[] = $this->centsToMoney(
-                $base + ($index < $remainder ? 1 : 0),
-            );
-        }
-
-        return $amounts;
+        return $this->centsToMoney($totalCents);
     }
 
     private function dateInMonth(CarbonImmutable $month, int $day): CarbonImmutable

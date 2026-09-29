@@ -158,7 +158,7 @@ Regras desta visão:
 - Parcelas vinculadas a uma fatura não podem ser somadas novamente à obrigação da fatura.
 - O **saldo projetado do mês** é calculado como entradas realizadas e previstas menos saídas realizadas e previstas do próprio período. Ele não substitui o saldo patrimonial ou o saldo atual das contas mostrado em outras visões.
 - Recorrências materializadas, parcelas, crediários e faturas futuras já conhecidas devem alimentar a projeção sem duplicar compra, parcela, fatura e pagamento.
-- Um parcelamento manual fora do cartão não é recorrência: vale para despesas e receitas e deve preservar uma transação principal com o valor total e parcelas vinculadas. A primeira parcela pode ser registrada como paga ou recebida no momento do lançamento; somente parcelas efetivamente liquidadas movimentam o caixa, enquanto as futuras permanecem em aberto e alimentam as projeções de valores a pagar ou a receber.
+- Um parcelamento manual fora do cartão não é recorrência: vale para despesas e receitas e deve preservar uma transação principal com o valor total e parcelas vinculadas. Na entrada manual, o usuário informa o valor de cada parcela e a quantidade de parcelas; o sistema calcula o valor total do compromisso. A primeira parcela pode ser registrada como paga ou recebida no momento do lançamento; somente parcelas efetivamente liquidadas movimentam o caixa, enquanto as futuras permanecem em aberto e alimentam as projeções de valores a pagar ou a receber.
 - Todas as consultas permanecem isoladas pelo workspace ativo.
 
 

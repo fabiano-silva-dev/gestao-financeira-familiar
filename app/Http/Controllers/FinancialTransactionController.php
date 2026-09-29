@@ -599,6 +599,7 @@ class FinancialTransactionController extends Controller
             (int) ($entry->getAttribute('installments_count') ?? 0),
         );
         $settledOn = $entry->settled_on?->toDateString();
+        $displayAmount = $entry->amount;
 
         if (
             in_array(
@@ -621,6 +622,7 @@ class FinancialTransactionController extends Controller
             $settledOn = $firstInstallment?->status === TransactionInstallmentStatus::Paid
                 ? $firstInstallment->paid_at?->toDateString()
                 : null;
+            $displayAmount = $firstInstallment?->amount ?? $entry->amount;
         }
 
         return [
@@ -631,7 +633,7 @@ class FinancialTransactionController extends Controller
             'competence_date' => $entry->competence_date?->toDateString()
                 ?? $entry->transaction_date->toDateString(),
             'description' => $entry->description,
-            'amount' => $entry->amount,
+            'amount' => $displayAmount,
             ...$refundSummary,
             'refunds' => $entry->relationLoaded('refunds')
                 ? $entry->refunds

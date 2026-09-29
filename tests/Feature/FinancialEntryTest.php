@@ -118,7 +118,7 @@ class FinancialEntryTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $entry = $workspace->financialTransactions()->sole();
-        $this->assertSame('1000.00', $entry->amount);
+        $this->assertSame('3000.00', $entry->amount);
         $this->assertNull($entry->settled_on);
 
         $installments = $entry->installments()
@@ -126,9 +126,9 @@ class FinancialEntryTest extends TestCase
             ->get();
 
         $this->assertCount(3, $installments);
-        $this->assertSame('333.34', $installments[0]->amount);
-        $this->assertSame('333.33', $installments[1]->amount);
-        $this->assertSame('333.33', $installments[2]->amount);
+        $this->assertSame('1000.00', $installments[0]->amount);
+        $this->assertSame('1000.00', $installments[1]->amount);
+        $this->assertSame('1000.00', $installments[2]->amount);
         $this->assertSame('2026-09-30', $installments[0]->due_date->toDateString());
         $this->assertSame('2026-10-30', $installments[1]->due_date->toDateString());
         $this->assertSame('2026-11-30', $installments[2]->due_date->toDateString());
@@ -139,9 +139,9 @@ class FinancialEntryTest extends TestCase
 
         $movement = $entry->accountMovements()->sole();
         $this->assertSame($installments[0]->id, $movement->transaction_installment_id);
-        $this->assertSame('-333.34', $movement->amount);
+        $this->assertSame('-1000.00', $movement->amount);
         $this->assertSame('2026-09-10', $movement->occurred_on->toDateString());
-        $this->assertCurrentBalance($user, $workspace, '666.66');
+        $this->assertCurrentBalance($user, $workspace, '0.00');
 
         $this->actingAs($user)
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
@@ -149,6 +149,7 @@ class FinancialEntryTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('entry.installment_count', 3)
+                ->where('entry.amount', '1000.00')
                 ->where('entry.is_settled', true)
                 ->where('entry.settled_on', '2026-09-10')
             );
@@ -158,7 +159,7 @@ class FinancialEntryTest extends TestCase
             ->get(route('payments', ['period' => '2026-10']))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('metrics.payable', '333.33')
+                ->where('metrics.payable', '1000.00')
                 ->has('payable', 1)
                 ->where('payable.0.source', 'installment')
                 ->where('payable.0.context', 'Parcela 2/3')
@@ -182,7 +183,7 @@ class FinancialEntryTest extends TestCase
                 'amount' => '3000.00',
                 'financial_account_id' => $account->id,
                 'credit_card_id' => null,
-                'installment_count' => 3,
+                'installment_count' => 12,
                 'category_id' => null,
                 'family_member_id' => null,
                 'payment_method' => PaymentMethod::Pix->value,
@@ -197,20 +198,20 @@ class FinancialEntryTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $entry = $workspace->financialTransactions()->sole();
-        $this->assertSame('3000.00', $entry->amount);
+        $this->assertSame('36000.00', $entry->amount);
         $this->assertNull($entry->settled_on);
 
         $installments = $entry->installments()
             ->orderBy('installment_number')
             ->get();
 
-        $this->assertCount(3, $installments);
-        $this->assertSame('1000.00', $installments[0]->amount);
-        $this->assertSame('1000.00', $installments[1]->amount);
-        $this->assertSame('1000.00', $installments[2]->amount);
+        $this->assertCount(12, $installments);
+        $this->assertSame('3000.00', $installments[0]->amount);
+        $this->assertSame('3000.00', $installments[1]->amount);
+        $this->assertSame('3000.00', $installments[11]->amount);
         $this->assertSame('2026-10-10', $installments[0]->due_date->toDateString());
         $this->assertSame('2026-11-10', $installments[1]->due_date->toDateString());
-        $this->assertSame('2026-12-10', $installments[2]->due_date->toDateString());
+        $this->assertSame('2027-09-10', $installments[11]->due_date->toDateString());
         $this->assertSame(TransactionInstallmentStatus::Paid, $installments[0]->status);
         $this->assertSame('2026-10-10', $installments[0]->paid_at?->toDateString());
         $this->assertSame(TransactionInstallmentStatus::Open, $installments[1]->status);
@@ -219,16 +220,17 @@ class FinancialEntryTest extends TestCase
         $movement = $entry->accountMovements()->sole();
         $this->assertSame($installments[0]->id, $movement->transaction_installment_id);
         $this->assertSame(AccountMovementType::IncomeReceipt, $movement->type);
-        $this->assertSame('1000.00', $movement->amount);
+        $this->assertSame('3000.00', $movement->amount);
         $this->assertSame('2026-10-10', $movement->occurred_on->toDateString());
-        $this->assertCurrentBalance($user, $workspace, '2000.00');
+        $this->assertCurrentBalance($user, $workspace, '4000.00');
 
         $this->actingAs($user)
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
             ->get(route('transactions.edit', $entry))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('entry.installment_count', 3)
+                ->where('entry.installment_count', 12)
+                ->where('entry.amount', '3000.00')
                 ->where('entry.is_settled', true)
                 ->where('entry.settled_on', '2026-10-10')
             );
@@ -238,11 +240,11 @@ class FinancialEntryTest extends TestCase
             ->get(route('payments', ['period' => '2026-10']))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('metrics.received', '1000.00')
+                ->where('metrics.received', '3000.00')
                 ->has('received', 1)
                 ->where('received.0.source', 'installment')
                 ->where('received.0.status_label', 'Recebido')
-                ->where('received.0.context', 'Parcela 1/3')
+                ->where('received.0.context', 'Parcela 1/12')
             );
 
         $this->actingAs($user)
@@ -250,11 +252,11 @@ class FinancialEntryTest extends TestCase
             ->get(route('payments', ['period' => '2026-11']))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('metrics.receivable', '1000.00')
+                ->where('metrics.receivable', '3000.00')
                 ->has('receivable', 1)
                 ->where('receivable.0.source', 'installment')
                 ->where('receivable.0.status_label', 'A receber')
-                ->where('receivable.0.context', 'Parcela 2/3')
+                ->where('receivable.0.context', 'Parcela 2/12')
             );
     }
 
