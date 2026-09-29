@@ -34,7 +34,7 @@ class MonthlyImportClosingController extends Controller
 
         $closures = $workspace->importPeriodClosures()
             ->whereDate('period_month', $monthStart->toDateString())
-            ->with(['closedBy:id,name', 'reopenedBy:id,name'])
+            ->with(['closedBy:id,name', 'reopenedBy:id,name', 'coverageConfirmedBy:id,name'])
             ->get();
 
         $imports = $workspace->financialImports()
@@ -184,6 +184,83 @@ class MonthlyImportClosingController extends Controller
         return $this->returnToClosing($period);
     }
 
+    public function confirmCoverage(Request $request, int $source): RedirectResponse
+    {
+        $workspace = $this->workspace();
+        $period = $this->validatedPeriod($request);
+        $workspace->financialAccounts()
+            ->where('is_active', true)
+            ->findOrFail($source);
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+
+        $monthStart = $period->startOfMonth();
+        $monthEnd = $period->endOfMonth();
+        $hasImport = $workspace->financialImports()
+            ->where('financial_account_id', $source)
+            ->whereIn('status', [
+                FinancialImportStatus::Completed->value,
+                FinancialImportStatus::NoMovement->value,
+            ])
+            ->whereDate('statement_start_on', '<=', $monthEnd->toDateString())
+            ->whereDate('statement_end_on', '>=', $monthStart->toDateString())
+            ->exists();
+
+        abort_unless(
+            $hasImport,
+            422,
+            'Não é possível confirmar a cobertura sem uma importação da conta no período.',
+        );
+
+        $attributes = [
+            'workspace_id' => $workspace->id,
+            'period_month' => $monthStart->toDateString(),
+            'financial_account_id' => $source,
+            'credit_card_id' => null,
+        ];
+
+        $closure = ImportPeriodClosure::query()->firstOrNew($attributes);
+
+        if (! $closure->exists) {
+            $closure->status = 'open';
+        }
+
+        $closure->coverage_confirmed_by = $user->id;
+        $closure->coverage_confirmed_at = now();
+        $closure->save();
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Cobertura do mês confirmada manualmente.',
+        ]);
+
+        return $this->returnToClosing($period);
+    }
+
+    public function resetCoverage(Request $request, int $source): RedirectResponse
+    {
+        $workspace = $this->workspace();
+        $period = $this->validatedPeriod($request);
+        $workspace->financialAccounts()
+            ->where('is_active', true)
+            ->findOrFail($source);
+
+        $closure = $this->closureQuery($workspace, 'account', $source, $period)
+            ->firstOrFail();
+
+        $closure->update([
+            'coverage_confirmed_by' => null,
+            'coverage_confirmed_at' => null,
+        ]);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Cobertura voltou a usar a detecção automática.',
+        ]);
+
+        return $this->returnToClosing($period);
+    }
+
     private function saveClosure(
         Request $request,
         string $sourceType,
@@ -231,7 +308,9 @@ class MonthlyImportClosingController extends Controller
         $pending = $entries->filter(fn ($entry): bool => ! $entry->is_reconciled && ! $entry->is_ignored)->count();
         $total = $entries->count();
         $hasImport = $imports->isNotEmpty();
-        $periodComplete = $hasImport && $this->coversMonth($imports, $period);
+        $detectedPeriodComplete = $hasImport && $this->coversMonth($imports, $period);
+        $coverageManuallyConfirmed = $closure?->coverage_confirmed_at !== null;
+        $periodComplete = $detectedPeriodComplete || $coverageManuallyConfirmed;
 
         return [
             'id' => $account->id,
@@ -248,6 +327,12 @@ class MonthlyImportClosingController extends Controller
             ),
             'has_import' => $hasImport,
             'period_complete' => $periodComplete,
+            'coverage' => [
+                'detected_complete' => $detectedPeriodComplete,
+                'manually_confirmed' => $coverageManuallyConfirmed,
+                'confirmed_at' => $closure?->coverage_confirmed_at?->toIso8601String(),
+                'confirmed_by' => $closure?->coverageConfirmedBy?->name,
+            ],
             'period_start' => $imports->min(fn (FinancialImport $import): ?string => $import->statement_start_on?->toDateString()),
             'period_end' => $imports->max(fn (FinancialImport $import): ?string => $import->statement_end_on?->toDateString()),
             'total_items' => $total,
@@ -286,6 +371,7 @@ class MonthlyImportClosingController extends Controller
             ),
             'has_import' => $hasImport,
             'period_complete' => $hasImport,
+            'coverage' => null,
             'period_start' => null,
             'period_end' => null,
             'total_items' => $total,

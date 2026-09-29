@@ -43,6 +43,13 @@ type Closure = {
     reopened_by: string | null;
 };
 
+type Coverage = {
+    detected_complete: boolean;
+    manually_confirmed: boolean;
+    confirmed_at: string | null;
+    confirmed_by: string | null;
+};
+
 type SourceItem = {
     id: number;
     kind: 'account' | 'card';
@@ -58,6 +65,7 @@ type SourceItem = {
         | 'no_movement';
     has_import: boolean;
     period_complete: boolean;
+    coverage: Coverage | null;
     period_start: string | null;
     period_end: string | null;
     total_items: number;
@@ -194,6 +202,13 @@ function coveragePresentation(item: SourceItem) {
         return null;
     }
 
+    if (item.coverage?.manually_confirmed) {
+        return {
+            label: 'Completo · manual',
+            className: 'border-positive/30 bg-positive-muted text-positive',
+        };
+    }
+
     return item.period_complete
         ? {
               label: 'Completo',
@@ -204,6 +219,77 @@ function coveragePresentation(item: SourceItem) {
               className:
                   'border-warning/40 bg-warning-muted text-warning-foreground',
           };
+}
+
+function CoverageControl({
+    item,
+    period,
+}: {
+    item: SourceItem;
+    period: string;
+}) {
+    const coverage = coveragePresentation(item);
+
+    if (!coverage) {
+        return <span className="text-muted-foreground">—</span>;
+    }
+
+    if (item.coverage?.manually_confirmed) {
+        return (
+            <Form
+                action={`/importacoes/fechamento-mensal/account/${item.id}/cobertura-completa`}
+                method="delete"
+            >
+                <input type="hidden" name="period" value={period} />
+                <button
+                    type="submit"
+                    className="cursor-pointer"
+                    title="Remover confirmação manual e voltar à cobertura detectada"
+                    aria-label="Remover confirmação manual da cobertura"
+                >
+                    <Badge
+                        variant="outline"
+                        className={`h-6 px-1.5 text-[11px] whitespace-nowrap ${coverage.className}`}
+                    >
+                        {coverage.label}
+                    </Badge>
+                </button>
+            </Form>
+        );
+    }
+
+    if (!item.period_complete) {
+        return (
+            <Form
+                action={`/importacoes/fechamento-mensal/account/${item.id}/cobertura-completa`}
+                method="post"
+            >
+                <input type="hidden" name="period" value={period} />
+                <button
+                    type="submit"
+                    className="cursor-pointer"
+                    title="Confirmar que o extrato cobre o mês completo"
+                    aria-label="Confirmar mês completo manualmente"
+                >
+                    <Badge
+                        variant="outline"
+                        className={`h-6 px-1.5 text-[11px] whitespace-nowrap ${coverage.className}`}
+                    >
+                        {coverage.label}
+                    </Badge>
+                </button>
+            </Form>
+        );
+    }
+
+    return (
+        <Badge
+            variant="outline"
+            className={`h-6 px-1.5 text-[11px] whitespace-nowrap ${coverage.className}`}
+        >
+            {coverage.label}
+        </Badge>
+    );
 }
 
 function reconciliationPresentation(item: SourceItem) {
@@ -485,13 +571,38 @@ function SourceDetails({ item }: { item: SourceItem }) {
         <div className="space-y-2 px-3 py-3 text-xs">
             {item.kind === 'account' && item.has_import && (
                 <p className="text-muted-foreground">
-                    Cobertura do extrato:{' '}
+                    Cobertura detectada no extrato:{' '}
                     <span className="text-foreground font-medium">
                         {formatDate(item.period_start)} a{' '}
                         {formatDate(item.period_end)}
                     </span>
                 </p>
             )}
+
+            {item.coverage?.manually_confirmed && (
+                <p className="text-muted-foreground">
+                    Mês completo confirmado manualmente
+                    {item.coverage.confirmed_by
+                        ? ` por ${item.coverage.confirmed_by}`
+                        : ''}
+                    {item.coverage.confirmed_at
+                        ? ` em ${dateTime.format(new Date(item.coverage.confirmed_at))}`
+                        : ''}
+                    . Clique em &quot;Completo · manual&quot; para voltar à
+                    detecção automática.
+                </p>
+            )}
+
+            {item.kind === 'account' &&
+                item.has_import &&
+                !item.period_complete && (
+                    <p className="text-muted-foreground">
+                        Se o extrato representa o mês inteiro, mesmo sem
+                        movimentos nos primeiros ou últimos dias, clique em
+                        &quot;Incompleto&quot; para confirmar a cobertura
+                        manualmente.
+                    </p>
+                )}
 
             {item.kind === 'card' && item.invoice && (
                 <p className="text-muted-foreground">
@@ -937,8 +1048,6 @@ export default function MonthlyClosing({
                                             const key = itemKey(item);
                                             const importStatus =
                                                 importPresentation(item);
-                                            const coverage =
-                                                coveragePresentation(item);
                                             const reconciliation =
                                                 reconciliationPresentation(
                                                     item,
@@ -1012,20 +1121,10 @@ export default function MonthlyClosing({
                                                             </Badge>
                                                         </td>
                                                         <td className="px-2 py-1.5">
-                                                            {coverage ? (
-                                                                <Badge
-                                                                    variant="outline"
-                                                                    className={`h-6 px-1.5 text-[11px] whitespace-nowrap ${coverage.className}`}
-                                                                >
-                                                                    {
-                                                                        coverage.label
-                                                                    }
-                                                                </Badge>
-                                                            ) : (
-                                                                <span className="text-muted-foreground">
-                                                                    —
-                                                                </span>
-                                                            )}
+                                                            <CoverageControl
+                                                                item={item}
+                                                                period={period}
+                                                            />
                                                         </td>
                                                         <td className="px-2 py-1.5 text-right font-medium tabular-nums">
                                                             {item.has_import
@@ -1094,7 +1193,6 @@ export default function MonthlyClosing({
                             {visibleItems.map((item) => {
                                 const key = itemKey(item);
                                 const importStatus = importPresentation(item);
-                                const coverage = coveragePresentation(item);
                                 const reconciliation =
                                     reconciliationPresentation(item);
                                 const closing = closingPresentation(item);
@@ -1150,9 +1248,12 @@ export default function MonthlyClosing({
                                                 <p className="text-muted-foreground">
                                                     Cobertura
                                                 </p>
-                                                <p className="mt-0.5">
-                                                    {coverage?.label ?? '—'}
-                                                </p>
+                                                <div className="mt-0.5">
+                                                    <CoverageControl
+                                                        item={item}
+                                                        period={period}
+                                                    />
+                                                </div>
                                             </div>
                                             <div>
                                                 <p className="text-muted-foreground">

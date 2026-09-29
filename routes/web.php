@@ -255,6 +255,18 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->whereNumber('source')
         ->name('imports.monthly-closing.close');
     Route::post(
+        'importacoes/fechamento-mensal/account/{source}/cobertura-completa',
+        [MonthlyImportClosingController::class, 'confirmCoverage'],
+    )
+        ->whereNumber('source')
+        ->name('imports.monthly-closing.coverage.confirm');
+    Route::delete(
+        'importacoes/fechamento-mensal/account/{source}/cobertura-completa',
+        [MonthlyImportClosingController::class, 'resetCoverage'],
+    )
+        ->whereNumber('source')
+        ->name('imports.monthly-closing.coverage.reset');
+    Route::post(
         'importacoes/fechamento-mensal/{sourceType}/{source}/sem-movimento',
         [MonthlyImportClosingController::class, 'noMovement'],
     )

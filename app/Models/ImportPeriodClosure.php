@@ -12,6 +12,7 @@ use Illuminate\Support\Carbon;
  * @property string $status
  * @property Carbon|null $closed_at
  * @property Carbon|null $reopened_at
+ * @property Carbon|null $coverage_confirmed_at
  */
 #[Fillable([
     'workspace_id',
@@ -19,6 +20,8 @@ use Illuminate\Support\Carbon;
     'credit_card_id',
     'period_month',
     'status',
+    'coverage_confirmed_by',
+    'coverage_confirmed_at',
     'closed_by',
     'closed_at',
     'reopened_by',
@@ -56,11 +59,18 @@ class ImportPeriodClosure extends Model
         return $this->belongsTo(User::class, 'reopened_by');
     }
 
+    /** @return BelongsTo<User, $this> */
+    public function coverageConfirmedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'coverage_confirmed_by');
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
         return [
             'period_month' => 'date',
+            'coverage_confirmed_at' => 'datetime',
             'closed_at' => 'datetime',
             'reopened_at' => 'datetime',
         ];

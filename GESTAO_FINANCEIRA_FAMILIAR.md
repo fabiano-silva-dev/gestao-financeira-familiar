@@ -175,6 +175,7 @@ Regras:
 - **Fechado** representa confirmação explícita do usuário para aquele período;
 - **Sem movimento** também é uma confirmação explícita do período, distinta de ausência de importação;
 - contas devem considerar a cobertura temporal combinada de múltiplas entradas, sem assumir que a existência de um arquivo significa mês completo;
+- a primeira e a última movimentação encontradas não provam, sozinhas, o início e o fim reais do extrato. Quando a fonte não permitir comprovar todo o período, o usuário pode confirmar manualmente que a conta cobre o mês completo; essa confirmação é reversível, auditável e não altera as datas originais da importação;
 - cartões devem ser conferidos pelo ciclo/referência da fatura, e não pela data de upload;
 - múltiplas importações podem participar da mesma origem e período;
 - fechamento e eventual reabertura devem registrar usuário e data;

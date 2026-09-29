@@ -154,6 +154,69 @@ class MonthlyImportClosingTest extends TestCase
             );
     }
 
+    public function test_incomplete_account_coverage_can_be_confirmed_and_restored_manually(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $import = $this->accountImport($workspace, $account, $user, '2026-09-03', '2026-09-28');
+        $this->bankEntry($workspace, $account, $import, true);
+
+        $this->page($user, $workspace, '2026-09')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('accounts.0.period_complete', false)
+                ->where('accounts.0.coverage.detected_complete', false)
+                ->where('accounts.0.coverage.manually_confirmed', false)
+                ->where('summary.incomplete_period', 1)
+            );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post("/importacoes/fechamento-mensal/account/{$account->id}/cobertura-completa", [
+                'period' => '2026-09',
+            ])
+            ->assertRedirect('/importacoes/fechamento-mensal?period=2026-09');
+
+        $this->assertDatabaseHas('import_period_closures', [
+            'workspace_id' => $workspace->id,
+            'financial_account_id' => $account->id,
+            'credit_card_id' => null,
+            'period_month' => '2026-09-01',
+            'status' => 'open',
+            'coverage_confirmed_by' => $user->id,
+        ]);
+
+        $this->page($user, $workspace, '2026-09')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('accounts.0.period_complete', true)
+                ->where('accounts.0.coverage.detected_complete', false)
+                ->where('accounts.0.coverage.manually_confirmed', true)
+                ->where('accounts.0.coverage.confirmed_by', $user->name)
+                ->where('summary.incomplete_period', 0)
+            );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->delete("/importacoes/fechamento-mensal/account/{$account->id}/cobertura-completa", [
+                'period' => '2026-09',
+            ])
+            ->assertRedirect('/importacoes/fechamento-mensal?period=2026-09');
+
+        $this->assertDatabaseHas('import_period_closures', [
+            'workspace_id' => $workspace->id,
+            'financial_account_id' => $account->id,
+            'period_month' => '2026-09-01',
+            'coverage_confirmed_by' => null,
+            'coverage_confirmed_at' => null,
+        ]);
+
+        $this->page($user, $workspace, '2026-09')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('accounts.0.period_complete', false)
+                ->where('accounts.0.coverage.manually_confirmed', false)
+                ->where('summary.incomplete_period', 1)
+            );
+    }
+
     public function test_main_status_filters_work(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();
