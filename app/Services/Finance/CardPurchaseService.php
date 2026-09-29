@@ -91,6 +91,7 @@ class CardPurchaseService
     public function clear(FinancialTransaction $transaction): void
     {
         $installments = $transaction->installments()
+            ->whereNotNull('credit_card_invoice_id')
             ->with(['invoice.payments', 'cardStatementEntry'])
             ->lockForUpdate()
             ->get();

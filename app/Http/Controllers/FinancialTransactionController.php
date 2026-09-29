@@ -7,6 +7,7 @@ use App\Enums\FinancialTransactionOrigin;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
+use App\Enums\TransactionInstallmentStatus;
 use App\Http\Requests\SaveFinancialEntryRequest;
 use App\Http\Requests\StoreExpenseRefundRequest;
 use App\Models\BankStatementEntry;
@@ -593,6 +594,27 @@ class FinancialTransactionController extends Controller
                 'refund_status' => 'none',
                 'refund_status_label' => 'Sem reembolso',
             ];
+        $installmentCount = max(
+            1,
+            (int) ($entry->getAttribute('installments_count') ?? 0),
+        );
+        $settledOn = $entry->settled_on?->toDateString();
+
+        if (
+            $entry->type === FinancialTransactionType::Expense
+            && $entry->credit_card_id === null
+            && $installmentCount > 1
+            && $entry->relationLoaded('installments')
+        ) {
+            $firstInstallment = $entry->installments
+                ->whereNull('credit_card_invoice_id')
+                ->sortBy('installment_number')
+                ->first();
+
+            $settledOn = $firstInstallment?->status === TransactionInstallmentStatus::Paid
+                ? $firstInstallment->paid_at?->toDateString()
+                : null;
+        }
 
         return [
             'id' => $entry->id,
@@ -638,9 +660,7 @@ class FinancialTransactionController extends Controller
             'credit_card_name' => $entry->creditCard === null
                 ? null
                 : "{$entry->creditCard->name} · final {$entry->creditCard->last_four}",
-            'installment_count' => $entry->credit_card_id === null
-                ? 1
-                : max(1, (int) ($entry->getAttribute('installments_count') ?? 0)),
+            'installment_count' => $installmentCount,
             'category_id' => $entry->category_id,
             'category_name' => $categoryName,
             'family_member_id' => $entry->family_member_id,
@@ -654,8 +674,8 @@ class FinancialTransactionController extends Controller
             'payee_name' => $entry->payee_name,
             'payment_instructions' => $entry->payment_instructions,
             'due_date' => $entry->due_date?->toDateString(),
-            'settled_on' => $entry->settled_on?->toDateString(),
-            'is_settled' => $entry->settled_on !== null,
+            'settled_on' => $settledOn,
+            'is_settled' => $settledOn !== null,
             'status' => $entry->status->value,
             'status_label' => $this->entryStatusLabel($entry),
             'notes' => $entry->notes,

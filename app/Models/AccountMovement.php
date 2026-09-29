@@ -19,6 +19,7 @@ use Illuminate\Validation\ValidationException;
 #[Fillable([
     'workspace_id',
     'financial_transaction_id',
+    'transaction_installment_id',
     'credit_card_invoice_payment_id',
     'expense_refund_id',
     'financial_account_id',
@@ -44,6 +45,14 @@ class AccountMovement extends Model
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(FinancialTransaction::class, 'financial_transaction_id');
+    }
+
+    /**
+     * @return BelongsTo<TransactionInstallment, $this>
+     */
+    public function installment(): BelongsTo
+    {
+        return $this->belongsTo(TransactionInstallment::class, 'transaction_installment_id');
     }
 
     /**

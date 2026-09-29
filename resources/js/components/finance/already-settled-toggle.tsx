@@ -8,6 +8,7 @@ type Props = {
     description: string;
     disabled?: boolean;
     name?: string;
+    label?: string;
 };
 
 export function AlreadySettledToggle({
@@ -17,8 +18,9 @@ export function AlreadySettledToggle({
     description,
     disabled = false,
     name = 'already_settled',
+    label: customLabel,
 }: Props) {
-    const label = isExpense ? 'Já paguei' : 'Já recebi';
+    const label = customLabel ?? (isExpense ? 'Já paguei' : 'Já recebi');
 
     return (
         <div className="space-y-2">

@@ -84,6 +84,7 @@ export default function FinancialEntryForm({
     const [settlementDate, setSettlementDate] = useState(
         entry?.settled_on ?? (!entry ? (defaultDate ?? '') : ''),
     );
+    const [dueDate, setDueDate] = useState(entry?.due_date ?? '');
     const [accountSelection, setAccountSelection] = useState(
         entry?.financial_account_id
             ? String(entry.financial_account_id)
@@ -113,6 +114,18 @@ export default function FinancialEntryForm({
         entry?.family_member_id ? String(entry.family_member_id) : 'none',
     );
     const usesCreditCard = isExpense && paymentMethod === 'credit_card';
+    const [installmentMode, setInstallmentMode] = useState<
+        'single' | 'installments'
+    >(
+        entry?.credit_card_id == null && (entry?.installment_count ?? 1) > 1
+            ? 'installments'
+            : 'single',
+    );
+    const [installmentCount, setInstallmentCount] = useState(
+        Math.max(1, entry?.installment_count ?? 1),
+    );
+    const cashInstallmentPlan =
+        isExpense && !usesCreditCard && installmentMode === 'installments';
     const isCancelled = status === 'cancelled';
     const canSettle = !usesCreditCard && alreadySettled && !isCancelled;
     const entryStatus = isCancelled
@@ -149,6 +162,8 @@ export default function FinancialEntryForm({
                 : current,
         );
         setCardSelection('');
+        setInstallmentMode('single');
+        setInstallmentCount(1);
     }, [entryType, categoryOptions, paymentMethods]);
 
     function applyAlreadySettled(checked: boolean) {
@@ -215,6 +230,19 @@ export default function FinancialEntryForm({
               }`
             : index();
 
+    function changeInstallmentMode(value: 'single' | 'installments') {
+        setInstallmentMode(value);
+
+        if (value === 'installments') {
+            setInstallmentCount((current) => Math.max(2, current));
+            setDueDate((current) => current || defaultDate || '');
+
+            return;
+        }
+
+        setInstallmentCount(1);
+    }
+
     function changePaymentMethod(value: string) {
         setPaymentMethod(value);
 
@@ -224,6 +252,17 @@ export default function FinancialEntryForm({
             );
             setAlreadySettled(false);
             setSettlementDate('');
+            setInstallmentMode('single');
+
+            if (entry?.credit_card_id == null) {
+                setInstallmentCount(1);
+            }
+
+            return;
+        }
+
+        if (installmentMode === 'installments') {
+            setDueDate((current) => current || defaultDate || '');
         }
     }
 
@@ -348,8 +387,12 @@ export default function FinancialEntryForm({
                                     id="due_date"
                                     name="due_date"
                                     type="date"
-                                    defaultValue={entry?.due_date ?? ''}
+                                    value={dueDate}
+                                    onChange={(event) =>
+                                        setDueDate(event.target.value)
+                                    }
                                     required={
+                                        cashInstallmentPlan ||
                                         entryStatus === 'planned' ||
                                         (entryStatus === 'confirmed' &&
                                             !settlementDate)
@@ -482,6 +525,87 @@ export default function FinancialEntryForm({
                         <InputError message={errors.payment_method} />
                     </div>
 
+                    {isExpense && !usesCreditCard && (
+                        <div className="grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
+                            <div className="grid gap-2">
+                                <Label htmlFor="installment_mode">
+                                    Forma do compromisso
+                                </Label>
+                                <Select
+                                    value={installmentMode}
+                                    onValueChange={(value) =>
+                                        changeInstallmentMode(
+                                            value as
+                                                | 'single'
+                                                | 'installments',
+                                        )
+                                    }
+                                >
+                                    <SelectTrigger
+                                        id="installment_mode"
+                                        className="w-full"
+                                    >
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="single">
+                                            Pagamento único
+                                        </SelectItem>
+                                        <SelectItem value="installments">
+                                            Parcelado, sem recorrência
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-muted-foreground text-xs">
+                                    Use parcelado para compromissos com fim
+                                    definido. Isso não cria uma recorrência.
+                                </p>
+                            </div>
+
+                            {cashInstallmentPlan ? (
+                                <div className="grid gap-2">
+                                    <Label htmlFor="installment_count">
+                                        Quantidade de parcelas
+                                    </Label>
+                                    <Input
+                                        id="installment_count"
+                                        name="installment_count"
+                                        type="number"
+                                        min="2"
+                                        max="60"
+                                        step="1"
+                                        value={installmentCount}
+                                        onChange={(event) =>
+                                            setInstallmentCount(
+                                                Math.max(
+                                                    2,
+                                                    Number(
+                                                        event.target.value,
+                                                    ) || 2,
+                                                ),
+                                            )
+                                        }
+                                        required
+                                    />
+                                    <p className="text-muted-foreground text-xs">
+                                        O valor total será dividido entre as
+                                        parcelas. As próximas vencem
+                                        mensalmente no mesmo dia.
+                                    </p>
+                                    <InputError
+                                        message={errors.installment_count}
+                                    />
+                                </div>
+                            ) : (
+                                <input
+                                    type="hidden"
+                                    name="installment_count"
+                                    value="1"
+                                />
+                            )}
+                        </div>
+                    )}
+
                     {usesCreditCard ? (
                         <div className="grid gap-2">
                             <input
@@ -531,7 +655,15 @@ export default function FinancialEntryForm({
                                     min="1"
                                     max="60"
                                     step="1"
-                                    defaultValue={entry?.installment_count ?? 1}
+                                    value={installmentCount}
+                                    onChange={(event) =>
+                                        setInstallmentCount(
+                                            Math.max(
+                                                1,
+                                                Number(event.target.value) || 1,
+                                            ),
+                                        )
+                                    }
                                     required
                                 />
                                 <p className="text-muted-foreground text-xs">
@@ -654,20 +786,31 @@ export default function FinancialEntryForm({
                                 isExpense={isExpense}
                                 disabled={isCancelled}
                                 name="entry_already_settled"
+                                label={
+                                    cashInstallmentPlan
+                                        ? 'Primeira parcela já paga'
+                                        : undefined
+                                }
                                 onCheckedChange={changeAlreadySettled}
                                 description={
-                                    alreadySettled && !isCancelled
-                                        ? `Aparece em transações recentes como ${isExpense ? 'Pago' : 'Recebido'} e altera o saldo da conta.`
-                                        : 'Não altera o saldo nem o gráfico do período. Serve para o fluxo de caixa, próximos vencimentos e atrasados.'
+                                    cashInstallmentPlan
+                                        ? alreadySettled && !isCancelled
+                                            ? 'Somente a primeira parcela altera o saldo agora. As demais ficam em aberto nos meses seguintes.'
+                                            : 'Todas as parcelas ficam em aberto e entram na projeção dos próximos meses.'
+                                        : alreadySettled && !isCancelled
+                                          ? `Aparece em transações recentes como ${isExpense ? 'Pago' : 'Recebido'} e altera o saldo da conta.`
+                                          : 'Não altera o saldo nem o gráfico do período. Serve para o fluxo de caixa, próximos vencimentos e atrasados.'
                                 }
                             />
 
                             {canSettle ? (
                                 <div className="grid gap-2">
                                     <Label htmlFor="settled_on">
-                                        {isExpense
-                                            ? 'Data efetiva do pagamento'
-                                            : 'Data efetiva do recebimento'}
+                                        {cashInstallmentPlan
+                                            ? 'Data efetiva da 1ª parcela'
+                                            : isExpense
+                                              ? 'Data efetiva do pagamento'
+                                              : 'Data efetiva do recebimento'}
                                     </Label>
                                     <Input
                                         id="settled_on"

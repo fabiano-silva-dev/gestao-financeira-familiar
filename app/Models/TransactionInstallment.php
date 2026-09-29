@@ -61,6 +61,12 @@ class TransactionInstallment extends Model
         return $this->hasOne(CardStatementEntry::class);
     }
 
+    /** @return HasOne<AccountMovement, $this> */
+    public function accountMovement(): HasOne
+    {
+        return $this->hasOne(AccountMovement::class, 'transaction_installment_id');
+    }
+
     protected static function booted(): void
     {
         static::updating(function (TransactionInstallment $installment): void {

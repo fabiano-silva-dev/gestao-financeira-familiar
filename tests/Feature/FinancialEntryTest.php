@@ -86,6 +86,85 @@ class FinancialEntryTest extends TestCase
             ]));
     }
 
+    public function test_non_card_installment_expense_keeps_total_and_only_paid_installment_moves_cash(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'opening_balance' => '1000.00',
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('transactions.store'), [
+                'type' => FinancialTransactionType::Expense->value,
+                'transaction_date' => '2026-09-10',
+                'competence_date' => '2026-09-10',
+                'description' => 'Compra parcelada fora do cartão',
+                'amount' => '1000.00',
+                'financial_account_id' => $account->id,
+                'credit_card_id' => null,
+                'installment_count' => 3,
+                'category_id' => null,
+                'family_member_id' => null,
+                'payment_method' => PaymentMethod::Pix->value,
+                'payee_name' => null,
+                'payment_instructions' => null,
+                'due_date' => '2026-09-30',
+                'settled_on' => '2026-09-10',
+                'status' => FinancialTransactionStatus::Confirmed->value,
+                'notes' => null,
+            ])
+            ->assertRedirect(route('transactions.index'))
+            ->assertSessionHasNoErrors();
+
+        $entry = $workspace->financialTransactions()->sole();
+        $this->assertSame('1000.00', $entry->amount);
+        $this->assertNull($entry->settled_on);
+
+        $installments = $entry->installments()
+            ->orderBy('installment_number')
+            ->get();
+
+        $this->assertCount(3, $installments);
+        $this->assertSame('333.34', $installments[0]->amount);
+        $this->assertSame('333.33', $installments[1]->amount);
+        $this->assertSame('333.33', $installments[2]->amount);
+        $this->assertSame('2026-09-30', $installments[0]->due_date->toDateString());
+        $this->assertSame('2026-10-30', $installments[1]->due_date->toDateString());
+        $this->assertSame('2026-11-30', $installments[2]->due_date->toDateString());
+        $this->assertSame(TransactionInstallmentStatus::Paid, $installments[0]->status);
+        $this->assertSame('2026-09-10', $installments[0]->paid_at?->toDateString());
+        $this->assertSame(TransactionInstallmentStatus::Open, $installments[1]->status);
+        $this->assertSame(TransactionInstallmentStatus::Open, $installments[2]->status);
+
+        $movement = $entry->accountMovements()->sole();
+        $this->assertSame($installments[0]->id, $movement->transaction_installment_id);
+        $this->assertSame('-333.34', $movement->amount);
+        $this->assertSame('2026-09-10', $movement->occurred_on->toDateString());
+        $this->assertCurrentBalance($user, $workspace, '666.66');
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('transactions.edit', $entry))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('entry.installment_count', 3)
+                ->where('entry.is_settled', true)
+                ->where('entry.settled_on', '2026-09-10')
+            );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('payments', ['period' => '2026-10']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('metrics.payable', '333.33')
+                ->has('payable', 1)
+                ->where('payable.0.source', 'installment')
+                ->where('payable.0.context', 'Parcela 2/3')
+            );
+    }
+
     public function test_index_lists_income_expense_and_transfer_from_current_workspace(): void
     {
         [$user, $currentWorkspace] = $this->userAndWorkspace();
