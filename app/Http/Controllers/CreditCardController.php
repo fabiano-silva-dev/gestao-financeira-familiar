@@ -37,7 +37,7 @@ class CreditCardController extends Controller
         $usedLimits = $this->usedLimitsByCard($workspace);
         $listing = ListingQuery::from(
             $request,
-            ['name', 'limit', 'used', 'available', 'status'],
+            ['name', 'limit', 'used', 'available', 'closing_day', 'due_day', 'status'],
             'status',
             'desc',
             ['status'],
@@ -55,8 +55,12 @@ class CreditCardController extends Controller
 
         if ($listing->sort === 'status') {
             $query->orderBy('is_active', $listing->direction)->orderBy('name');
-        } elseif (in_array($listing->sort, ['name'], true)) {
-            $listing->applySort($query, ['name' => 'name']);
+        } elseif (in_array($listing->sort, ['name', 'closing_day', 'due_day'], true)) {
+            $listing->applySort($query, [
+                'name' => 'name',
+                'closing_day' => 'closing_day',
+                'due_day' => 'due_day',
+            ]);
         }
 
         $cards = $query

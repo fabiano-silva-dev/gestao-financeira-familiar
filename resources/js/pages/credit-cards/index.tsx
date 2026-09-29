@@ -36,7 +36,7 @@ const currency = new Intl.NumberFormat('pt-BR', {
 });
 
 const rowGridClass =
-    'md:grid-cols-[minmax(0,1.5fr)_minmax(7rem,0.6fr)_minmax(7rem,0.6fr)_minmax(7rem,0.6fr)_minmax(7rem,0.6fr)_minmax(12rem,0.9fr)]';
+    'md:grid-cols-[minmax(0,1.45fr)_minmax(6.5rem,0.55fr)_minmax(6.5rem,0.55fr)_minmax(6.5rem,0.55fr)_minmax(6.5rem,0.55fr)_minmax(6.5rem,0.55fr)_minmax(6rem,0.5fr)_minmax(12rem,0.9fr)]';
 
 export default function CreditCardsIndex() {
     const { cards, summary, filters, hasRecords, statusOptions, workspace } =
@@ -47,7 +47,9 @@ export default function CreditCardsIndex() {
             listUrl,
             filters,
             column,
-            column === 'name' || column === 'status' ? 'asc' : 'desc',
+            ['name', 'closing_day', 'due_day', 'status'].includes(column)
+                ? 'asc'
+                : 'desc',
         );
 
     return (
@@ -199,6 +201,20 @@ export default function CreditCardsIndex() {
                                         align="right"
                                     />
                                     <SortableColumn
+                                        column="closing_day"
+                                        label="Fechamento"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <SortableColumn
+                                        column="due_day"
+                                        label="Vencimento"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={onSort}
+                                    />
+                                    <SortableColumn
                                         column="status"
                                         label="Situação"
                                         sort={filters.sort}
@@ -252,6 +268,12 @@ export default function CreditCardsIndex() {
                                                         card.available_limit,
                                                     ),
                                                 )}
+                                            </p>
+                                            <p className="hidden text-sm tabular-nums md:block">
+                                                Dia {card.closing_day}
+                                            </p>
+                                            <p className="hidden text-sm tabular-nums md:block">
+                                                Dia {card.due_day}
                                             </p>
                                             <Badge
                                                 variant={
