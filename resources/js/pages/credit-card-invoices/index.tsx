@@ -1,5 +1,6 @@
 import { Head, Link, usePage } from '@inertiajs/react';
 import { ArrowRight, Plus, ReceiptText } from 'lucide-react';
+import { MonthSelector } from '@/components/dashboard/month-selector';
 import { ListingEmpty } from '@/components/listing/listing-empty';
 import { ListingToolbar } from '@/components/listing/listing-toolbar';
 import { SortableColumn } from '@/components/listing/sortable-column';
@@ -60,6 +61,8 @@ export default function CreditCardInvoicesIndex() {
         workspace,
     } = usePage<Props>().props;
     const listUrl = index.url();
+    const selectedMonth =
+        filters.month ?? new Date().toISOString().slice(0, 7);
     const onSort = (column: string) =>
         sortListing(
             listUrl,
@@ -136,14 +139,14 @@ export default function CreditCardInvoicesIndex() {
                                     allLabel: 'Todas',
                                 },
                             ]}
-                            dates={[
-                                {
-                                    key: 'month',
-                                    label: 'Mês',
-                                    value: filters.month,
-                                    type: 'month',
-                                },
-                            ]}
+                            end={
+                                <MonthSelector
+                                    currentPeriod={`${selectedMonth}-01`}
+                                    url={listUrl}
+                                    query={filters}
+                                    queryKey="month"
+                                />
+                            }
                         />
 
                         {invoices.length === 0 ? (

@@ -25,23 +25,29 @@ type Props = {
     currentPeriod: string;
     url?: string;
     query?: ListingQueryState;
+    queryKey?: string;
 };
 
-export function MonthSelector({ currentPeriod, url, query }: Props) {
+export function MonthSelector({
+    currentPeriod,
+    url,
+    query,
+    queryKey = 'period',
+}: Props) {
     const yearMonth = yearMonthFromPeriod(currentPeriod);
     const periodLabel = monthYear.format(
         new Date(`${currentPeriod}T00:00:00Z`),
     );
     const visitPeriod = (period: string) => {
         if (url !== undefined && query !== undefined) {
-            visitListing(url, query, { period });
+            visitListing(url, query, { [queryKey]: period });
 
             return;
         }
 
         router.get(
             url ?? dashboard.url(),
-            { period },
+            { [queryKey]: period },
             {
                 preserveScroll: true,
                 replace: true,

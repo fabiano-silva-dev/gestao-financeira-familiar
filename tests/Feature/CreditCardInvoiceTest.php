@@ -25,6 +25,45 @@ class CreditCardInvoiceTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_invoice_index_defaults_to_current_reference_month(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+        $currentMonth = now()->startOfMonth();
+        $nextMonth = now()->addMonthNoOverflow()->startOfMonth();
+
+        $currentInvoice = CreditCardInvoice::query()->create([
+            'workspace_id' => $workspace->id,
+            'credit_card_id' => $card->id,
+            'reference_month' => $currentMonth->toDateString(),
+            'closing_date' => $currentMonth->addDays(4)->toDateString(),
+            'due_date' => $currentMonth->addDays(11)->toDateString(),
+            'calculated_amount' => '100.00',
+            'paid_amount' => '0.00',
+            'status' => CreditCardInvoiceStatus::Open->value,
+        ]);
+
+        CreditCardInvoice::query()->create([
+            'workspace_id' => $workspace->id,
+            'credit_card_id' => $card->id,
+            'reference_month' => $nextMonth->toDateString(),
+            'closing_date' => $nextMonth->addDays(4)->toDateString(),
+            'due_date' => $nextMonth->addDays(11)->toDateString(),
+            'calculated_amount' => '200.00',
+            'paid_amount' => '0.00',
+            'status' => CreditCardInvoiceStatus::Open->value,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('credit-card-invoices.index'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->has('invoices', 1)
+                ->where('invoices.0.id', $currentInvoice->id)
+                ->where('filters.month', $currentMonth->format('Y-m')));
+    }
+
     public function test_invoice_index_can_filter_by_reference_month(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();

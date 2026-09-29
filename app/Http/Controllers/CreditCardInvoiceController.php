@@ -80,11 +80,13 @@ class CreditCardInvoiceController extends Controller
             $query->where('credit_card_invoices.credit_card_id', $cardId);
         }
 
-        $month = $listing->filter('month');
+        $requestedMonth = $listing->filter('month');
+        $month = $requestedMonth !== null
+            && preg_match('/^\\d{4}-(0[1-9]|1[0-2])$/', $requestedMonth) === 1
+                ? $requestedMonth
+                : now()->format('Y-m');
 
-        if ($month !== null && preg_match('/^\\d{4}-(0[1-9]|1[0-2])$/', $month) === 1) {
-            $query->whereDate('credit_card_invoices.reference_month', $month.'-01');
-        }
+        $query->whereDate('credit_card_invoices.reference_month', $month.'-01');
 
         $listing->applySort($query, [
             'card' => 'credit_cards.name',
@@ -98,7 +100,10 @@ class CreditCardInvoiceController extends Controller
             'invoices' => $query
                 ->get()
                 ->map(fn (CreditCardInvoice $invoice): array => $this->invoiceData($invoice)),
-            'filters' => $listing->toArray(),
+            'filters' => [
+                ...$listing->toArray(),
+                'month' => $month,
+            ],
             'hasRecords' => $workspace->creditCardInvoices()->exists(),
             'statusOptions' => CreditCardInvoiceStatus::filterOptions(),
             'cardOptions' => $workspace->creditCards()
