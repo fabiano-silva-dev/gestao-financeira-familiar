@@ -255,7 +255,11 @@ export default function AvailabilityDashboard({
 
                     <Card>
                         <Link
-                            href={'/pagamentos?period=' + nextMonthPeriod}
+                            href={
+                                '/pagamentos?period=' +
+                                nextMonthPeriod +
+                                '#a-receber'
+                            }
                             className="block"
                         >
                             <CardContent className="p-5">
@@ -282,7 +286,7 @@ export default function AvailabilityDashboard({
                                     <CalendarClock className="text-primary size-5" />
                                 </div>
                                 <div className="text-primary mt-4 flex items-center gap-1 text-xs font-medium">
-                                    Abrir pagamentos do mês
+                                    Ver recebimentos do mês
                                     <ArrowRight className="size-4" />
                                 </div>
                             </CardContent>

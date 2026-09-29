@@ -10,7 +10,7 @@ import {
     TrendingUp,
     WalletCards,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { MonthSelector } from '@/components/dashboard/month-selector';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -253,14 +253,16 @@ function PaymentSection({
     description,
     items,
     mode,
+    id,
 }: {
     title: string;
     description: string;
     items: PaymentDashboardItem[];
     mode: SectionMode;
+    id?: string;
 }) {
     return (
-        <Card>
+        <Card id={id} className={id ? 'scroll-mt-20' : undefined}>
             <CardHeader>
                 <CardTitle>{title}</CardTitle>
                 <CardDescription>{description}</CardDescription>
@@ -376,6 +378,18 @@ export default function PaymentsDashboard() {
     } = usePage<PaymentDashboardPageProps>().props;
     const projectedBalance = Number(metrics.projected_balance);
 
+    useEffect(() => {
+        if (window.location.hash !== '#a-receber') {
+            return;
+        }
+
+        window.requestAnimationFrame(() => {
+            document
+                .getElementById('a-receber')
+                ?.scrollIntoView({ block: 'start' });
+        });
+    }, [currentPeriod]);
+
     return (
         <>
             <Head title="Dashboard de pagamentos" />
@@ -467,6 +481,7 @@ export default function PaymentsDashboard() {
                         mode="payable"
                     />
                     <PaymentSection
+                        id="a-receber"
                         title="A receber"
                         description="Receitas e recebimentos previstos para o período."
                         items={receivable}
