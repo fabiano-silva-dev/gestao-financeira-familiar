@@ -63,6 +63,7 @@ jobs:
         run: |
           php artisan test tests/Feature/FinancialImportAutoDetectionTest.php
           php artisan test tests/Feature/FinancialAccountTest.php
+          php artisan test tests/Feature/AvailabilityDashboardTest.php
           php artisan test tests/Feature/OfxImportTest.php
           php artisan test tests/Feature/CardStatementImportTest.php
           php artisan test tests/Feature/CreditCardInvoicePaymentReconciliationTest.php
