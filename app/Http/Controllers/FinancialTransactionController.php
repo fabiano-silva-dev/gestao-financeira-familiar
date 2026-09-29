@@ -601,7 +601,14 @@ class FinancialTransactionController extends Controller
         $settledOn = $entry->settled_on?->toDateString();
 
         if (
-            $entry->type === FinancialTransactionType::Expense
+            in_array(
+                $entry->type,
+                [
+                    FinancialTransactionType::Expense,
+                    FinancialTransactionType::Income,
+                ],
+                true,
+            )
             && $entry->credit_card_id === null
             && $installmentCount > 1
             && $entry->relationLoaded('installments')

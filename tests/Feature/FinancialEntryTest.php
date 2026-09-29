@@ -165,6 +165,99 @@ class FinancialEntryTest extends TestCase
             );
     }
 
+    public function test_non_card_installment_income_keeps_total_and_projects_future_receipts(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'opening_balance' => '1000.00',
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('transactions.store'), [
+                'type' => FinancialTransactionType::Income->value,
+                'transaction_date' => '2026-10-10',
+                'competence_date' => '2026-10-10',
+                'description' => 'Serviços Tecnologia',
+                'amount' => '3000.00',
+                'financial_account_id' => $account->id,
+                'credit_card_id' => null,
+                'installment_count' => 3,
+                'category_id' => null,
+                'family_member_id' => null,
+                'payment_method' => PaymentMethod::Pix->value,
+                'payee_name' => 'Cliente',
+                'payment_instructions' => null,
+                'due_date' => '2026-10-10',
+                'settled_on' => '2026-10-10',
+                'status' => FinancialTransactionStatus::Confirmed->value,
+                'notes' => null,
+            ])
+            ->assertRedirect(route('transactions.index'))
+            ->assertSessionHasNoErrors();
+
+        $entry = $workspace->financialTransactions()->sole();
+        $this->assertSame('3000.00', $entry->amount);
+        $this->assertNull($entry->settled_on);
+
+        $installments = $entry->installments()
+            ->orderBy('installment_number')
+            ->get();
+
+        $this->assertCount(3, $installments);
+        $this->assertSame('1000.00', $installments[0]->amount);
+        $this->assertSame('1000.00', $installments[1]->amount);
+        $this->assertSame('1000.00', $installments[2]->amount);
+        $this->assertSame('2026-10-10', $installments[0]->due_date->toDateString());
+        $this->assertSame('2026-11-10', $installments[1]->due_date->toDateString());
+        $this->assertSame('2026-12-10', $installments[2]->due_date->toDateString());
+        $this->assertSame(TransactionInstallmentStatus::Paid, $installments[0]->status);
+        $this->assertSame('2026-10-10', $installments[0]->paid_at?->toDateString());
+        $this->assertSame(TransactionInstallmentStatus::Open, $installments[1]->status);
+        $this->assertSame(TransactionInstallmentStatus::Open, $installments[2]->status);
+
+        $movement = $entry->accountMovements()->sole();
+        $this->assertSame($installments[0]->id, $movement->transaction_installment_id);
+        $this->assertSame(AccountMovementType::IncomeReceipt, $movement->type);
+        $this->assertSame('1000.00', $movement->amount);
+        $this->assertSame('2026-10-10', $movement->occurred_on->toDateString());
+        $this->assertCurrentBalance($user, $workspace, '2000.00');
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('transactions.edit', $entry))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('entry.installment_count', 3)
+                ->where('entry.is_settled', true)
+                ->where('entry.settled_on', '2026-10-10')
+            );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('payments', ['period' => '2026-10']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('metrics.received', '1000.00')
+                ->has('received', 1)
+                ->where('received.0.source', 'installment')
+                ->where('received.0.status_label', 'Recebido')
+                ->where('received.0.context', 'Parcela 1/3')
+            );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('payments', ['period' => '2026-11']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('metrics.receivable', '1000.00')
+                ->has('receivable', 1)
+                ->where('receivable.0.source', 'installment')
+                ->where('receivable.0.status_label', 'A receber')
+                ->where('receivable.0.context', 'Parcela 2/3')
+            );
+    }
+
     public function test_index_lists_income_expense_and_transfer_from_current_workspace(): void
     {
         [$user, $currentWorkspace] = $this->userAndWorkspace();

@@ -134,7 +134,7 @@ class FinancialEntryService
                 ->whereNull('credit_card_invoice_id')
                 ->exists(),
             422,
-            'Este lançamento possui parcelas. O pagamento deve ser registrado na parcela correspondente.',
+            'Este lançamento possui parcelas. A baixa deve ser registrada na parcela correspondente.',
         );
 
         return DB::transaction(function () use ($entry): FinancialTransaction {
@@ -215,7 +215,14 @@ class FinancialEntryService
         $isConfirmed = ($data['status'] ?? null) === FinancialTransactionStatus::Confirmed->value;
         $usesCreditCard = ($data['payment_method'] ?? null) === PaymentMethod::CreditCard->value;
         $installmentCount = max(1, (int) ($data['installment_count'] ?? 1));
-        $isCashInstallmentPlan = ($data['type'] ?? null) === FinancialTransactionType::Expense->value
+        $isCashInstallmentPlan = in_array(
+            $data['type'] ?? null,
+            [
+                FinancialTransactionType::Expense->value,
+                FinancialTransactionType::Income->value,
+            ],
+            true,
+        )
             && ! $usesCreditCard
             && $installmentCount > 1;
 
@@ -256,6 +263,7 @@ class FinancialEntryService
     {
         $installmentCount = max(1, (int) ($data['installment_count'] ?? 1));
         $isExpense = $entry->type === FinancialTransactionType::Expense;
+        $isIncome = $entry->type === FinancialTransactionType::Income;
         $usesCreditCard = $entry->credit_card_id !== null;
 
         if ($isExpense && $usesCreditCard) {
@@ -272,7 +280,7 @@ class FinancialEntryService
 
         $this->cardPurchaseService->clear($entry);
 
-        if ($isExpense && ! $usesCreditCard && $installmentCount > 1) {
+        if (($isExpense || $isIncome) && ! $usesCreditCard && $installmentCount > 1) {
             $this->syncCashInstallments($entry, $data, $installmentCount);
 
             return;
@@ -398,7 +406,7 @@ class FinancialEntryService
 
         if ($hasPaid || $hasReconciledMovement) {
             throw ValidationException::withMessages([
-                'installment_count' => 'O parcelamento já possui parcela paga ou conciliada. Desfaça o pagamento ou a conciliação antes de alterar valor, datas ou quantidade de parcelas.',
+                'installment_count' => 'O parcelamento já possui parcela liquidada ou conciliada. Desfaça a baixa ou a conciliação antes de alterar valor, datas ou quantidade de parcelas.',
             ]);
         }
     }
@@ -473,7 +481,7 @@ class FinancialEntryService
                 fn (TransactionInstallment $installment): bool => $installment->status === TransactionInstallmentStatus::Paid,
             )) {
                 throw ValidationException::withMessages([
-                    'status' => 'Não é possível cancelar um parcelamento com parcelas pagas.',
+                    'status' => 'Não é possível cancelar um parcelamento com parcelas liquidadas.',
                 ]);
             }
 
@@ -528,7 +536,14 @@ class FinancialEntryService
 
             foreach ($cashInstallments as $installment) {
                 $movement = $linkedMovements->get($installment->id);
-                $shouldExist = $entry->type === FinancialTransactionType::Expense
+                $shouldExist = in_array(
+                    $entry->type,
+                    [
+                        FinancialTransactionType::Expense,
+                        FinancialTransactionType::Income,
+                    ],
+                    true,
+                )
                     && $entry->financial_account_id !== null
                     && $entry->status !== FinancialTransactionStatus::Cancelled
                     && $installment->status === TransactionInstallmentStatus::Paid
@@ -542,6 +557,7 @@ class FinancialEntryService
                     continue;
                 }
 
+                $isExpense = $entry->type === FinancialTransactionType::Expense;
                 $movementData = [
                     'workspace_id' => $entry->workspace_id,
                     'transaction_installment_id' => $installment->id,
@@ -550,8 +566,12 @@ class FinancialEntryService
                     'description' => $entry->description
                         .' · Parcela '.$installment->installment_number
                         .'/'.$installment->total_installments,
-                    'amount' => '-'.$installment->amount,
-                    'type' => AccountMovementType::ExpensePayment,
+                    'amount' => $isExpense
+                        ? '-'.$installment->amount
+                        : $installment->amount,
+                    'type' => $isExpense
+                        ? AccountMovementType::ExpensePayment
+                        : AccountMovementType::IncomeReceipt,
                 ];
 
                 $movement instanceof AccountMovement

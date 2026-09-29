@@ -58,7 +58,14 @@ class SaveFinancialEntryRequest extends FormRequest
         $isCreditCardExpense = $type === FinancialTransactionType::Expense
             && $paymentMethod === PaymentMethod::CreditCard;
         $installmentCount = max(1, (int) $this->input('installment_count', 1));
-        $isCashInstallmentExpense = $type === FinancialTransactionType::Expense
+        $isCashInstallmentPlan = in_array(
+            $type,
+            [
+                FinancialTransactionType::Expense,
+                FinancialTransactionType::Income,
+            ],
+            true,
+        )
             && ! $isCreditCardExpense
             && $installmentCount > 1;
         $isSettled = filled($this->input('settled_on'));
@@ -122,7 +129,6 @@ class SaveFinancialEntryRequest extends FormRequest
                 'integer',
                 'min:1',
                 'max:60',
-                Rule::prohibitedIf($type !== FinancialTransactionType::Expense),
             ],
             'category_id' => [
                 'nullable',
@@ -143,7 +149,7 @@ class SaveFinancialEntryRequest extends FormRequest
                 Rule::requiredIf(
                     ! $isCreditCardExpense
                     && (
-                        $isCashInstallmentExpense
+                        $isCashInstallmentPlan
                         || $status === FinancialTransactionStatus::Planned
                         || ($status === FinancialTransactionStatus::Confirmed && ! $isSettled)
                     ),

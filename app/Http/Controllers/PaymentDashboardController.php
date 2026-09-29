@@ -35,20 +35,22 @@ class PaymentDashboardController extends Controller
 
         $payable = $this->sortItems([
             ...$this->pendingTransactions($workspace, FinancialTransactionType::Expense, $start, $end, $today),
-            ...$this->pendingInstallments($workspace, $start, $end, $today),
+            ...$this->pendingInstallments($workspace, FinancialTransactionType::Expense, $start, $end, $today),
             ...$this->pendingInvoices($workspace, $start, $end, $today),
         ]);
         $paid = $this->sortItems([
             ...$this->settledTransactions($workspace, FinancialTransactionType::Expense, $start, $end),
-            ...$this->settledInstallments($workspace, $start, $end),
+            ...$this->settledInstallments($workspace, FinancialTransactionType::Expense, $start, $end),
             ...$this->cardPayments($workspace, $start, $end),
         ]);
-        $receivable = $this->sortItems(
-            $this->pendingTransactions($workspace, FinancialTransactionType::Income, $start, $end, $today),
-        );
-        $received = $this->sortItems(
-            $this->settledTransactions($workspace, FinancialTransactionType::Income, $start, $end),
-        );
+        $receivable = $this->sortItems([
+            ...$this->pendingTransactions($workspace, FinancialTransactionType::Income, $start, $end, $today),
+            ...$this->pendingInstallments($workspace, FinancialTransactionType::Income, $start, $end, $today),
+        ]);
+        $received = $this->sortItems([
+            ...$this->settledTransactions($workspace, FinancialTransactionType::Income, $start, $end),
+            ...$this->settledInstallments($workspace, FinancialTransactionType::Income, $start, $end),
+        ]);
 
         $paidTotal = $this->itemsTotal($paid);
         $payableTotal = $this->itemsTotal($payable);
@@ -182,6 +184,7 @@ class PaymentDashboardController extends Controller
     /** @return array<int, array<string, mixed>> */
     private function pendingInstallments(
         Workspace $workspace,
+        FinancialTransactionType $type,
         CarbonImmutable $start,
         CarbonImmutable $end,
         CarbonImmutable $today,
@@ -200,12 +203,12 @@ class PaymentDashboardController extends Controller
                     });
             })
             ->whereHas('transaction', fn ($query) => $query
-                ->where('type', FinancialTransactionType::Expense->value)
+                ->where('type', $type->value)
                 ->whereNull('credit_card_id')
                 ->where('status', '!=', FinancialTransactionStatus::Cancelled->value))
             ->with('transaction.account:id,name')
             ->get()
-            ->map(function (TransactionInstallment $installment) use ($today): array {
+            ->map(function (TransactionInstallment $installment) use ($today, $type): array {
                 $date = $installment->expected_payment_date ?? $installment->due_date;
                 $overdue = $date->lt($today);
 
@@ -215,7 +218,11 @@ class PaymentDashboardController extends Controller
                     description: $installment->transaction->description,
                     amount: (string) $installment->amount,
                     date: $date->toDateString(),
-                    statusLabel: $overdue ? 'Vencido' : 'A pagar',
+                    statusLabel: $overdue
+                        ? 'Vencido'
+                        : ($type === FinancialTransactionType::Expense
+                            ? 'A pagar'
+                            : 'A receber'),
                     isOverdue: $overdue,
                     context: 'Parcela '.$installment->installment_number.'/'.$installment->total_installments,
                     details: $this->installmentDetails($installment),
@@ -227,6 +234,7 @@ class PaymentDashboardController extends Controller
     /** @return array<int, array<string, mixed>> */
     private function settledInstallments(
         Workspace $workspace,
+        FinancialTransactionType $type,
         CarbonImmutable $start,
         CarbonImmutable $end,
     ): array {
@@ -237,7 +245,7 @@ class PaymentDashboardController extends Controller
             ->whereNotNull('paid_at')
             ->whereBetween('paid_at', [$start->toDateString(), $end->toDateString()])
             ->whereHas('transaction', fn ($query) => $query
-                ->where('type', FinancialTransactionType::Expense->value)
+                ->where('type', $type->value)
                 ->whereNull('credit_card_id')
                 ->where('status', '!=', FinancialTransactionStatus::Cancelled->value))
             ->with('transaction.account:id,name')
@@ -248,7 +256,9 @@ class PaymentDashboardController extends Controller
                 description: $installment->transaction->description,
                 amount: (string) $installment->amount,
                 date: $installment->paid_at->toDateString(),
-                statusLabel: 'Pago',
+                statusLabel: $type === FinancialTransactionType::Expense
+                    ? 'Pago'
+                    : 'Recebido',
                 context: 'Parcela '.$installment->installment_number.'/'.$installment->total_installments,
                 details: $this->installmentDetails($installment),
             ))

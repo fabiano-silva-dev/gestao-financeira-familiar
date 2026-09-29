@@ -125,7 +125,7 @@ export default function FinancialEntryForm({
         Math.max(1, entry?.installment_count ?? 1),
     );
     const cashInstallmentPlan =
-        isExpense && !usesCreditCard && installmentMode === 'installments';
+        !usesCreditCard && installmentMode === 'installments';
     const isCancelled = status === 'cancelled';
     const canSettle = !usesCreditCard && alreadySettled && !isCancelled;
     const entryStatus = isCancelled
@@ -162,8 +162,6 @@ export default function FinancialEntryForm({
                 : current,
         );
         setCardSelection('');
-        setInstallmentMode('single');
-        setInstallmentCount(1);
     }, [entryType, categoryOptions, paymentMethods]);
 
     function applyAlreadySettled(checked: boolean) {
@@ -525,7 +523,7 @@ export default function FinancialEntryForm({
                         <InputError message={errors.payment_method} />
                     </div>
 
-                    {isExpense && !usesCreditCard && (
+                    {!usesCreditCard && (
                         <div className="grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
                             <div className="grid gap-2">
                                 <Label htmlFor="installment_mode">
@@ -549,7 +547,9 @@ export default function FinancialEntryForm({
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="single">
-                                            Pagamento único
+                                            {isExpense
+                                                ? 'Pagamento único'
+                                                : 'Recebimento único'}
                                         </SelectItem>
                                         <SelectItem value="installments">
                                             Parcelado, sem recorrência
@@ -557,7 +557,7 @@ export default function FinancialEntryForm({
                                     </SelectContent>
                                 </Select>
                                 <p className="text-muted-foreground text-xs">
-                                    Use parcelado para compromissos com fim
+                                    Use parcelado para lançamentos com fim
                                     definido. Isso não cria uma recorrência.
                                 </p>
                             </div>
@@ -788,15 +788,17 @@ export default function FinancialEntryForm({
                                 name="entry_already_settled"
                                 label={
                                     cashInstallmentPlan
-                                        ? 'Primeira parcela já paga'
+                                        ? isExpense
+                                            ? 'Primeira parcela já paga'
+                                            : 'Primeira parcela já recebida'
                                         : undefined
                                 }
                                 onCheckedChange={changeAlreadySettled}
                                 description={
                                     cashInstallmentPlan
                                         ? alreadySettled && !isCancelled
-                                            ? 'Somente a primeira parcela altera o saldo agora. As demais ficam em aberto nos meses seguintes.'
-                                            : 'Todas as parcelas ficam em aberto e entram na projeção dos próximos meses.'
+                                            ? `Somente a primeira parcela ${isExpense ? 'sai' : 'entra'} no saldo agora. As demais ficam em aberto nos meses seguintes.`
+                                            : `Todas as parcelas ficam em aberto e entram na projeção de valores ${isExpense ? 'a pagar' : 'a receber'}.`
                                         : alreadySettled && !isCancelled
                                           ? `Aparece em transações recentes como ${isExpense ? 'Pago' : 'Recebido'} e altera o saldo da conta.`
                                           : 'Não altera o saldo nem o gráfico do período. Serve para o fluxo de caixa, próximos vencimentos e atrasados.'
@@ -807,7 +809,9 @@ export default function FinancialEntryForm({
                                 <div className="grid gap-2">
                                     <Label htmlFor="settled_on">
                                         {cashInstallmentPlan
-                                            ? 'Data efetiva da 1ª parcela'
+                                            ? isExpense
+                                                ? 'Data efetiva da 1ª parcela'
+                                                : 'Data efetiva do 1º recebimento'
                                             : isExpense
                                               ? 'Data efetiva do pagamento'
                                               : 'Data efetiva do recebimento'}
