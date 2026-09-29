@@ -238,25 +238,26 @@ class FinancialTransactionController extends Controller
         ]);
     }
 
-    public function createExpense(): Response
+    public function createExpense(Request $request): Response
     {
-        return $this->createResponse(FinancialTransactionType::Expense);
+        return $this->createResponse($request, FinancialTransactionType::Expense);
     }
 
-    public function createIncome(): Response
+    public function createIncome(Request $request): Response
     {
-        return $this->createResponse(FinancialTransactionType::Income);
+        return $this->createResponse($request, FinancialTransactionType::Income);
     }
 
-    public function createTransfer(): Response
+    public function createTransfer(Request $request): Response
     {
-        return $this->createResponse(FinancialTransactionType::Transfer);
+        return $this->createResponse($request, FinancialTransactionType::Transfer);
     }
 
     public function store(SaveFinancialEntryRequest $request): RedirectResponse
     {
+        $workspace = $this->workspace();
         $entry = $this->entryService->create(
-            $this->workspace(),
+            $workspace,
             $request->validated(),
         );
 
@@ -267,7 +268,8 @@ class FinancialTransactionController extends Controller
                 : 'Receita cadastrada com sucesso.',
         ]);
 
-        return to_route('transactions.index');
+        return $this->accountReturn($request, $workspace)
+            ?? to_route('transactions.index');
     }
 
     public function edit(int $entry): Response
@@ -388,13 +390,63 @@ class FinancialTransactionController extends Controller
         return to_route('transactions.edit', $entry);
     }
 
-    private function createResponse(FinancialTransactionType $type): Response
+    private function createResponse(Request $request, FinancialTransactionType $type): Response
     {
+        $workspace = $this->workspace();
+        $requestedAccountId = $request->integer('account');
+        $defaultAccount = $requestedAccountId > 0
+            ? $workspace->financialAccounts()->find($requestedAccountId)
+            : null;
+        $requestedPeriod = $request->query('period');
+        $period = is_string($requestedPeriod)
+            && preg_match('/^\\d{4}-(0[1-9]|1[0-2])$/', $requestedPeriod) === 1
+                ? $this->periodStart($requestedPeriod)
+                : null;
+        $defaultDate = CarbonImmutable::today();
+
+        if ($period !== null) {
+            $defaultDate = $period->day(min(
+                $defaultDate->day,
+                $period->endOfMonth()->day,
+            ));
+        }
+
         return Inertia::render('transactions/create', [
             'entryType' => $type->value,
             'entryTypeLabel' => $type->label(),
-            'defaultDate' => now()->toDateString(),
+            'defaultDate' => $defaultDate->toDateString(),
+            'defaultAccountId' => $defaultAccount === null
+                ? null
+                : (string) $defaultAccount->id,
+            'returnAccountId' => $defaultAccount === null
+                ? null
+                : (string) $defaultAccount->id,
+            'returnPeriod' => $defaultAccount !== null && $period !== null
+                ? $period->format('Y-m')
+                : null,
             ...$this->referenceOptions($type),
+        ]);
+    }
+
+    private function accountReturn(
+        Request $request,
+        Workspace $workspace,
+    ): ?RedirectResponse {
+        $accountId = $request->integer('_return_account');
+        $period = $request->input('_return_period');
+
+        if (
+            $accountId <= 0
+            || ! is_string($period)
+            || preg_match('/^\\d{4}-(0[1-9]|1[0-2])$/', $period) !== 1
+            || ! $workspace->financialAccounts()->whereKey($accountId)->exists()
+        ) {
+            return null;
+        }
+
+        return redirect()->route('accounts.show', [
+            'account' => $accountId,
+            'period' => $period,
         ]);
     }
 

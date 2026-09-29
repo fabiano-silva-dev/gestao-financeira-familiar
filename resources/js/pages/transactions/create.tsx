@@ -13,6 +13,9 @@ type Props = {
     entryType: FinancialEntryType;
     entryTypeLabel: string;
     defaultDate: string;
+    defaultAccountId: string | null;
+    returnAccountId: string | null;
+    returnPeriod: string | null;
     accountOptions: FinancialEntryReferenceOption[];
     cardOptions: FinancialEntryReferenceOption[];
     categoryOptions: FinancialEntryReferenceOption[];
@@ -24,6 +27,9 @@ export default function TransactionsCreate({
     entryType,
     entryTypeLabel,
     defaultDate,
+    defaultAccountId,
+    returnAccountId,
+    returnPeriod,
     accountOptions,
     ...formProps
 }: Props) {
@@ -57,11 +63,17 @@ export default function TransactionsCreate({
                             <TransferForm
                                 accountOptions={accountOptions}
                                 defaultDate={defaultDate}
+                                defaultSourceAccountId={defaultAccountId}
+                                returnAccountId={returnAccountId}
+                                returnPeriod={returnPeriod}
                             />
                         ) : (
                             <FinancialEntryForm
                                 entryType={entryType}
                                 defaultDate={defaultDate}
+                                defaultAccountId={defaultAccountId}
+                                returnAccountId={returnAccountId}
+                                returnPeriod={returnPeriod}
                                 accountOptions={accountOptions}
                                 {...formProps}
                             />

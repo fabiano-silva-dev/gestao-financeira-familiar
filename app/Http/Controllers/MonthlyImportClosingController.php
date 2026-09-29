@@ -181,7 +181,12 @@ class MonthlyImportClosingController extends Controller
             'message' => 'Fechamento reaberto para conferência.',
         ]);
 
-        return $this->returnToClosing($period);
+        return $this->returnAfterMutation(
+            $request,
+            $period,
+            $sourceType,
+            $source,
+        );
     }
 
     public function confirmCoverage(Request $request, int $source): RedirectResponse
@@ -295,7 +300,12 @@ class MonthlyImportClosingController extends Controller
                 : 'Período marcado como fechado.',
         ]);
 
-        return $this->returnToClosing($period);
+        return $this->returnAfterMutation(
+            $request,
+            $period,
+            $sourceType,
+            $source,
+        );
     }
 
     private function accountItem(
@@ -609,6 +619,22 @@ class MonthlyImportClosingController extends Controller
         return in_array($value, ['all', 'pending', 'not_imported', 'reconciliation', 'reconciled', 'closed'], true)
             ? $value
             : 'all';
+    }
+
+    private function returnAfterMutation(
+        Request $request,
+        CarbonImmutable $period,
+        string $sourceType,
+        int $source,
+    ): RedirectResponse {
+        if ($sourceType === 'account' && $request->boolean('return_to_account')) {
+            return redirect()->route('accounts.show', [
+                'account' => $source,
+                'period' => $period->format('Y-m'),
+            ]);
+        }
+
+        return $this->returnToClosing($period);
     }
 
     private function returnToClosing(CarbonImmutable $period): RedirectResponse

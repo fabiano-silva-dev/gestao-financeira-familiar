@@ -98,6 +98,10 @@ class FinancialAccountController extends Controller
         );
         $monthStart = $this->periodStart($request);
         $monthEnd = $monthStart->endOfMonth();
+        $periodClosure = $workspace->importPeriodClosures()
+            ->where('financial_account_id', $financialAccount->id)
+            ->whereDate('period_month', $monthStart->toDateString())
+            ->first();
 
         $movementQuery = $this->effectiveMovementsQuery($financialAccount);
         $periodQuery = (clone $movementQuery)
@@ -158,6 +162,13 @@ class FinancialAccountController extends Controller
                 'movement_count' => (int) ($stats?->getAttribute('movement_count') ?? 0),
             ],
             'movements' => $movements,
+            'periodClosure' => $periodClosure !== null
+                && in_array($periodClosure->status, ['closed', 'no_movement'], true)
+                    ? [
+                        'status' => $periodClosure->status,
+                        'closed_at' => $periodClosure->closed_at?->toIso8601String(),
+                    ]
+                    : null,
             'currentPeriod' => $monthStart->toDateString(),
             'filters' => [
                 ...$listing->toArray(),

@@ -39,6 +39,53 @@ class FinancialEntryTest extends TestCase
             ->assertRedirect(route('login'));
     }
 
+    public function test_create_from_account_prefills_context_and_returns_after_store(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('transactions.create-expense', [
+                'account' => $account->id,
+                'period' => '2026-08',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('transactions/create')
+                ->where('defaultAccountId', (string) $account->id)
+                ->where('returnAccountId', (string) $account->id)
+                ->where('returnPeriod', '2026-08')
+            );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('transactions.store'), [
+                'type' => FinancialTransactionType::Expense->value,
+                'transaction_date' => '2026-08-10',
+                'competence_date' => '2026-08-10',
+                'description' => 'Despesa manual do extrato',
+                'amount' => '25.90',
+                'financial_account_id' => $account->id,
+                'credit_card_id' => null,
+                'category_id' => null,
+                'family_member_id' => null,
+                'payment_method' => PaymentMethod::Pix->value,
+                'payee_name' => null,
+                'payment_instructions' => null,
+                'due_date' => null,
+                'settled_on' => '2026-08-10',
+                'status' => FinancialTransactionStatus::Confirmed->value,
+                'notes' => null,
+                '_return_account' => $account->id,
+                '_return_period' => '2026-08',
+            ])
+            ->assertRedirect(route('accounts.show', [
+                'account' => $account->id,
+                'period' => '2026-08',
+            ]));
+    }
+
     public function test_index_lists_income_expense_and_transfer_from_current_workspace(): void
     {
         [$user, $currentWorkspace] = $this->userAndWorkspace();

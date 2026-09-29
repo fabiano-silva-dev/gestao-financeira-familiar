@@ -19,15 +19,23 @@ type Props = {
     transfer?: Transfer;
     accountOptions: TransferAccountOption[];
     defaultDate?: string;
+    defaultSourceAccountId?: string | null;
+    returnAccountId?: string | null;
+    returnPeriod?: string | null;
 };
 
 export default function TransferForm({
     transfer,
     accountOptions,
     defaultDate,
+    defaultSourceAccountId,
+    returnAccountId,
+    returnPeriod,
 }: Props) {
     const [sourceAccount, setSourceAccount] = useState(
-        transfer?.source_account_id ? String(transfer.source_account_id) : '',
+        transfer?.source_account_id
+            ? String(transfer.source_account_id)
+            : (defaultSourceAccountId ?? ''),
     );
     const [destinationAccount, setDestinationAccount] = useState(
         transfer?.destination_account_id
@@ -37,6 +45,14 @@ export default function TransferForm({
     const form = transfer
         ? TransferController.update.form(transfer.id)
         : TransferController.store.form();
+    const returnHref =
+        !transfer && returnAccountId
+            ? `/contas/${returnAccountId}${
+                  returnPeriod
+                      ? `?period=${encodeURIComponent(returnPeriod)}`
+                      : ''
+              }`
+            : index();
 
     const changeSourceAccount = (value: string) => {
         setSourceAccount(value);
@@ -55,6 +71,20 @@ export default function TransferForm({
         >
             {({ processing, errors }) => (
                 <>
+                    {!transfer && returnAccountId && (
+                        <input
+                            type="hidden"
+                            name="_return_account"
+                            value={returnAccountId}
+                        />
+                    )}
+                    {!transfer && returnPeriod && (
+                        <input
+                            type="hidden"
+                            name="_return_period"
+                            value={returnPeriod}
+                        />
+                    )}
                     <div className="grid gap-4 sm:grid-cols-2">
                         <div className="grid gap-2">
                             <Label htmlFor="transaction_date">Data</Label>
@@ -228,7 +258,7 @@ export default function TransferForm({
                             className="w-full sm:w-auto"
                             asChild
                         >
-                            <Link href={index()}>Cancelar</Link>
+                            <Link href={returnHref}>Cancelar</Link>
                         </Button>
                         <Button
                             className="w-full sm:w-auto"

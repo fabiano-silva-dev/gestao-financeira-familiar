@@ -1,11 +1,14 @@
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import {
     ArrowDownLeft,
     ArrowRight,
     ArrowUpRight,
+    CheckCircle2,
     Landmark,
     Pencil,
+    Plus,
     ReceiptText,
+    RotateCcw,
 } from 'lucide-react';
 import { MonthSelector } from '@/components/dashboard/month-selector';
 import { ListingEmpty } from '@/components/listing/listing-empty';
@@ -13,6 +16,12 @@ import { ListingToolbar } from '@/components/listing/listing-toolbar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { edit, index, show } from '@/routes/accounts';
 import { show as showInvoice } from '@/routes/credit-card-invoices';
 import { edit as editTransaction } from '@/routes/transactions';
@@ -28,6 +37,10 @@ type Props = {
     account: FinancialAccount;
     summary: FinancialAccountPanoramaSummary;
     movements: FinancialAccountMovementOverview[];
+    periodClosure: {
+        status: 'closed' | 'no_movement';
+        closed_at: string | null;
+    } | null;
     currentPeriod: string;
     filters: ListingQueryState;
     hasRecords: boolean;
@@ -102,6 +115,7 @@ export default function AccountShow() {
         account,
         summary,
         movements,
+        periodClosure,
         currentPeriod,
         filters,
         hasRecords,
@@ -109,6 +123,32 @@ export default function AccountShow() {
     } = usePage<Props>().props;
     const listUrl = show.url(account.id);
     const periodLabel = formatMonth(currentPeriod);
+    const period = currentPeriod.slice(0, 7);
+    const entryQuery = new URLSearchParams({
+        account: String(account.id),
+        period,
+    }).toString();
+    const periodIsClosed = periodClosure !== null;
+
+    const togglePeriodClosure = () => {
+        if (periodIsClosed) {
+            router.delete(
+                `/importacoes/fechamento-mensal/account/${account.id}/reabrir`,
+                {
+                    data: { period, return_to_account: true },
+                    preserveScroll: true,
+                },
+            );
+
+            return;
+        }
+
+        router.post(
+            `/importacoes/fechamento-mensal/account/${account.id}/fechar`,
+            { period, return_to_account: true },
+            { preserveScroll: true },
+        );
+    };
 
     return (
         <>
@@ -152,12 +192,53 @@ export default function AccountShow() {
                         </div>
                     </div>
 
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                         <MonthSelector
                             currentPeriod={currentPeriod}
                             url={listUrl}
                             query={filters}
                         />
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button>
+                                    <Plus />
+                                    Novo lançamento
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem asChild>
+                                    <Link
+                                        href={`/lancamentos/nova-despesa?${entryQuery}`}
+                                    >
+                                        Despesa
+                                    </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem asChild>
+                                    <Link
+                                        href={`/lancamentos/nova-receita?${entryQuery}`}
+                                    >
+                                        Receita
+                                    </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem asChild>
+                                    <Link
+                                        href={`/lancamentos/nova-transferencia?${entryQuery}`}
+                                    >
+                                        Transferência entre contas
+                                    </Link>
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={togglePeriodClosure}
+                        >
+                            {periodIsClosed ? <RotateCcw /> : <CheckCircle2 />}
+                            {periodIsClosed
+                                ? 'Reabrir mês'
+                                : 'Marcar mês conferido'}
+                        </Button>
                         <Button variant="outline" asChild>
                             <Link href={edit(account.id)}>
                                 <Pencil />

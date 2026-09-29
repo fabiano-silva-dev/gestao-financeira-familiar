@@ -76,6 +76,24 @@ class TransferTest extends TestCase
             );
     }
 
+    public function test_transfer_from_account_context_returns_to_same_account(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        [$source, $destination] = $this->accountPair($workspace);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('transfers.store'), [
+                ...$this->validTransferData($source, $destination),
+                '_return_account' => $source->id,
+                '_return_period' => '2026-09',
+            ])
+            ->assertRedirect(route('accounts.show', [
+                'account' => $source->id,
+                'period' => '2026-09',
+            ]));
+    }
+
     public function test_confirmed_transfer_creates_linked_outgoing_and_incoming_movements(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();

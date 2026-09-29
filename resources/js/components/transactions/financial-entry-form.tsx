@@ -33,6 +33,9 @@ type Props = {
     entry?: FinancialEntry;
     entryType?: FinancialEntryType;
     defaultDate?: string;
+    defaultAccountId?: string | null;
+    returnAccountId?: string | null;
+    returnPeriod?: string | null;
     accountOptions: FinancialEntryReferenceOption[];
     cardOptions: FinancialEntryReferenceOption[];
     categoryOptions: FinancialEntryReferenceOption[];
@@ -44,6 +47,9 @@ export default function FinancialEntryForm({
     entry,
     entryType: newEntryType,
     defaultDate,
+    defaultAccountId,
+    returnAccountId,
+    returnPeriod,
     accountOptions,
     cardOptions,
     categoryOptions,
@@ -83,7 +89,7 @@ export default function FinancialEntryForm({
             ? String(entry.financial_account_id)
             : entry?.source_account_id
               ? String(entry.source_account_id)
-              : '',
+              : (defaultAccountId ?? ''),
     );
     const [cardSelection, setCardSelection] = useState(
         entry?.credit_card_id ? String(entry.credit_card_id) : '',
@@ -200,6 +206,14 @@ export default function FinancialEntryForm({
     const form = entry
         ? FinancialTransactionController.update.form(entry.id)
         : FinancialTransactionController.store.form();
+    const returnHref =
+        !entry && returnAccountId
+            ? `/contas/${returnAccountId}${
+                  returnPeriod
+                      ? `?period=${encodeURIComponent(returnPeriod)}`
+                      : ''
+              }`
+            : index();
 
     function changePaymentMethod(value: string) {
         setPaymentMethod(value);
@@ -223,6 +237,20 @@ export default function FinancialEntryForm({
             {({ processing, errors }) => (
                 <>
                     <input type="hidden" name="type" value={entryType} />
+                    {!entry && returnAccountId && (
+                        <input
+                            type="hidden"
+                            name="_return_account"
+                            value={returnAccountId}
+                        />
+                    )}
+                    {!entry && returnPeriod && (
+                        <input
+                            type="hidden"
+                            name="_return_period"
+                            value={returnPeriod}
+                        />
+                    )}
 
                     <div className="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
                         <div className="grid gap-2">
@@ -684,7 +712,7 @@ export default function FinancialEntryForm({
                             className="w-full sm:w-auto"
                             asChild
                         >
-                            <Link href={index()}>Cancelar</Link>
+                            <Link href={returnHref}>Cancelar</Link>
                         </Button>
                         <Button
                             className="w-full sm:w-auto"

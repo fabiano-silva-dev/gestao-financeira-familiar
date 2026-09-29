@@ -22,8 +22,9 @@ class TransferController extends Controller
 
     public function store(StoreTransferRequest $request): RedirectResponse
     {
+        $workspace = $this->workspace();
         $this->transferService->create(
-            $this->workspace(),
+            $workspace,
             $request->validated(),
         );
 
@@ -32,7 +33,8 @@ class TransferController extends Controller
             'message' => 'Transferência cadastrada com sucesso.',
         ]);
 
-        return to_route('transactions.index');
+        return $this->accountReturn($request, $workspace)
+            ?? to_route('transactions.index');
     }
 
     public function update(
@@ -68,6 +70,28 @@ class TransferController extends Controller
         ]);
 
         return to_route('transactions.index');
+    }
+
+    private function accountReturn(
+        StoreTransferRequest $request,
+        Workspace $workspace,
+    ): ?RedirectResponse {
+        $accountId = $request->integer('_return_account');
+        $period = $request->input('_return_period');
+
+        if (
+            $accountId <= 0
+            || ! is_string($period)
+            || preg_match('/^\\d{4}-(0[1-9]|1[0-2])$/', $period) !== 1
+            || ! $workspace->financialAccounts()->whereKey($accountId)->exists()
+        ) {
+            return null;
+        }
+
+        return redirect()->route('accounts.show', [
+            'account' => $accountId,
+            'period' => $period,
+        ]);
     }
 
     private function workspace(): Workspace
