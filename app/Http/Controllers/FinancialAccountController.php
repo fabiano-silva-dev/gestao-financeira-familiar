@@ -155,8 +155,8 @@ class FinancialAccountController extends Controller
         }
 
         $movements = $listedMovements
-            ->orderBy('occurred_on')
-            ->orderBy('id')
+            ->orderBy('occurred_on', $listing->direction)
+            ->orderBy('id', $listing->direction)
             ->get()
             ->map(fn (AccountMovement $movement): array => $this->movementData($movement));
 

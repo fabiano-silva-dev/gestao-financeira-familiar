@@ -197,6 +197,57 @@ class FinancialAccountPanoramaTest extends TestCase
             );
     }
 
+    public function test_account_statement_can_be_sorted_by_date_descending(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Conta principal',
+            'opening_balance' => '100.00',
+            'opening_balance_date' => '2026-08-01',
+        ]);
+
+        $service = app(FinancialEntryService::class);
+
+        $this->createEntry(
+            $service,
+            $workspace,
+            $account,
+            FinancialTransactionType::Expense,
+            '2026-09-03',
+            'Conta de luz',
+            '30.00',
+        );
+        $this->createEntry(
+            $service,
+            $workspace,
+            $account,
+            FinancialTransactionType::Income,
+            '2026-09-10',
+            'Freelance',
+            '200.00',
+        );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('accounts.show', [
+                'account' => $account,
+                'period' => '2026-09',
+                'sort' => 'date',
+                'direction' => 'desc',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('accounts/show')
+                ->where('filters.sort', 'date')
+                ->where('filters.direction', 'desc')
+                ->has('movements', 2)
+                ->where('movements.0.description', 'Freelance')
+                ->where('movements.0.occurred_on', '2026-09-10')
+                ->where('movements.1.description', 'Conta de luz')
+                ->where('movements.1.occurred_on', '2026-09-03')
+            );
+    }
+
     public function test_account_statement_can_open_another_period(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();

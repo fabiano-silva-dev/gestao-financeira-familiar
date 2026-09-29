@@ -13,6 +13,7 @@ import {
 import { MonthSelector } from '@/components/dashboard/month-selector';
 import { ListingEmpty } from '@/components/listing/listing-empty';
 import { ListingToolbar } from '@/components/listing/listing-toolbar';
+import { SortableColumn } from '@/components/listing/sortable-column';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,6 +25,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { edit, index, show } from '@/routes/accounts';
 import { show as showInvoice } from '@/routes/credit-card-invoices';
+import { sortListing } from '@/lib/listing';
 import { edit as editTransaction } from '@/routes/transactions';
 import type {
     FinancialAccount,
@@ -327,8 +329,10 @@ export default function AccountShow() {
                             {summary.movement_count === 1
                                 ? 'lançamento efetivo'
                                 : 'lançamentos efetivos'}{' '}
-                            em {periodLabel}, do dia mais antigo para o mais
-                            recente.
+                            em {periodLabel},{' '}
+                            {filters.direction === 'desc'
+                                ? 'do dia mais recente para o mais antigo.'
+                                : 'do dia mais antigo para o mais recente.'}
                         </p>
                     </CardHeader>
 
@@ -374,7 +378,20 @@ export default function AccountShow() {
                                 <div
                                     className={`text-muted-foreground hidden gap-3 border-b px-4 py-3 text-xs font-medium tracking-wide uppercase md:grid ${rowGridClass}`}
                                 >
-                                    <span>Data</span>
+                                    <SortableColumn
+                                        column="date"
+                                        label="Data"
+                                        sort={filters.sort}
+                                        direction={filters.direction}
+                                        onSort={(column) =>
+                                            sortListing(
+                                                listUrl,
+                                                filters,
+                                                column,
+                                                'asc',
+                                            )
+                                        }
+                                    />
                                     <span>Lançamento</span>
                                     <span>Tipo</span>
                                     <span className="text-right">Valor</span>
