@@ -14,6 +14,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property FinancialAccountType $type
  * @property string $opening_balance
+ * @property string $overdraft_limit
  * @property Carbon|null $opening_balance_date
  * @property bool $is_active
  */
@@ -24,6 +25,7 @@ use Illuminate\Support\Carbon;
     'account_number',
     'type',
     'opening_balance',
+    'overdraft_limit',
     'opening_balance_date',
     'is_active',
 ])]
@@ -72,6 +74,7 @@ class FinancialAccount extends Model
         return [
             'type' => FinancialAccountType::class,
             'opening_balance' => 'decimal:2',
+            'overdraft_limit' => 'decimal:2',
             'opening_balance_date' => 'date',
             'is_active' => 'boolean',
         ];

@@ -113,6 +113,26 @@ export default function AccountForm({ account, accountTypes }: Props) {
                         <InputError message={errors.type} />
                     </div>
 
+                    <div className="grid gap-2">
+                        <Label htmlFor="overdraft_limit">
+                            Limite de cheque especial
+                        </Label>
+                        <Input
+                            id="overdraft_limit"
+                            name="overdraft_limit"
+                            type="number"
+                            inputMode="decimal"
+                            step="0.01"
+                            min="0"
+                            defaultValue={account?.overdraft_limit ?? '0.00'}
+                            required
+                        />
+                        <p className="text-muted-foreground text-xs">
+                            Crédito emergencial disponibilizado pelo banco. Não compõe o saldo da conta.
+                        </p>
+                        <InputError message={errors.overdraft_limit} />
+                    </div>
+
                     <div className="grid gap-4 sm:grid-cols-2">
                         <div className="grid gap-2">
                             <Label htmlFor="opening_balance">

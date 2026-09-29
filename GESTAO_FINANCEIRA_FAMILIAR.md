@@ -183,3 +183,25 @@ Regras:
 - todos os vínculos e consultas permanecem isolados pelo `workspace_id`.
 
 A persistência do fechamento é independente do formato da entrada. PDF, CSV, OFX, Open Finance, Gmail, APIs ou outras fontes futuras devem alimentar a mesma camada normalizada de importação/conciliação antes de participar do checklist.
+
+
+---
+
+## 38. Disponibilidade financeira de curto prazo
+
+A aplicação possui uma visão operacional de **Disponibilidade**, separada do dashboard geral e do dashboard de pagamentos.
+
+Essa visão ajuda a responder rapidamente quais recursos existem hoje e quais eventos próximos alteram a capacidade financeira, sem misturar dinheiro próprio com crédito.
+
+Regras:
+
+- saldo de contas representa dinheiro/posição bancária real e permanece separado de linhas de crédito;
+- dinheiro em espécie pode ser representado por uma conta do tipo caixa/dinheiro e participa normalmente do saldo;
+- conta financeira pode possuir **limite de cheque especial**, armazenado separadamente do saldo;
+- cheque especial utilizado corresponde somente à parte do saldo negativo coberta pelo limite cadastrado;
+- cheque especial disponível é crédito emergencial e nunca deve ser somado ao saldo como se fosse patrimônio;
+- cartões exibem limite total, limite utilizado e limite disponível, sem tratá-los como contas bancárias;
+- a visão deve destacar as próximas datas de fechamento/virada dos cartões para apoiar decisões de curto prazo;
+- recebimentos previstos do próximo mês vêm dos compromissos financeiros já conhecidos e não de estimativas artificiais;
+- totais de contas e cartões permitem detalhamento e navegação para a tela da conta/cartão correspondente;
+- todas as consultas permanecem isoladas pelo workspace ativo.

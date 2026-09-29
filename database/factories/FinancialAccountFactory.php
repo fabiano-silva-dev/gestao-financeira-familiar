@@ -25,6 +25,7 @@ class FinancialAccountFactory extends Factory
             'institution' => fake()->company(),
             'type' => fake()->randomElement(FinancialAccountType::cases()),
             'opening_balance' => fake()->randomFloat(2, -500, 10000),
+            'overdraft_limit' => '0.00',
             'opening_balance_date' => null,
             'is_active' => true,
         ];

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ActiveWorkspaceController;
+use App\Http\Controllers\AvailabilityDashboardController;
 use App\Http\Controllers\BankReconciliationController;
 use App\Http\Controllers\CardStatementImportController;
 use App\Http\Controllers\CardStatementReconciliationController;
@@ -25,6 +26,7 @@ Route::inertia('/', 'welcome')->name('home');
 
 Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
+    Route::get('disponibilidade', AvailabilityDashboardController::class)->name('availability');
     Route::get('pagamentos', PaymentDashboardController::class)->name('payments');
 
     Route::get('contas', [FinancialAccountController::class, 'index'])

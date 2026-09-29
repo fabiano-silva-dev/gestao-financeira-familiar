@@ -70,11 +70,19 @@ class FinancialAccountController extends Controller
         $totalBalanceCents = $activeAccounts->sum(
             fn (array $account): int => $this->moneyToCents($account['current_balance']),
         );
+        $totalOverdraftLimitCents = $activeAccounts->sum(
+            fn (array $account): int => $this->moneyToCents($account['overdraft_limit']),
+        );
+        $totalOverdraftAvailableCents = $activeAccounts->sum(
+            fn (array $account): int => $this->moneyToCents($account['overdraft_available']),
+        );
 
         return Inertia::render('accounts/index', [
             'accounts' => $accounts,
             'summary' => [
                 'total_balance' => $this->centsToMoney($totalBalanceCents),
+                'total_overdraft_limit' => $this->centsToMoney($totalOverdraftLimitCents),
+                'total_overdraft_available' => $this->centsToMoney($totalOverdraftAvailableCents),
                 'active_accounts' => $activeAccounts->count(),
             ],
             'filters' => $listing->toArray(),
@@ -371,6 +379,9 @@ class FinancialAccountController extends Controller
      *     type: string,
      *     type_label: string,
      *     opening_balance: string,
+     *     overdraft_limit: string,
+     *     overdraft_used: string,
+     *     overdraft_available: string,
      *     opening_balance_date: string|null,
      *     current_balance: string,
      *     is_active: bool
@@ -378,6 +389,13 @@ class FinancialAccountController extends Controller
      */
     private function accountData(FinancialAccount $account): array
     {
+        $currentBalance = (string) ($account->getAttribute('current_balance')
+            ?? $account->opening_balance);
+        $currentBalanceCents = $this->moneyToCents($currentBalance);
+        $overdraftLimitCents = $this->moneyToCents((string) $account->overdraft_limit);
+        $overdraftUsedCents = min($overdraftLimitCents, max(0, -$currentBalanceCents));
+        $overdraftAvailableCents = max(0, $overdraftLimitCents - $overdraftUsedCents);
+
         return [
             'id' => $account->id,
             'name' => $account->name,
@@ -387,9 +405,11 @@ class FinancialAccountController extends Controller
             'type' => $account->type->value,
             'type_label' => $account->type->label(),
             'opening_balance' => $account->opening_balance,
+            'overdraft_limit' => $this->centsToMoney($overdraftLimitCents),
+            'overdraft_used' => $this->centsToMoney($overdraftUsedCents),
+            'overdraft_available' => $this->centsToMoney($overdraftAvailableCents),
             'opening_balance_date' => $account->opening_balance_date?->toDateString(),
-            'current_balance' => (string) ($account->getAttribute('current_balance')
-                ?? $account->opening_balance),
+            'current_balance' => $currentBalance,
             'is_active' => $account->is_active,
         ];
     }

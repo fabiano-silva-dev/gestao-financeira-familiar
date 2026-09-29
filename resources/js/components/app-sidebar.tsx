@@ -5,6 +5,7 @@ import {
     Repeat2,
     Clock3,
     CreditCard,
+    Gauge,
     Landmark,
     LayoutGrid,
     ListChecks,
@@ -45,6 +46,11 @@ const mainNavItems: NavItem[] = [
         title: 'Visão geral',
         href: dashboard(),
         icon: LayoutGrid,
+    },
+    {
+        title: 'Disponibilidade',
+        href: '/disponibilidade',
+        icon: Gauge,
     },
     {
         title: 'Pagamentos',

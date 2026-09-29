@@ -61,6 +61,7 @@ class FinancialAccountTest extends TestCase
                 'account_number' => '98765-4',
                 'type' => FinancialAccountType::Checking->value,
                 'opening_balance' => '1250.45',
+                'overdraft_limit' => '2500.00',
                 'opening_balance_date' => '2026-09-01',
             ])
             ->assertRedirect(route('accounts.index'))
@@ -73,6 +74,7 @@ class FinancialAccountTest extends TestCase
         $this->assertSame('1234', $account->agency);
         $this->assertSame('98765-4', $account->account_number);
         $this->assertSame('1250.45', $account->opening_balance);
+        $this->assertSame('2500.00', $account->overdraft_limit);
         $this->assertSame('2026-09-01', $account->opening_balance_date?->toDateString());
         $this->assertTrue($account->is_active);
     }
@@ -115,6 +117,7 @@ class FinancialAccountTest extends TestCase
                 'account_number' => '12345678-9',
                 'type' => FinancialAccountType::Digital->value,
                 'opening_balance' => '-25.50',
+                'overdraft_limit' => '1000.00',
                 'opening_balance_date' => '2026-09-10',
             ])
             ->assertRedirect(route('accounts.index'))
@@ -127,6 +130,7 @@ class FinancialAccountTest extends TestCase
         $this->assertSame('12345678-9', $account->account_number);
         $this->assertSame(FinancialAccountType::Digital, $account->type);
         $this->assertSame('-25.50', $account->opening_balance);
+        $this->assertSame('1000.00', $account->overdraft_limit);
         $this->assertSame('2026-09-10', $account->opening_balance_date?->toDateString());
     }
 

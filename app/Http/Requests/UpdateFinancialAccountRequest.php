@@ -26,6 +26,7 @@ class UpdateFinancialAccountRequest extends FormRequest
             'account_number' => ['nullable', 'string', 'max:60'],
             'type' => ['required', Rule::enum(FinancialAccountType::class)],
             'opening_balance' => ['required', 'numeric', 'decimal:0,2', 'between:-9999999999999.99,9999999999999.99'],
+            'overdraft_limit' => ['sometimes', 'numeric', 'decimal:0,2', 'between:0,9999999999999.99'],
             'opening_balance_date' => ['required', 'date'],
         ];
     }
@@ -42,6 +43,7 @@ class UpdateFinancialAccountRequest extends FormRequest
             'account_number' => 'número da conta',
             'type' => 'tipo',
             'opening_balance' => 'saldo inicial',
+            'overdraft_limit' => 'limite de cheque especial',
             'opening_balance_date' => 'data do saldo inicial',
         ];
     }

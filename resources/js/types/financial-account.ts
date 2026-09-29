@@ -7,6 +7,9 @@ export type FinancialAccount = {
     type: string;
     type_label: string;
     opening_balance: string;
+    overdraft_limit: string;
+    overdraft_used: string;
+    overdraft_available: string;
     opening_balance_date: string | null;
     current_balance: string;
     is_active: boolean;
@@ -14,6 +17,8 @@ export type FinancialAccount = {
 
 export type FinancialAccountSummary = {
     total_balance: string;
+    total_overdraft_limit: string;
+    total_overdraft_available: string;
     active_accounts: number;
 };
 

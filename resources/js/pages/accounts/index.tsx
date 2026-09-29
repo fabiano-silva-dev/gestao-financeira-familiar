@@ -93,6 +93,19 @@ export default function AccountsIndex() {
                                 ? 'conta ativa'
                                 : 'contas ativas'}
                         </p>
+                        {Number(summary.total_overdraft_limit) > 0 && (
+                            <div className="mt-4 border-t pt-3">
+                                <p className="text-muted-foreground text-xs uppercase">
+                                    Cheque especial disponível
+                                </p>
+                                <p className="mt-1 text-lg font-semibold tabular-nums">
+                                    {currency.format(Number(summary.total_overdraft_available))}
+                                </p>
+                                <p className="text-muted-foreground text-xs">
+                                    de {currency.format(Number(summary.total_overdraft_limit))} em limites cadastrados
+                                </p>
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
 
@@ -234,13 +247,16 @@ export default function AccountsIndex() {
                                                     ? 'Ativa'
                                                     : 'Inativa'}
                                             </Badge>
-                                            <p className="text-right text-sm font-semibold tabular-nums">
-                                                {currency.format(
-                                                    Number(
-                                                        account.current_balance,
-                                                    ),
+                                            <div className="text-right">
+                                                <p className="text-sm font-semibold tabular-nums">
+                                                    {currency.format(Number(account.current_balance))}
+                                                </p>
+                                                {Number(account.overdraft_limit) > 0 && (
+                                                    <p className="text-muted-foreground mt-0.5 text-xs tabular-nums">
+                                                        Cheque especial {currency.format(Number(account.overdraft_available))} disponível
+                                                    </p>
                                                 )}
-                                            </p>
+                                            </div>
                                             <div className="flex flex-wrap justify-end gap-2">
                                                 <Button
                                                     variant="outline"
