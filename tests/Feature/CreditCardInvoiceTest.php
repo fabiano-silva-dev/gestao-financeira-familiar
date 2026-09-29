@@ -25,6 +25,43 @@ class CreditCardInvoiceTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_invoice_index_can_filter_by_reference_month(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+
+        $september = CreditCardInvoice::query()->create([
+            'workspace_id' => $workspace->id,
+            'credit_card_id' => $card->id,
+            'reference_month' => '2026-09-01',
+            'closing_date' => '2026-09-05',
+            'due_date' => '2026-09-12',
+            'calculated_amount' => '100.00',
+            'paid_amount' => '0.00',
+            'status' => CreditCardInvoiceStatus::Open->value,
+        ]);
+
+        CreditCardInvoice::query()->create([
+            'workspace_id' => $workspace->id,
+            'credit_card_id' => $card->id,
+            'reference_month' => '2026-10-01',
+            'closing_date' => '2026-10-05',
+            'due_date' => '2026-10-12',
+            'calculated_amount' => '200.00',
+            'paid_amount' => '0.00',
+            'status' => CreditCardInvoiceStatus::Open->value,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('credit-card-invoices.index', ['month' => '2026-09']))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->has('invoices', 1)
+                ->where('invoices.0.id', $september->id)
+                ->where('filters.month', '2026-09'));
+    }
+
     public function test_manual_invoice_can_be_created_without_creating_expense_or_cash_movement(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();

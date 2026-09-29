@@ -136,6 +136,14 @@ export default function CreditCardInvoicesIndex() {
                                     allLabel: 'Todas',
                                 },
                             ]}
+                            dates={[
+                                {
+                                    key: 'month',
+                                    label: 'Mês',
+                                    value: filters.month,
+                                    type: 'month',
+                                },
+                            ]}
                         />
 
                         {invoices.length === 0 ? (

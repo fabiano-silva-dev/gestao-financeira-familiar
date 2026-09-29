@@ -44,7 +44,7 @@ class CreditCardInvoiceController extends Controller
             ['card', 'month', 'due_date', 'amount', 'status'],
             'due_date',
             'desc',
-            ['status', 'card'],
+            ['status', 'card', 'month'],
         );
         $query = $workspace
             ->creditCardInvoices()
@@ -78,6 +78,12 @@ class CreditCardInvoiceController extends Controller
 
         if ($cardId !== null) {
             $query->where('credit_card_invoices.credit_card_id', $cardId);
+        }
+
+        $month = $listing->filter('month');
+
+        if ($month !== null && preg_match('/^\\d{4}-(0[1-9]|1[0-2])$/', $month) === 1) {
+            $query->whereDate('credit_card_invoices.reference_month', $month.'-01');
         }
 
         $listing->applySort($query, [
