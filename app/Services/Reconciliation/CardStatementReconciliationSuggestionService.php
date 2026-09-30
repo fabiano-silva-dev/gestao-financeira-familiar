@@ -121,12 +121,12 @@ final class CardStatementReconciliationSuggestionService
                     return false;
                 }
 
-                $dateDistance = (int) abs(
-                    $entry->purchased_on->diffInDays($transaction->transaction_date, false),
-                );
-
-                return $dateDistance <= 180;
+                return true;
             })
+            ->sortBy(fn (FinancialTransaction $transaction): int => (int) abs(
+                $entry->purchased_on->diffInDays($transaction->transaction_date, false),
+            ))
+            ->unique('financial_recurrence_id')
             ->map(function (FinancialTransaction $transaction) use ($entry, $entryCents): array {
                 $expectedCents = $this->moneyToCents($transaction->amount);
                 $difference = abs($entryCents - $expectedCents);
