@@ -70,6 +70,12 @@ export default function CreditCardInvoicesIndex() {
             column,
             column === 'card' || column === 'status' ? 'asc' : 'desc',
         );
+    const invoiceTotal = invoices.reduce(
+        (total, invoice) =>
+            total +
+            Number(invoice.statement_amount ?? invoice.calculated_amount),
+        0,
+    );
 
     return (
         <>
@@ -140,12 +146,22 @@ export default function CreditCardInvoicesIndex() {
                                 },
                             ]}
                             end={
-                                <MonthSelector
-                                    currentPeriod={`${selectedMonth}-01`}
-                                    url={listUrl}
-                                    query={filters}
-                                    queryKey="month"
-                                />
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <MonthSelector
+                                        currentPeriod={`${selectedMonth}-01`}
+                                        url={listUrl}
+                                        query={filters}
+                                        queryKey="month"
+                                    />
+                                    <div className="bg-card flex h-9 items-center gap-2 rounded-md border px-3 text-sm">
+                                        <span className="text-muted-foreground">
+                                            Total das faturas
+                                        </span>
+                                        <span className="font-semibold tabular-nums">
+                                            {currency.format(invoiceTotal)}
+                                        </span>
+                                    </div>
+                                </div>
                             }
                         />
 
