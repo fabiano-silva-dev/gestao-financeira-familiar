@@ -253,13 +253,100 @@ class CreditCardInvoiceService
                 'is_reconciled' => false,
             ]);
 
-            $this->applyPaymentToInvoice(
-                $locked,
-                $paymentCents,
-                (string) $data['paid_on'],
-            );
+            $this->syncInvoiceSettlement($locked);
 
             return $locked->refresh();
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function updatePayment(
+        CreditCardInvoice $invoice,
+        CreditCardInvoicePayment $payment,
+        array $data,
+    ): CreditCardInvoice {
+        return DB::transaction(function () use ($invoice, $payment, $data): CreditCardInvoice {
+            $lockedInvoice = CreditCardInvoice::query()
+                ->where('workspace_id', $invoice->workspace_id)
+                ->whereKey($invoice->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $lockedPayment = CreditCardInvoicePayment::query()
+                ->where('workspace_id', $lockedInvoice->workspace_id)
+                ->where('credit_card_invoice_id', $lockedInvoice->id)
+                ->whereKey($payment->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $newCents = $this->moneyToCents((string) $data['amount']);
+            $currentCents = $this->moneyToCents((string) $lockedPayment->amount);
+            $allowedCents = $this->outstandingCents($lockedInvoice) + $currentCents;
+
+            if ($newCents <= 0 || $newCents > $allowedCents) {
+                throw ValidationException::withMessages([
+                    'amount' => 'O pagamento deve ser maior que zero e não pode ultrapassar o saldo da fatura.',
+                ]);
+            }
+
+            $amount = $this->centsToMoney($newCents);
+            $lockedPayment->update([
+                'financial_account_id' => $data['financial_account_id'],
+                'paid_on' => $data['paid_on'],
+                'amount' => $amount,
+                'payment_method' => $data['payment_method'],
+                'notes' => $data['notes'] ?? null,
+            ]);
+
+            $movementData = [
+                'financial_account_id' => $data['financial_account_id'],
+                'occurred_on' => $data['paid_on'],
+                'description' => 'Pagamento cartão '.$lockedInvoice->creditCard()->value('name'),
+                'amount' => '-'.$amount,
+            ];
+            $movement = $lockedPayment->movement()->lockForUpdate()->first();
+
+            if ($movement === null) {
+                $lockedPayment->movement()->create([
+                    'workspace_id' => $lockedInvoice->workspace_id,
+                    ...$movementData,
+                    'type' => AccountMovementType::CardPayment,
+                    'is_reconciled' => false,
+                ]);
+            } else {
+                $movement->update($movementData);
+            }
+
+            $this->syncInvoiceSettlement($lockedInvoice);
+
+            return $lockedInvoice->refresh();
+        });
+    }
+
+    public function deletePayment(
+        CreditCardInvoice $invoice,
+        CreditCardInvoicePayment $payment,
+    ): CreditCardInvoice {
+        return DB::transaction(function () use ($invoice, $payment): CreditCardInvoice {
+            $lockedInvoice = CreditCardInvoice::query()
+                ->where('workspace_id', $invoice->workspace_id)
+                ->whereKey($invoice->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $lockedPayment = CreditCardInvoicePayment::query()
+                ->where('workspace_id', $lockedInvoice->workspace_id)
+                ->where('credit_card_invoice_id', $lockedInvoice->id)
+                ->whereKey($payment->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $movement = $lockedPayment->movement()->lockForUpdate()->first();
+            $movement?->delete();
+            $lockedPayment->delete();
+            $this->syncInvoiceSettlement($lockedInvoice);
+
+            return $lockedInvoice->refresh();
         });
     }
 
@@ -267,7 +354,7 @@ class CreditCardInvoiceService
      * Registra uma saída destinada ao cartão mesmo quando a fatura ainda
      * não existe ou ainda não foi identificada.
      *
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     public function createPendingPayment(
         CreditCard $card,
@@ -351,11 +438,7 @@ class CreditCardInvoiceService
             $lockedPayment->update([
                 'credit_card_invoice_id' => $lockedInvoice->id,
             ]);
-            $this->applyPaymentToInvoice(
-                $lockedInvoice,
-                $paymentCents,
-                $lockedPayment->paid_on->toDateString(),
-            );
+            $this->syncInvoiceSettlement($lockedInvoice);
 
             return $lockedInvoice->refresh();
         });
@@ -423,24 +506,30 @@ class CreditCardInvoiceService
             ->values();
     }
 
-    private function applyPaymentToInvoice(
-        CreditCardInvoice $invoice,
-        int $paymentCents,
-        string $paidOn,
-    ): void {
-        $totalCents = $this->moneyToCents(
-            $this->totalAmount($invoice),
+    private function syncInvoiceSettlement(CreditCardInvoice $invoice): void
+    {
+        $payments = $invoice->payments()
+            ->orderBy('paid_on')
+            ->orderBy('id')
+            ->get();
+        $paidCents = $payments->reduce(
+            fn (int $total, CreditCardInvoicePayment $payment): int => $total + $this->moneyToCents((string) $payment->amount),
+            0,
         );
-        $paidCents = $this->moneyToCents((string) $invoice->paid_amount);
-        $newPaidCents = $paidCents + $paymentCents;
-        $isPaid = $totalCents > 0 && $newPaidCents >= $totalCents;
+        $totalCents = $this->moneyToCents($this->totalAmount($invoice));
+        $isPaid = $totalCents > 0 && $paidCents >= $totalCents;
+        $latestPaidOn = $payments->last()?->paid_on->toDateString();
+        $status = match (true) {
+            $isPaid => CreditCardInvoiceStatus::Paid,
+            $paidCents > 0 => CreditCardInvoiceStatus::Partial,
+            $invoice->statement_amount === null => CreditCardInvoiceStatus::Open,
+            default => CreditCardInvoiceStatus::Closed,
+        };
 
         $invoice->update([
-            'paid_amount' => $this->centsToMoney($newPaidCents),
-            'paid_at' => $isPaid ? $paidOn : null,
-            'status' => $isPaid
-                ? CreditCardInvoiceStatus::Paid
-                : CreditCardInvoiceStatus::Partial,
+            'paid_amount' => $this->centsToMoney($paidCents),
+            'paid_at' => $isPaid ? $latestPaidOn : null,
+            'status' => $status,
         ]);
 
         if ($isPaid) {
@@ -448,9 +537,18 @@ class CreditCardInvoiceService
                 ->where('status', '!=', TransactionInstallmentStatus::Cancelled->value)
                 ->update([
                     'status' => TransactionInstallmentStatus::Paid->value,
-                    'paid_at' => $paidOn,
+                    'paid_at' => $latestPaidOn,
                 ]);
+
+            return;
         }
+
+        $invoice->installments()
+            ->where('status', TransactionInstallmentStatus::Paid->value)
+            ->update([
+                'status' => TransactionInstallmentStatus::Open->value,
+                'paid_at' => null,
+            ]);
     }
 
     public function outstandingAmount(CreditCardInvoice $invoice): string
@@ -488,8 +586,7 @@ class CreditCardInvoiceService
 
         return array_reduce(
             $refunds,
-            fn (int $total, mixed $amount): int =>
-                $total + $this->moneyToCents((string) $amount),
+            fn (int $total, mixed $amount): int => $total + $this->moneyToCents((string) $amount),
             0,
         );
     }

@@ -73,6 +73,7 @@ class FinancialTransactionController extends Controller
                 'refunds.movement.bankStatementEntry.financialImport:id,source_filename',
                 'refunds.creator:id,name',
                 'refunds.linker:id,name',
+                'recurrence' => fn ($query) => $query->withTrashed()->select('id', 'deleted_at'),
             ])
             ->withCount('installments')
             ->select('financial_transactions.*');
@@ -391,6 +392,19 @@ class FinancialTransactionController extends Controller
         return to_route('transactions.edit', $entry);
     }
 
+    public function destroyRecurrenceOccurrence(int $entry): RedirectResponse
+    {
+        $financialEntry = $this->findEntry($entry);
+        $this->entryService->deleteRecurrenceOccurrence($financialEntry);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Ocorrência excluída. Esta data não será gerada novamente pela recorrência.',
+        ]);
+
+        return to_route('transactions.index');
+    }
+
     private function createResponse(Request $request, FinancialTransactionType $type): Response
     {
         $workspace = $this->workspace();
@@ -489,6 +503,7 @@ class FinancialTransactionController extends Controller
                 'refunds.movement.bankStatementEntry.financialImport',
                 'refunds.creator:id,name',
                 'refunds.linker:id,name',
+                'recurrence' => fn ($query) => $query->withTrashed()->select('id', 'deleted_at'),
             ])
             ->withCount('installments')
             ->findOrFail($entry);
@@ -692,6 +707,8 @@ class FinancialTransactionController extends Controller
             'origin_label' => $entry->origin->label(),
             'origin_source' => $this->originSource($entry),
             'financial_recurrence_id' => $entry->financial_recurrence_id,
+            'recurrence_was_removed' => $entry->financial_recurrence_id !== null
+                && ($entry->recurrence === null || $entry->recurrence->trashed()),
             'recurrence_is_overridden' => $entry->recurrence_is_overridden,
         ];
     }

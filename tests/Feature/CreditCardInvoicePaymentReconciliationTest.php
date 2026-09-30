@@ -447,6 +447,55 @@ class CreditCardInvoicePaymentReconciliationTest extends TestCase
         $this->assertFalse($entry->fresh()->is_reconciled);
     }
 
+    public function test_reconciled_invoice_payment_keeps_cash_fields_and_can_update_notes(): void
+    {
+        [$user, $workspace, $account, $invoice] = $this->openInvoiceScenario();
+        $entry = $this->bankEntry($workspace, $account, '-2000.00', '2026-09-15', 'PAGAMENTO NUBANK');
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('reconciliation.invoice-payment', $entry), [
+            'credit_card_invoice_id' => $invoice->id,
+        ])->assertSessionHasNoErrors();
+
+        $payment = $invoice->payments()->sole();
+
+        $request->put(route('credit-card-invoices.payments.update', [$invoice, $payment]), [
+            'financial_account_id' => $account->id,
+            'paid_on' => '2026-09-15',
+            'amount' => '1500.00',
+            'payment_method' => PaymentMethod::Pix->value,
+            'notes' => 'Tentativa de reduzir',
+        ])->assertSessionHasErrors('reconciliation');
+
+        $this->assertSame('2000.00', $payment->fresh()->amount);
+        $this->assertSame(
+            'Pagamento conciliado com o movimento bancário importado.',
+            $payment->fresh()->notes,
+        );
+
+        $request->put(route('credit-card-invoices.payments.update', [$invoice, $payment]), [
+            'financial_account_id' => $account->id,
+            'paid_on' => '2026-09-15',
+            'amount' => '2000.00',
+            'payment_method' => PaymentMethod::Boleto->value,
+            'notes' => 'Observação ajustada',
+        ])->assertSessionHasNoErrors();
+
+        $payment->refresh();
+        $this->assertSame('Observação ajustada', $payment->notes);
+        $this->assertSame(PaymentMethod::Boleto, $payment->payment_method);
+        $this->assertSame('2000.00', $invoice->fresh()->paid_amount);
+        $this->assertSame('-2000.00', $payment->movement()->sole()->amount);
+
+        $request->delete(route('credit-card-invoices.payments.destroy', [$invoice, $payment]))
+            ->assertSessionHasErrors('reconciliation');
+
+        $this->assertDatabaseCount('credit_card_invoice_payments', 1);
+        $this->assertTrue($entry->fresh()->is_reconciled);
+        $this->assertSame(CreditCardInvoiceStatus::Paid, $invoice->fresh()->status);
+    }
+
     /**
      * @return array{User, Workspace, FinancialAccount, CreditCardInvoice}
      */

@@ -187,6 +187,7 @@ class CreditCardInvoiceController extends Controller
                 'installments.transaction.familyMember:id,name',
                 'installments.cardStatementEntry:id,transaction_installment_id',
                 'payments.account:id,name',
+                'payments.movement.bankStatementEntry:id,account_movement_id',
                 'statementEntries.transactionInstallment.transaction:id,description,transaction_date',
                 'statementEntries.reconciler:id,name',
             ]);
@@ -215,15 +216,7 @@ class CreditCardInvoiceController extends Controller
                 'payments' => $creditCardInvoice->payments
                     ->sortByDesc('paid_on')
                     ->values()
-                    ->map(fn (CreditCardInvoicePayment $payment): array => [
-                        'id' => $payment->id,
-                        'paid_on' => $payment->paid_on->toDateString(),
-                        'amount' => $payment->amount,
-                        'payment_method' => $payment->payment_method->value,
-                        'payment_method_label' => $payment->payment_method->label(),
-                        'account_name' => $payment->account->name,
-                        'notes' => $payment->notes,
-                    ])
+                    ->map(fn (CreditCardInvoicePayment $payment): array => $this->paymentData($payment))
                     ->all(),
                 'statement_entries' => $creditCardInvoice->statementEntries
                     ->sortByDesc('purchased_on')
@@ -247,19 +240,14 @@ class CreditCardInvoiceController extends Controller
                 ->all(),
             'unlinkedPayments' => $card->payments()
                 ->whereNull('credit_card_invoice_id')
-                ->with('account:id,name')
+                ->with([
+                    'account:id,name',
+                    'movement.bankStatementEntry:id,account_movement_id',
+                ])
                 ->orderByDesc('paid_on')
                 ->orderByDesc('id')
                 ->get()
-                ->map(fn (CreditCardInvoicePayment $payment): array => [
-                    'id' => $payment->id,
-                    'paid_on' => $payment->paid_on->toDateString(),
-                    'amount' => $payment->amount,
-                    'payment_method' => $payment->payment_method->value,
-                    'payment_method_label' => $payment->payment_method->label(),
-                    'account_name' => $payment->account->name,
-                    'notes' => $payment->notes,
-                ])
+                ->map(fn (CreditCardInvoicePayment $payment): array => $this->paymentData($payment))
                 ->all(),
             'paymentMethods' => PaymentMethod::invoiceOptions(),
             'defaultPaymentAccountId' => $card->payment_account_id,
@@ -297,6 +285,43 @@ class CreditCardInvoiceController extends Controller
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => 'Pagamento da fatura registrado sem criar uma nova despesa.',
+        ]);
+
+        return to_route('credit-card-invoices.show', $invoice);
+    }
+
+    public function updatePayment(
+        StoreCreditCardInvoicePaymentRequest $request,
+        int $invoice,
+        int $payment,
+    ): RedirectResponse {
+        $creditCardInvoice = $this->findInvoice($invoice);
+        $cardPayment = $creditCardInvoice->payments()->findOrFail($payment);
+
+        $this->invoiceService->updatePayment(
+            $creditCardInvoice,
+            $cardPayment,
+            $request->validated(),
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Pagamento da fatura atualizado.',
+        ]);
+
+        return to_route('credit-card-invoices.show', $invoice);
+    }
+
+    public function destroyPayment(int $invoice, int $payment): RedirectResponse
+    {
+        $creditCardInvoice = $this->findInvoice($invoice);
+        $cardPayment = $creditCardInvoice->payments()->findOrFail($payment);
+
+        $this->invoiceService->deletePayment($creditCardInvoice, $cardPayment);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Pagamento excluído. As compras da fatura foram preservadas.',
         ]);
 
         return to_route('credit-card-invoices.show', $invoice);
@@ -371,6 +396,24 @@ class CreditCardInvoiceController extends Controller
             'can_pay' => $invoice->status !== CreditCardInvoiceStatus::Open
                 && $invoice->status !== CreditCardInvoiceStatus::Paid
                 && $this->invoiceService->outstandingAmount($invoice) !== '0.00',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function paymentData(CreditCardInvoicePayment $payment): array
+    {
+        return [
+            'id' => $payment->id,
+            'paid_on' => $payment->paid_on->toDateString(),
+            'amount' => $payment->amount,
+            'payment_method' => $payment->payment_method->value,
+            'payment_method_label' => $payment->payment_method->label(),
+            'financial_account_id' => $payment->financial_account_id,
+            'account_name' => $payment->account->name,
+            'notes' => $payment->notes,
+            'is_bank_reconciled' => $payment->movement?->bankStatementEntry !== null,
         ];
     }
 

@@ -5,9 +5,11 @@ import {
     CircleAlert,
     FileSpreadsheet,
     Link2,
+    Pencil,
     Plus,
     RotateCcw,
     Sparkles,
+    Trash2,
     WalletCards,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -17,6 +19,14 @@ import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -30,6 +40,7 @@ import { index } from '@/routes/credit-card-invoices';
 import { createExpense } from '@/routes/transactions';
 import type {
     CreditCardInvoice,
+    CreditCardInvoicePayment,
     FinancialEntryReferenceOption,
     PaymentMethodOption,
 } from '@/types';
@@ -65,6 +76,22 @@ function formatDate(value: string) {
     return date.format(new Date(`${value}T00:00:00Z`));
 }
 
+function moneyToCents(value: string) {
+    const negative = value.startsWith('-');
+    const [whole, decimal = '00'] = value.replace('-', '').split('.');
+    const cents =
+        Number(whole) * 100 + Number(decimal.padEnd(2, '0').slice(0, 2));
+
+    return negative ? -cents : cents;
+}
+
+function centsToMoney(cents: number) {
+    const sign = cents < 0 ? '-' : '';
+    const absolute = Math.abs(cents);
+
+    return `${sign}${Math.floor(absolute / 100)}.${String(absolute % 100).padStart(2, '0')}`;
+}
+
 function confidenceVariant(confidence: 'high' | 'medium' | 'low') {
     if (confidence === 'high') return 'secondary' as const;
     return 'outline' as const;
@@ -87,6 +114,10 @@ export default function CreditCardInvoiceShow() {
     const installments = invoice.installments ?? [];
     const statementEntries = invoice.statement_entries ?? [];
     const payments = invoice.payments ?? [];
+    const [editingPayment, setEditingPayment] =
+        useState<CreditCardInvoicePayment | null>(null);
+    const [deletingPayment, setDeletingPayment] =
+        useState<CreditCardInvoicePayment | null>(null);
     const [selectedInstallments, setSelectedInstallments] = useState<
         Record<number, string>
     >(() =>
@@ -896,7 +927,7 @@ export default function CreditCardInvoiceShow() {
                             {payments.map((payment) => (
                                 <div
                                     key={payment.id}
-                                    className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+                                    className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
                                 >
                                     <div>
                                         <p className="font-medium">
@@ -911,19 +942,335 @@ export default function CreditCardInvoiceShow() {
                                                 {payment.notes}
                                             </p>
                                         )}
-                                    </div>
-                                    <p className="font-semibold tabular-nums">
-                                        {currency.format(
-                                            Number(payment.amount),
+                                        {payment.is_bank_reconciled && (
+                                            <p className="text-muted-foreground mt-1 text-xs">
+                                                Conciliado com o extrato.
+                                                Desfaça a conciliação para
+                                                alterar conta, data ou valor, ou
+                                                para excluir.
+                                            </p>
                                         )}
-                                    </p>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <p className="font-semibold tabular-nums">
+                                            {currency.format(
+                                                Number(payment.amount),
+                                            )}
+                                        </p>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() =>
+                                                setEditingPayment(payment)
+                                            }
+                                        >
+                                            <Pencil />
+                                            Alterar
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            disabled={
+                                                payment.is_bank_reconciled
+                                            }
+                                            onClick={() =>
+                                                setDeletingPayment(payment)
+                                            }
+                                        >
+                                            <Trash2 />
+                                            Excluir
+                                        </Button>
+                                    </div>
                                 </div>
                             ))}
                         </CardContent>
                     </Card>
                 )}
+
+                {editingPayment && (
+                    <InvoicePaymentEditDialog
+                        key={editingPayment.id}
+                        invoice={invoice}
+                        payment={editingPayment}
+                        accountOptions={accountOptions}
+                        paymentMethods={paymentMethods}
+                        onClose={() => setEditingPayment(null)}
+                    />
+                )}
+
+                {deletingPayment && (
+                    <InvoicePaymentDeleteDialog
+                        invoiceId={invoice.id}
+                        payment={deletingPayment}
+                        onClose={() => setDeletingPayment(null)}
+                    />
+                )}
             </div>
         </>
+    );
+}
+
+function InvoicePaymentEditDialog({
+    invoice,
+    payment,
+    accountOptions,
+    paymentMethods,
+    onClose,
+}: {
+    invoice: CreditCardInvoice;
+    payment: CreditCardInvoicePayment;
+    accountOptions: FinancialEntryReferenceOption[];
+    paymentMethods: PaymentMethodOption[];
+    onClose: () => void;
+}) {
+    const [accountId, setAccountId] = useState(
+        String(payment.financial_account_id),
+    );
+    const [paymentMethod, setPaymentMethod] = useState(payment.payment_method);
+    const locked = payment.is_bank_reconciled;
+    const maxAmount = centsToMoney(
+        moneyToCents(invoice.outstanding_amount) + moneyToCents(payment.amount),
+    );
+
+    return (
+        <Dialog open onOpenChange={(open) => !open && onClose()}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Alterar pagamento</DialogTitle>
+                    <DialogDescription>
+                        A alteração ajusta o movimento de caixa e o saldo da
+                        fatura. As compras permanecem registradas.
+                    </DialogDescription>
+                </DialogHeader>
+                <Form
+                    {...CreditCardInvoiceController.updatePayment.form({
+                        invoice: invoice.id,
+                        payment: payment.id,
+                    })}
+                    options={{ preserveScroll: true }}
+                    onSuccess={onClose}
+                    className="grid gap-4"
+                >
+                    {({ processing, errors }) => (
+                        <>
+                            {locked && (
+                                <p className="text-muted-foreground text-sm">
+                                    Este pagamento está conciliado com o
+                                    extrato. Conta, data e valor ficam
+                                    bloqueados até a conciliação ser desfeita.
+                                </p>
+                            )}
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="edit_financial_account_id">
+                                        Conta de pagamento
+                                    </Label>
+                                    <input
+                                        type="hidden"
+                                        name="financial_account_id"
+                                        value={accountId}
+                                    />
+                                    <Select
+                                        value={accountId}
+                                        onValueChange={setAccountId}
+                                        disabled={locked}
+                                    >
+                                        <SelectTrigger
+                                            id="edit_financial_account_id"
+                                            className="w-full"
+                                        >
+                                            <SelectValue placeholder="Selecione a conta" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {accountOptions.map((account) => (
+                                                <SelectItem
+                                                    key={account.id}
+                                                    value={String(account.id)}
+                                                >
+                                                    {account.name}
+                                                    {account.is_active
+                                                        ? ''
+                                                        : ' (inativa)'}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <InputError
+                                        message={errors.financial_account_id}
+                                    />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="edit_payment_method">
+                                        Forma de pagamento
+                                    </Label>
+                                    <input
+                                        type="hidden"
+                                        name="payment_method"
+                                        value={paymentMethod}
+                                    />
+                                    <Select
+                                        value={paymentMethod}
+                                        onValueChange={setPaymentMethod}
+                                    >
+                                        <SelectTrigger
+                                            id="edit_payment_method"
+                                            className="w-full"
+                                        >
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {paymentMethods.map((method) => (
+                                                <SelectItem
+                                                    key={method.value}
+                                                    value={method.value}
+                                                >
+                                                    {method.label}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <InputError
+                                        message={errors.payment_method}
+                                    />
+                                </div>
+                            </div>
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="edit_paid_on">
+                                        Data do pagamento
+                                    </Label>
+                                    {locked && (
+                                        <input
+                                            type="hidden"
+                                            name="paid_on"
+                                            value={payment.paid_on}
+                                        />
+                                    )}
+                                    <Input
+                                        id="edit_paid_on"
+                                        name={locked ? undefined : 'paid_on'}
+                                        type="date"
+                                        defaultValue={payment.paid_on}
+                                        required
+                                        readOnly={locked}
+                                        disabled={locked}
+                                    />
+                                    <InputError message={errors.paid_on} />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="edit_amount">
+                                        Valor pago
+                                    </Label>
+                                    {locked && (
+                                        <input
+                                            type="hidden"
+                                            name="amount"
+                                            value={payment.amount}
+                                        />
+                                    )}
+                                    <Input
+                                        id="edit_amount"
+                                        name={locked ? undefined : 'amount'}
+                                        type="number"
+                                        step="0.01"
+                                        min="0.01"
+                                        max={maxAmount}
+                                        defaultValue={payment.amount}
+                                        required
+                                        readOnly={locked}
+                                        disabled={locked}
+                                    />
+                                    <InputError message={errors.amount} />
+                                </div>
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="edit_notes">Observações</Label>
+                                <Input
+                                    id="edit_notes"
+                                    name="notes"
+                                    defaultValue={payment.notes ?? ''}
+                                    placeholder="Opcional"
+                                    maxLength={2000}
+                                />
+                                <InputError message={errors.notes} />
+                            </div>
+                            <InputError message={errors.reconciliation} />
+                            <DialogFooter>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={onClose}
+                                >
+                                    Cancelar
+                                </Button>
+                                <Button disabled={processing}>
+                                    Salvar alterações
+                                </Button>
+                            </DialogFooter>
+                        </>
+                    )}
+                </Form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function InvoicePaymentDeleteDialog({
+    invoiceId,
+    payment,
+    onClose,
+}: {
+    invoiceId: number;
+    payment: CreditCardInvoicePayment;
+    onClose: () => void;
+}) {
+    return (
+        <Dialog open onOpenChange={(open) => !open && onClose()}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Excluir pagamento?</DialogTitle>
+                    <DialogDescription>
+                        O pagamento de {currency.format(Number(payment.amount))}{' '}
+                        em {payment.account_name} sai da fatura e o movimento
+                        de caixa correspondente é removido. As compras
+                        permanecem registradas.
+                    </DialogDescription>
+                </DialogHeader>
+                <Form
+                    {...CreditCardInvoiceController.destroyPayment.form({
+                        invoice: invoiceId,
+                        payment: payment.id,
+                    })}
+                    options={{ preserveScroll: true }}
+                    onSuccess={onClose}
+                >
+                    {({ processing, errors }) => (
+                        <>
+                            <InputError message={errors.reconciliation} />
+                            <DialogFooter>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={processing}
+                                    onClick={onClose}
+                                >
+                                    Cancelar
+                                </Button>
+                                <Button
+                                    variant="destructive"
+                                    disabled={processing}
+                                >
+                                    <Trash2 />
+                                    Excluir pagamento
+                                </Button>
+                            </DialogFooter>
+                        </>
+                    )}
+                </Form>
+            </DialogContent>
+        </Dialog>
     );
 }
 

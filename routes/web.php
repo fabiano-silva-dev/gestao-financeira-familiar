@@ -130,6 +130,20 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::post('faturas/{invoice}/pagamentos', [CreditCardInvoiceController::class, 'pay'])
         ->whereNumber('invoice')
         ->name('credit-card-invoices.pay');
+    Route::put(
+        'faturas/{invoice}/pagamentos/{payment}',
+        [CreditCardInvoiceController::class, 'updatePayment'],
+    )
+        ->whereNumber('invoice')
+        ->whereNumber('payment')
+        ->name('credit-card-invoices.payments.update');
+    Route::delete(
+        'faturas/{invoice}/pagamentos/{payment}',
+        [CreditCardInvoiceController::class, 'destroyPayment'],
+    )
+        ->whereNumber('invoice')
+        ->whereNumber('payment')
+        ->name('credit-card-invoices.payments.destroy');
     Route::post(
         'faturas/{invoice}/pagamentos/{payment}/vincular',
         [CreditCardInvoiceController::class, 'linkPayment'],
@@ -208,6 +222,9 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::patch('lancamentos/{entry}/recorrencia/pendente', [FinancialTransactionController::class, 'revertRecurrenceSettlement'])
         ->whereNumber('entry')
         ->name('transactions.revert-recurrence-settlement');
+    Route::delete('lancamentos/{entry}/recorrencia', [FinancialTransactionController::class, 'destroyRecurrenceOccurrence'])
+        ->whereNumber('entry')
+        ->name('transactions.destroy-recurrence-occurrence');
 
     Route::get('recorrencias', [FinancialRecurrenceController::class, 'index'])
         ->name('recurrences.index');

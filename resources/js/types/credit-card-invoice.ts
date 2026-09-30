@@ -27,8 +27,10 @@ export type CreditCardInvoicePayment = {
     amount: string;
     payment_method: string;
     payment_method_label: string;
+    financial_account_id: number;
     account_name: string;
     notes: string | null;
+    is_bank_reconciled: boolean;
 };
 
 export type CreditCardInvoiceStatementCandidate = {

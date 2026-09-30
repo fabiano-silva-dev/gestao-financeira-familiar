@@ -539,6 +539,195 @@ class CreditCardInvoiceTest extends TestCase
         );
     }
 
+    public function test_payment_can_be_updated_without_creating_a_new_expense(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'opening_balance' => '1000.00',
+        ]);
+        $otherAccount = FinancialAccount::factory()->for($workspace)->create([
+            'opening_balance' => '500.00',
+            'name' => 'Conta reserva',
+        ]);
+        $card = CreditCard::factory()->for($workspace)->create([
+            'payment_account_id' => $account->id,
+            'invoice_payment_method' => PaymentMethod::Pix->value,
+        ]);
+        $purchase = $this->createCardPurchase($user, $workspace, $card, '250.00');
+        $invoice = $purchase->installments()->sole()->invoice;
+        $this->closeInvoice($user, $workspace, $invoice);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('credit-card-invoices.pay', $invoice), [
+            'financial_account_id' => $account->id,
+            'paid_on' => '2026-10-10',
+            'amount' => '250.00',
+            'payment_method' => PaymentMethod::Pix->value,
+            'notes' => null,
+        ])->assertSessionHasNoErrors();
+
+        $payment = $invoice->payments()->sole();
+
+        $request->put(route('credit-card-invoices.payments.update', [$invoice, $payment]), [
+            'financial_account_id' => $otherAccount->id,
+            'paid_on' => '2026-10-12',
+            'amount' => '100.00',
+            'payment_method' => PaymentMethod::Boleto->value,
+            'notes' => 'Valor corrigido',
+        ])->assertRedirect(route('credit-card-invoices.show', $invoice))
+            ->assertSessionHasNoErrors();
+
+        $invoice->refresh();
+        $payment->refresh();
+        $movement = $payment->movement()->sole();
+
+        $this->assertSame(CreditCardInvoiceStatus::Partial, $invoice->status);
+        $this->assertSame('100.00', $invoice->paid_amount);
+        $this->assertNull($invoice->paid_at);
+        $this->assertSame('100.00', $payment->amount);
+        $this->assertSame($otherAccount->id, $payment->financial_account_id);
+        $this->assertSame('2026-10-12', $payment->paid_on->toDateString());
+        $this->assertSame(PaymentMethod::Boleto, $payment->payment_method);
+        $this->assertSame('Valor corrigido', $payment->notes);
+        $this->assertSame('-100.00', $movement->amount);
+        $this->assertSame($otherAccount->id, $movement->financial_account_id);
+        $this->assertSame('2026-10-12', $movement->occurred_on->toDateString());
+        $this->assertDatabaseCount('financial_transactions', 1);
+        $this->assertDatabaseCount('account_movements', 1);
+        $this->assertSame(
+            TransactionInstallmentStatus::Open,
+            $purchase->installments()->sole()->fresh()->status,
+        );
+
+        $request->get(route('accounts.index'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('accounts', function ($accounts): bool {
+                    $balances = collect($accounts)->pluck('current_balance', 'name');
+
+                    return $balances->contains('1000.00')
+                        && $balances->contains('400.00');
+                }));
+    }
+
+    public function test_payment_update_cannot_exceed_the_invoice_balance(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $card = CreditCard::factory()->for($workspace)->create([
+            'payment_account_id' => $account->id,
+        ]);
+        $purchase = $this->createCardPurchase($user, $workspace, $card, '400.00');
+        $invoice = $purchase->installments()->sole()->invoice;
+        $this->closeInvoice($user, $workspace, $invoice);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('credit-card-invoices.pay', $invoice), [
+            'financial_account_id' => $account->id,
+            'paid_on' => '2026-10-10',
+            'amount' => '150.00',
+            'payment_method' => PaymentMethod::Pix->value,
+        ])->assertSessionHasNoErrors();
+
+        $payment = $invoice->payments()->sole();
+
+        $request->put(route('credit-card-invoices.payments.update', [$invoice, $payment]), [
+            'financial_account_id' => $account->id,
+            'paid_on' => '2026-10-10',
+            'amount' => '400.01',
+            'payment_method' => PaymentMethod::Pix->value,
+        ])->assertSessionHasErrors('amount');
+
+        $this->assertSame('150.00', $payment->fresh()->amount);
+        $this->assertSame('150.00', $invoice->fresh()->paid_amount);
+    }
+
+    public function test_payment_can_be_deleted_without_removing_the_purchase(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'opening_balance' => '1000.00',
+        ]);
+        $card = CreditCard::factory()->for($workspace)->create([
+            'payment_account_id' => $account->id,
+        ]);
+        $purchase = $this->createCardPurchase($user, $workspace, $card, '250.00');
+        $invoice = $purchase->installments()->sole()->invoice;
+        $this->closeInvoice($user, $workspace, $invoice);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('credit-card-invoices.pay', $invoice), [
+            'financial_account_id' => $account->id,
+            'paid_on' => '2026-10-10',
+            'amount' => '250.00',
+            'payment_method' => PaymentMethod::Pix->value,
+        ])->assertSessionHasNoErrors();
+
+        $payment = $invoice->payments()->sole();
+
+        $request->delete(route('credit-card-invoices.payments.destroy', [$invoice, $payment]))
+            ->assertRedirect(route('credit-card-invoices.show', $invoice))
+            ->assertSessionHasNoErrors();
+
+        $invoice->refresh();
+
+        $this->assertSame(CreditCardInvoiceStatus::Closed, $invoice->status);
+        $this->assertSame('0.00', $invoice->paid_amount);
+        $this->assertNull($invoice->paid_at);
+        $this->assertDatabaseCount('credit_card_invoice_payments', 0);
+        $this->assertDatabaseCount('account_movements', 0);
+        $this->assertDatabaseCount('financial_transactions', 1);
+        $this->assertSame(
+            TransactionInstallmentStatus::Open,
+            $purchase->installments()->sole()->fresh()->status,
+        );
+
+        $request->get(route('accounts.index'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('accounts.0.current_balance', '1000.00'));
+    }
+
+    public function test_payment_from_another_invoice_cannot_be_changed(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $card = CreditCard::factory()->for($workspace)->create([
+            'payment_account_id' => $account->id,
+        ]);
+        $firstPurchase = $this->createCardPurchase($user, $workspace, $card, '100.00');
+        $firstInvoice = $firstPurchase->installments()->sole()->invoice;
+        $this->closeInvoice($user, $workspace, $firstInvoice);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('credit-card-invoices.pay', $firstInvoice), [
+            'financial_account_id' => $account->id,
+            'paid_on' => '2026-10-10',
+            'amount' => '100.00',
+            'payment_method' => PaymentMethod::Pix->value,
+        ])->assertSessionHasNoErrors();
+
+        $payment = $firstInvoice->payments()->sole();
+        $otherCard = CreditCard::factory()->for($workspace)->create([
+            'payment_account_id' => $account->id,
+            'closing_day' => 3,
+            'due_day' => 10,
+        ]);
+        $secondPurchase = $this->createCardPurchase($user, $workspace, $otherCard, '80.00');
+        $secondInvoice = $secondPurchase->installments()->sole()->invoice;
+        $this->closeInvoice($user, $workspace, $secondInvoice);
+
+        $request->delete(route('credit-card-invoices.payments.destroy', [$secondInvoice, $payment]))
+            ->assertNotFound();
+
+        $this->assertDatabaseCount('credit_card_invoice_payments', 1);
+        $this->assertSame('100.00', $firstInvoice->fresh()->paid_amount);
+    }
+
     public function test_invoice_from_another_workspace_cannot_be_viewed_or_paid(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();

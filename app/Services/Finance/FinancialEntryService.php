@@ -10,6 +10,7 @@ use App\Enums\PaymentMethod;
 use App\Enums\TransactionInstallmentStatus;
 use App\Models\AccountMovement;
 use App\Models\BankStatementEntry;
+use App\Models\FinancialRecurrenceOmission;
 use App\Models\FinancialTransaction;
 use App\Models\TransactionInstallment;
 use App\Models\Workspace;
@@ -201,6 +202,51 @@ class FinancialEntryService
             $this->syncMovement($entry->refresh());
 
             return $entry->refresh();
+        });
+    }
+
+    public function deleteRecurrenceOccurrence(FinancialTransaction $entry): void
+    {
+        if (
+            $entry->financial_recurrence_id === null
+            || $entry->recurrence_occurrence_date === null
+        ) {
+            throw ValidationException::withMessages([
+                'entry' => 'Este lançamento não pertence a uma recorrência.',
+            ]);
+        }
+
+        if ($entry->refunds()->exists()) {
+            throw ValidationException::withMessages([
+                'entry' => 'Remova os reembolsos antes de excluir este lançamento.',
+            ]);
+        }
+
+        DB::transaction(function () use ($entry): void {
+            $workspace = $entry->workspace()->firstOrFail();
+            $occurrenceDate = $entry->recurrence_occurrence_date->toDateString();
+
+            FinancialRecurrenceOmission::query()->firstOrCreate([
+                'workspace_id' => $entry->workspace_id,
+                'financial_recurrence_id' => $entry->financial_recurrence_id,
+                'occurrence_date' => $occurrenceDate,
+            ]);
+
+            $entry->load('accountMovements.bankStatementEntry');
+
+            foreach ($entry->accountMovements as $movement) {
+                $statement = $movement->bankStatementEntry;
+
+                if ($statement instanceof BankStatementEntry) {
+                    $this->bankReconciliation->undo($workspace, $statement);
+                }
+            }
+
+            if ($entry->credit_card_id !== null) {
+                $this->cardPurchaseService->clear($entry);
+            }
+
+            $entry->delete();
         });
     }
 

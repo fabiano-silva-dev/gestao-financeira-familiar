@@ -276,7 +276,7 @@ class AvailabilityDashboardController extends Controller
         CarbonImmutable $start,
         CarbonImmutable $end,
     ): array {
-        return $workspace
+        $transactions = $workspace
             ->financialTransactions()
             ->where('type', FinancialTransactionType::Income->value)
             ->whereIn('status', [
@@ -299,8 +299,6 @@ class AvailabilityDashboardController extends Controller
                     });
             })
             ->with('account:id,name')
-            ->orderByRaw('COALESCE(due_date, transaction_date)')
-            ->orderBy('id')
             ->get()
             ->map(function (FinancialTransaction $transaction): array {
                 $date = $transaction->due_date ?? $transaction->transaction_date;
@@ -314,6 +312,51 @@ class AvailabilityDashboardController extends Controller
                 ];
             })
             ->all();
+
+        $installments = TransactionInstallment::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereNull('credit_card_invoice_id')
+            ->where('status', TransactionInstallmentStatus::Open->value)
+            ->where(function ($query) use ($start, $end): void {
+                $query
+                    ->whereBetween('expected_payment_date', [$start->toDateString(), $end->toDateString()])
+                    ->orWhere(function ($fallback) use ($start, $end): void {
+                        $fallback
+                            ->whereNull('expected_payment_date')
+                            ->whereBetween('due_date', [$start->toDateString(), $end->toDateString()]);
+                    });
+            })
+            ->whereHas('transaction', fn ($query) => $query
+                ->where('type', FinancialTransactionType::Income->value)
+                ->whereNull('credit_card_id')
+                ->where('status', '!=', FinancialTransactionStatus::Cancelled->value))
+            ->with('transaction.account:id,name')
+            ->get()
+            ->map(function (TransactionInstallment $installment): array {
+                $date = $installment->expected_payment_date ?? $installment->due_date;
+
+                return [
+                    'id' => $installment->id,
+                    'description' => $installment->transaction->description,
+                    'amount' => (string) $installment->amount,
+                    'expected_on' => $date->toDateString(),
+                    'account_name' => $installment->transaction->account?->name,
+                ];
+            })
+            ->all();
+
+        $receivables = [...$transactions, ...$installments];
+        usort($receivables, fn (array $left, array $right): int => [
+            $left['expected_on'],
+            $left['description'],
+            $left['id'],
+        ] <=> [
+            $right['expected_on'],
+            $right['description'],
+            $right['id'],
+        ]);
+
+        return $receivables;
     }
 
     private function moneyToCents(string $amount): int

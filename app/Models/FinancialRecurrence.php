@@ -84,6 +84,12 @@ class FinancialRecurrence extends Model
         return $this->hasMany(FinancialTransaction::class);
     }
 
+    /** @return HasMany<FinancialRecurrenceOmission, $this> */
+    public function omissions(): HasMany
+    {
+        return $this->hasMany(FinancialRecurrenceOmission::class);
+    }
+
     protected function casts(): array
     {
         return [

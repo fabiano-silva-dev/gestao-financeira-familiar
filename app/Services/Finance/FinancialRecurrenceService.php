@@ -198,6 +198,7 @@ class FinancialRecurrenceService
         $currentDue = $settleCurrentDue
             ? $this->currentDueOccurrence($recurrence, $today)
             : null;
+        $omittedDates = $this->omittedOccurrenceDates($recurrence);
 
         foreach ($this->occurrencesBetween($recurrence, $generationStart, $through) as $occurrence) {
             $occurrenceDate = $occurrence->toDateString();
@@ -208,7 +209,7 @@ class FinancialRecurrenceService
                 ->whereDate('recurrence_occurrence_date', $occurrenceDate)
                 ->exists();
 
-            if ($exists) {
+            if ($exists || isset($omittedDates[$occurrenceDate])) {
                 continue;
             }
 
@@ -325,6 +326,7 @@ class FinancialRecurrenceService
 
         foreach ($recurrences as $recurrence) {
             $amount = $this->moneyToCents((string) $recurrence->amount);
+            $omittedDates = $this->omittedOccurrenceDates($recurrence);
 
             $generationStart = CarbonImmutable::parse(
                 $recurrence->generation_started_on->toDateString(),
@@ -338,6 +340,10 @@ class FinancialRecurrenceService
                 $projectionStart,
                 $lastMonth,
             ) as $occurrence) {
+                if (isset($omittedDates[$occurrence->toDateString()])) {
+                    continue;
+                }
+
                 $key = $occurrence->format('Y-m');
 
                 if ($recurrence->type === FinancialTransactionType::Income) {
@@ -545,6 +551,20 @@ class FinancialRecurrenceService
         return $this->usesCreditCard($recurrence)
             ? $today->addMonths(self::CARD_GENERATION_HORIZON_MONTHS)->subDay()
             : $today->addDays(self::GENERATION_HORIZON_DAYS);
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    private function omittedOccurrenceDates(FinancialRecurrence $recurrence): array
+    {
+        return array_fill_keys(
+            $recurrence->omissions()
+                ->pluck('occurrence_date')
+                ->map(fn (mixed $date): string => CarbonImmutable::parse($date)->toDateString())
+                ->all(),
+            true,
+        );
     }
 
     private function usesCreditCard(FinancialRecurrence $recurrence): bool

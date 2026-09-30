@@ -14,6 +14,7 @@ use App\Models\CreditCardInvoice;
 use App\Models\FinancialAccount;
 use App\Models\FinancialImport;
 use App\Models\FinancialRecurrence;
+use App\Models\FinancialRecurrenceOmission;
 use App\Models\FinancialTransaction;
 use App\Models\User;
 use App\Models\Workspace;
@@ -366,6 +367,119 @@ class FinancialRecurrenceTest extends TestCase
         $this->assertNull($bankEntry->account_movement_id);
     }
 
+    public function test_deleting_a_recurrence_occurrence_does_not_regenerate_it(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-21 12:00:00'));
+
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'opening_balance' => '1000.00',
+        ]);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('recurrences.store'), [
+            ...$this->validRecurrenceData($account),
+            'description' => 'Imembui',
+            'amount' => '1052.37',
+            'starts_on' => '2026-08-10',
+            'already_settled' => '1',
+        ])->assertSessionHasNoErrors();
+
+        $recurrence = FinancialRecurrence::query()->sole();
+        $occurrence = $recurrence->transactions()
+            ->whereDate('recurrence_occurrence_date', '2026-10-10')
+            ->firstOrFail();
+        $remaining = $recurrence->transactions()->count() - 1;
+
+        $request->delete(route('transactions.destroy-recurrence-occurrence', $occurrence))
+            ->assertRedirect(route('transactions.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertNull(FinancialTransaction::query()->find($occurrence->id));
+        $this->assertDatabaseHas('financial_recurrence_omissions', [
+            'financial_recurrence_id' => $recurrence->id,
+            'occurrence_date' => '2026-10-10',
+        ]);
+        $this->assertSame($remaining, $recurrence->transactions()->count());
+
+        $request->get(route('payments'))->assertOk();
+
+        $this->assertNull(
+            $recurrence->transactions()
+                ->whereDate('recurrence_occurrence_date', '2026-10-10')
+                ->first(),
+        );
+        $this->assertSame(1, FinancialRecurrenceOmission::query()->count());
+    }
+
+    public function test_deleting_a_settled_recurrence_occurrence_removes_the_cash_movement(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-21 12:00:00'));
+
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'opening_balance' => '1000.00',
+        ]);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('recurrences.store'), [
+            ...$this->validRecurrenceData($account),
+            'description' => 'Condomínio',
+            'amount' => '569.19',
+            'starts_on' => '2026-08-10',
+            'already_settled' => '1',
+        ])->assertSessionHasNoErrors();
+
+        $occurrence = FinancialRecurrence::query()->sole()
+            ->transactions()
+            ->whereDate('recurrence_occurrence_date', '2026-09-10')
+            ->firstOrFail();
+
+        $this->assertSame(1, $occurrence->accountMovements()->count());
+
+        $request->delete(route('transactions.destroy-recurrence-occurrence', $occurrence))
+            ->assertRedirect(route('transactions.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertNull(FinancialTransaction::query()->find($occurrence->id));
+        $this->assertDatabaseCount('account_movements', 0);
+
+        $request->get(route('payments'))->assertOk();
+
+        $this->assertNull(
+            FinancialTransaction::query()
+                ->whereDate('recurrence_occurrence_date', '2026-09-10')
+                ->first(),
+        );
+    }
+
+    public function test_manual_entry_cannot_delete_recurrence_occurrence(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $entry = app(FinancialEntryService::class)->create($workspace, [
+            'type' => FinancialTransactionType::Expense->value,
+            'transaction_date' => '2026-09-10',
+            'competence_date' => '2026-09-10',
+            'description' => 'Mercado',
+            'amount' => '40.00',
+            'financial_account_id' => $account->id,
+            'payment_method' => PaymentMethod::Pix->value,
+            'due_date' => '2026-09-10',
+            'settled_on' => '2026-09-10',
+            'status' => FinancialTransactionStatus::Confirmed->value,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->delete(route('transactions.destroy-recurrence-occurrence', $entry))
+            ->assertSessionHasErrors('entry');
+
+        $this->assertNotNull($entry->fresh());
+    }
+
     public function test_manual_entry_cannot_revert_recurrence_settlement(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();
@@ -503,6 +617,13 @@ class FinancialRecurrenceTest extends TestCase
             $archived->transactions()->find($paid->id),
         );
         $this->assertNotNull($paid->fresh()?->settled_on);
+
+        $request->get(route('recurrences.edit', $recurrence))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('recurrences/archived')
+                ->where('description', 'Condomínio')
+            );
         $this->assertSame(1, $paid->fresh()?->accountMovements()->count());
 
         $request->get(route('recurrences.index'))

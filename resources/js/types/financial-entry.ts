@@ -81,6 +81,7 @@ export type FinancialEntry = {
     origin_label: string;
     origin_source: FinancialEntryOriginSource;
     financial_recurrence_id: number | null;
+    recurrence_was_removed: boolean;
     recurrence_is_overridden: boolean;
 };
 

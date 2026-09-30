@@ -39,19 +39,26 @@ export function EntryOriginBanner({ entry }: Props) {
                     {entry.origin_source.summary}
                 </p>
             )}
-            {entry.financial_recurrence_id !== null && (
-                <p className="text-muted-foreground mt-1 text-xs">
-                    Alterações aqui valem somente para esta ocorrência. Para
-                    mudar as próximas,{' '}
-                    <Link
-                        className="text-primary font-medium underline-offset-4 hover:underline"
-                        href={editRecurrence(entry.financial_recurrence_id)}
-                    >
-                        edite a recorrência
-                    </Link>
-                    .
-                </p>
-            )}
+            {entry.financial_recurrence_id !== null &&
+                (entry.recurrence_was_removed ? (
+                    <p className="text-muted-foreground mt-1 text-xs">
+                        A recorrência que gerou este lançamento já foi
+                        excluída. A exclusão aqui vale somente para esta
+                        ocorrência.
+                    </p>
+                ) : (
+                    <p className="text-muted-foreground mt-1 text-xs">
+                        Alterações aqui valem somente para esta ocorrência.
+                        Para mudar as próximas,{' '}
+                        <Link
+                            className="text-primary font-medium underline-offset-4 hover:underline"
+                            href={editRecurrence(entry.financial_recurrence_id)}
+                        >
+                            edite a recorrência
+                        </Link>
+                        .
+                    </p>
+                ))}
         </div>
     );
 }

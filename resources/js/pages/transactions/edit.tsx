@@ -1,5 +1,5 @@
-import { Form, Head } from '@inertiajs/react';
-import { RotateCcw } from 'lucide-react';
+import { Form, Head, router } from '@inertiajs/react';
+import { RotateCcw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { EntryOriginBanner } from '@/components/transactions/entry-origin-banner';
 import EntryTypeSwitcher from '@/components/transactions/entry-type-switcher';
@@ -10,6 +10,14 @@ import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -66,21 +74,60 @@ export default function TransactionsEdit({
     const [refundInvoiceId, setRefundInvoiceId] = useState(
         refundInvoiceOptions[0] ? String(refundInvoiceOptions[0].id) : '',
     );
+    const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+    const [deletingOccurrence, setDeletingOccurrence] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
+    const canDeleteOccurrence =
+        !isTransfer && entry.financial_recurrence_id !== null;
+
+    function deleteOccurrence() {
+        setDeletingOccurrence(true);
+        setDeleteError(null);
+        router.delete(
+            FinancialTransactionController.destroyRecurrenceOccurrence.url(
+                entry.id,
+            ),
+            {
+                onError: (errors) => {
+                    setDeleteError(
+                        errors.entry ??
+                            'Não foi possível excluir esta ocorrência.',
+                    );
+                },
+                onFinish: () => setDeletingOccurrence(false),
+            },
+        );
+    }
 
     return (
         <>
             <Head title={`Editar ${typeLabel.toLocaleLowerCase('pt-BR')}`} />
 
             <div className="flex h-full flex-1 flex-col gap-6 p-4 md:p-6">
-                <div>
-                    <h1 className="text-2xl font-semibold tracking-tight">
-                        Editar {typeLabel.toLocaleLowerCase('pt-BR')}
-                    </h1>
-                    <p className="text-muted-foreground text-sm">
-                        {isTransfer
-                            ? 'Atualize a movimentação entre contas próprias.'
-                            : 'Atualize o lançamento e seu impacto financeiro.'}
-                    </p>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                        <h1 className="text-2xl font-semibold tracking-tight">
+                            Editar {typeLabel.toLocaleLowerCase('pt-BR')}
+                        </h1>
+                        <p className="text-muted-foreground text-sm">
+                            {isTransfer
+                                ? 'Atualize a movimentação entre contas próprias.'
+                                : 'Atualize o lançamento e seu impacto financeiro.'}
+                        </p>
+                    </div>
+                    {canDeleteOccurrence && (
+                        <Button
+                            type="button"
+                            variant="destructive"
+                            onClick={() => {
+                                setDeleteError(null);
+                                setConfirmDeleteOpen(true);
+                            }}
+                        >
+                            <Trash2 />
+                            Excluir esta ocorrência
+                        </Button>
+                    )}
                 </div>
 
                 <Card className="max-w-3xl">
@@ -376,6 +423,51 @@ export default function TransactionsEdit({
                     </Card>
                 )}
             </div>
+
+            <Dialog
+                open={confirmDeleteOpen}
+                onOpenChange={(open) => {
+                    if (!deletingOccurrence) {
+                        setConfirmDeleteOpen(open);
+                    }
+                }}
+            >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Excluir esta ocorrência?</DialogTitle>
+                        <DialogDescription>
+                            Somente este lançamento será removido. A recorrência
+                            continua e as outras datas permanecem. Esta data não
+                            será gerada de novo.
+                            {entry.is_settled
+                                ? ' O pagamento ou recebimento desta data também sai do saldo da conta.'
+                                : ''}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <InputError message={deleteError ?? undefined} />
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={deletingOccurrence}
+                            onClick={() => setConfirmDeleteOpen(false)}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="destructive"
+                            disabled={deletingOccurrence}
+                            data-test="confirm-delete-recurrence-occurrence"
+                            onClick={deleteOccurrence}
+                        >
+                            {deletingOccurrence
+                                ? 'Excluindo...'
+                                : 'Excluir ocorrência'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </>
     );
 }

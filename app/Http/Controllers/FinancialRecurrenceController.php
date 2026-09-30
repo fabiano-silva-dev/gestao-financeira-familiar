@@ -149,7 +149,13 @@ class FinancialRecurrenceController extends Controller
 
     public function edit(int $recurrence): Response
     {
-        $financialRecurrence = $this->findRecurrence($recurrence);
+        $financialRecurrence = $this->findRecurrence($recurrence, withTrashed: true);
+
+        if ($financialRecurrence->trashed()) {
+            return Inertia::render('recurrences/archived', [
+                'description' => $financialRecurrence->description,
+            ]);
+        }
 
         return Inertia::render('recurrences/edit', [
             'recurrence' => $this->recurrenceData($financialRecurrence),
@@ -213,10 +219,17 @@ class FinancialRecurrenceController extends Controller
         return $workspace;
     }
 
-    private function findRecurrence(int $recurrence): FinancialRecurrence
-    {
-        return $this->workspace()
-            ->financialRecurrences()
+    private function findRecurrence(
+        int $recurrence,
+        bool $withTrashed = false,
+    ): FinancialRecurrence {
+        $query = $this->workspace()->financialRecurrences();
+
+        if ($withTrashed) {
+            $query->withTrashed();
+        }
+
+        return $query
             ->with([
                 'account:id,name',
                 'creditCard:id,name,last_four',

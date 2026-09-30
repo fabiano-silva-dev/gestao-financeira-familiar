@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\FinancialTransactionOrigin;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
+use App\Enums\TransactionInstallmentStatus;
 use App\Models\CreditCard;
 use App\Models\FinancialAccount;
 use App\Models\User;
@@ -94,6 +95,47 @@ class AvailabilityDashboardTest extends TestCase
             'status' => FinancialTransactionStatus::Planned->value,
             'origin' => FinancialTransactionOrigin::Manual->value,
         ]);
+        $installmentIncome = $workspace->financialTransactions()->create([
+            'type' => FinancialTransactionType::Income->value,
+            'transaction_date' => '2026-09-29',
+            'description' => 'Serviços parcelados',
+            'amount' => '1500.00',
+            'financial_account_id' => $positiveAccount->id,
+            'due_date' => '2026-10-15',
+            'status' => FinancialTransactionStatus::Planned->value,
+            'origin' => FinancialTransactionOrigin::Manual->value,
+        ]);
+        $installmentIncome->installments()->create([
+            'workspace_id' => $workspace->id,
+            'installment_number' => 1,
+            'total_installments' => 3,
+            'amount' => '500.00',
+            'competence_month' => '2026-10-01',
+            'due_date' => '2026-10-15',
+            'expected_payment_date' => '2026-10-15',
+            'status' => TransactionInstallmentStatus::Open->value,
+        ]);
+        $installmentIncome->installments()->create([
+            'workspace_id' => $workspace->id,
+            'installment_number' => 2,
+            'total_installments' => 3,
+            'amount' => '500.00',
+            'competence_month' => '2026-11-01',
+            'due_date' => '2026-11-15',
+            'expected_payment_date' => '2026-11-15',
+            'status' => TransactionInstallmentStatus::Open->value,
+        ]);
+        $installmentIncome->installments()->create([
+            'workspace_id' => $workspace->id,
+            'installment_number' => 3,
+            'total_installments' => 3,
+            'amount' => '500.00',
+            'competence_month' => '2026-10-01',
+            'due_date' => '2026-10-05',
+            'expected_payment_date' => '2026-10-05',
+            'paid_at' => '2026-10-05',
+            'status' => TransactionInstallmentStatus::Paid->value,
+        ]);
 
         $this->actingAs($user)
             ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
@@ -110,14 +152,17 @@ class AvailabilityDashboardTest extends TestCase
                 ->where('summary.card_limit', '1500.00')
                 ->where('summary.card_used', '0.00')
                 ->where('summary.card_available', '1500.00')
-                ->where('summary.next_month_receivable', '2000.00')
+                ->where('summary.next_month_receivable', '2500.00')
                 ->has('accounts', 2)
                 ->has('cards', 2)
                 ->where('cards.0.name', 'Cartão vira dia 2')
                 ->where('cards.0.next_closing_date', '2026-10-02')
                 ->where('nextClosingCard.name', 'Cartão vira dia 2')
-                ->has('receivables', 1)
+                ->has('receivables', 2)
                 ->where('receivables.0.description', 'Recebimento de outubro')
+                ->where('receivables.0.amount', '2000.00')
+                ->where('receivables.1.description', 'Serviços parcelados')
+                ->where('receivables.1.amount', '500.00')
             );
     }
 }
