@@ -3,6 +3,8 @@
 namespace App\Services\Reconciliation;
 
 use App\Enums\FinancialTransactionStatus;
+use App\Enums\FinancialTransactionType;
+use App\Enums\PaymentMethod;
 use App\Models\CardStatementEntry;
 use App\Models\CreditCardInvoice;
 use App\Models\FinancialTransaction;
@@ -130,7 +132,7 @@ final class CardStatementReconciliationService
             if (
                 $lockedEntry->credit_card_invoice_id !== $invoice->id
                 || $lockedEntry->credit_card_id !== $invoice->credit_card_id
-                || $lockedTransaction->credit_card_id !== $invoice->credit_card_id
+                || $lockedTransaction->type !== FinancialTransactionType::Expense
                 || $lockedTransaction->financial_recurrence_id === null
                 || $lockedTransaction->status !== FinancialTransactionStatus::Planned
             ) {
@@ -161,10 +163,10 @@ final class CardStatementReconciliationService
                 'description' => $lockedTransaction->description,
                 'amount' => $lockedEntry->amount,
                 'financial_account_id' => null,
-                'credit_card_id' => $lockedTransaction->credit_card_id,
+                'credit_card_id' => $invoice->credit_card_id,
                 'category_id' => $lockedTransaction->category_id,
                 'family_member_id' => $lockedTransaction->family_member_id,
-                'payment_method' => $lockedTransaction->payment_method?->value,
+                'payment_method' => PaymentMethod::CreditCard->value,
                 'payee_name' => $lockedTransaction->payee_name,
                 'payment_instructions' => $lockedTransaction->payment_instructions,
                 'due_date' => null,

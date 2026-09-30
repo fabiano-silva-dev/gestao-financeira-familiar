@@ -127,22 +127,18 @@ class BankReconciliationController extends Controller
                     'transaction.creditCard:id,name,last_four',
                 ])
                 ->get();
-        $cardIds = $unreconciledCard
-            ->pluck('credit_card_id')
-            ->filter()
-            ->unique()
-            ->values();
-        $cardRecurrenceTransactions = $cardIds->isEmpty()
+        $cardRecurrenceTransactions = $unreconciledCard->isEmpty()
             ? collect()
             : $workspace->financialTransactions()
+                ->where('type', FinancialTransactionType::Expense->value)
                 ->where('status', FinancialTransactionStatus::Planned->value)
                 ->whereNotNull('financial_recurrence_id')
-                ->whereIn('credit_card_id', $cardIds)
                 ->whereDoesntHave('installments')
                 ->with([
                     'recurrence:id,description,payee_name',
                     'category:id,name,parent_id',
                     'category.parent:id,name',
+                    'account:id,name',
                     'creditCard:id,name,last_four',
                 ])
                 ->get();

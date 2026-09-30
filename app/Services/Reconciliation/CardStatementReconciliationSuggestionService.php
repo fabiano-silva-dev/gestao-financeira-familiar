@@ -3,6 +3,7 @@
 namespace App\Services\Reconciliation;
 
 use App\Enums\FinancialTransactionStatus;
+use App\Enums\FinancialTransactionType;
 use App\Models\CardStatementEntry;
 use App\Models\FinancialTransaction;
 use App\Models\TransactionInstallment;
@@ -112,22 +113,19 @@ final class CardStatementReconciliationSuggestionService
         return $transactions
             ->filter(function (FinancialTransaction $transaction) use ($entry, $entryCents): bool {
                 if (
-                    $transaction->status !== FinancialTransactionStatus::Planned
+                    $transaction->type !== FinancialTransactionType::Expense
+                    || $transaction->status !== FinancialTransactionStatus::Planned
                     || $transaction->financial_recurrence_id === null
-                    || $transaction->credit_card_id !== $entry->credit_card_id
                     || $transaction->installments()->exists()
                 ) {
                     return false;
                 }
 
-                $expectedCents = $this->moneyToCents($transaction->amount);
-                $tolerance = min(5000, max(500, (int) round($expectedCents * 0.10)));
                 $dateDistance = (int) abs(
                     $entry->purchased_on->diffInDays($transaction->transaction_date, false),
                 );
 
-                return $dateDistance <= 15
-                    && abs($entryCents - $expectedCents) <= $tolerance;
+                return $dateDistance <= 180;
             })
             ->map(function (FinancialTransaction $transaction) use ($entry, $entryCents): array {
                 $expectedCents = $this->moneyToCents($transaction->amount);
@@ -174,8 +172,18 @@ final class CardStatementReconciliationSuggestionService
                     'amount_difference' => $this->centsToMoney($entryCents - $expectedCents),
                 ];
             })
-            ->sortByDesc('score')
-            ->take(20)
+            ->sort(function (array $left, array $right): int {
+                return [
+                    $right['score'],
+                    $left['date_distance'],
+                    $right['recurrence_transaction_id'],
+                ] <=> [
+                    $left['score'],
+                    $right['date_distance'],
+                    $left['recurrence_transaction_id'],
+                ];
+            })
+            ->take(50)
             ->values()
             ->all();
     }

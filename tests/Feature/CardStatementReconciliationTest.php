@@ -354,6 +354,9 @@ class CardStatementReconciliationTest extends TestCase
     public function test_reconciliation_index_lists_and_reconciles_card_recurrence_candidate(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Conta prevista da recorrência',
+        ]);
         $card = CreditCard::factory()->for($workspace)->create([
             'closing_day' => 25,
             'due_day' => 10,
@@ -374,11 +377,11 @@ class CardStatementReconciliationTest extends TestCase
             'type' => FinancialTransactionType::Expense,
             'description' => 'REGIAO ADM CENTRA',
             'amount' => '1200.00',
-            'financial_account_id' => null,
-            'credit_card_id' => $card->id,
+            'financial_account_id' => $account->id,
+            'credit_card_id' => null,
             'category_id' => null,
             'family_member_id' => null,
-            'payment_method' => PaymentMethod::CreditCard,
+            'payment_method' => PaymentMethod::Pix,
             'payee_name' => 'REGIAO ADM CENTRA',
             'payment_instructions' => null,
             'frequency' => 'monthly',
@@ -395,11 +398,11 @@ class CardStatementReconciliationTest extends TestCase
             'competence_date' => '2026-09-10',
             'description' => 'REGIAO ADM CENTRA',
             'amount' => '1200.00',
-            'financial_account_id' => null,
-            'credit_card_id' => $card->id,
+            'financial_account_id' => $account->id,
+            'credit_card_id' => null,
             'category_id' => null,
             'family_member_id' => null,
-            'payment_method' => PaymentMethod::CreditCard,
+            'payment_method' => PaymentMethod::Pix,
             'payee_name' => 'REGIAO ADM CENTRA',
             'payment_instructions' => null,
             'due_date' => null,
@@ -441,7 +444,14 @@ class CardStatementReconciliationTest extends TestCase
         $this->assertSame(FinancialTransactionStatus::Confirmed, $planned->status);
         $this->assertSame('1245.00', $planned->amount);
         $this->assertSame($recurrence->id, $planned->financial_recurrence_id);
+        $this->assertNull($planned->financial_account_id);
         $this->assertSame($card->id, $planned->credit_card_id);
+        $this->assertSame(PaymentMethod::CreditCard, $planned->payment_method);
+        $this->assertTrue($planned->recurrence_is_overridden);
+        $recurrence->refresh();
+        $this->assertSame($account->id, $recurrence->financial_account_id);
+        $this->assertNull($recurrence->credit_card_id);
+        $this->assertSame(PaymentMethod::Pix, $recurrence->payment_method);
         $this->assertNotNull($entry->transaction_installment_id);
         $this->assertSame(
             $invoice->id,
