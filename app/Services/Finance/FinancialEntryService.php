@@ -10,6 +10,7 @@ use App\Enums\PaymentMethod;
 use App\Enums\TransactionInstallmentStatus;
 use App\Models\AccountMovement;
 use App\Models\BankStatementEntry;
+use App\Models\CreditCardInvoice;
 use App\Models\FinancialRecurrenceOmission;
 use App\Models\FinancialTransaction;
 use App\Models\TransactionInstallment;
@@ -318,7 +319,24 @@ class FinancialEntryService
             $this->clearCashInstallments($entry);
 
             if ($entry->status === FinancialTransactionStatus::Confirmed) {
-                $this->cardPurchaseService->sync($entry, $installmentCount);
+                $targetInvoiceId = $data['target_credit_card_invoice_id'] ?? null;
+
+                if ($targetInvoiceId !== null) {
+                    $invoice = CreditCardInvoice::query()
+                        ->where('workspace_id', $entry->workspace_id)
+                        ->whereKey((int) $targetInvoiceId)
+                        ->first();
+
+                    if (! $invoice instanceof CreditCardInvoice) {
+                        throw ValidationException::withMessages([
+                            'recurrence_transaction_id' => 'A fatura desta linha não foi encontrada.',
+                        ]);
+                    }
+
+                    $this->cardPurchaseService->placeOnInvoice($entry, $invoice);
+                } else {
+                    $this->cardPurchaseService->sync($entry, $installmentCount);
+                }
             } else {
                 $this->cardPurchaseService->clear($entry);
             }

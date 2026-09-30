@@ -1050,7 +1050,7 @@ class BankReconciliationController extends Controller
                 $filters['import'] === null && $filters['card'] !== null,
                 fn ($query) => $query->where('credit_card_id', $filters['card']),
             );
-        $this->applyDateRange($query, $filters, 'purchased_on');
+        $this->applyCardPeriod($query, $filters);
         $query->with([
             'creditCard:id,name,last_four',
             'invoice:id,reference_month,credit_card_id',
@@ -2101,6 +2101,60 @@ class BankReconciliationController extends Controller
                 ];
             })
             ->all();
+    }
+
+    /**
+     * @param  array{
+     *     kind: string,
+     *     account: int|null,
+     *     card: int|null,
+     *     import: int|null,
+     *     period: string|null,
+     *     from: string|null,
+     *     to: string|null,
+     *     view: string
+     * }  $filters
+     * @param  \Illuminate\Database\Eloquent\Builder<*>|\Illuminate\Database\Eloquent\Relations\Relation<*, *, *>  $query
+     */
+    /**
+     * Fatura do mês segue a referência da fatura. Compras feitas no mês
+     * anterior continuam na fatura que as recebeu.
+     *
+     * @param  array{
+     *     kind: string,
+     *     account: int|null,
+     *     card: int|null,
+     *     import: int|null,
+     *     period: string|null,
+     *     from: string|null,
+     *     to: string|null,
+     *     view: string
+     * }  $filters
+     * @param  \Illuminate\Database\Eloquent\Builder<*>|\Illuminate\Database\Eloquent\Relations\Relation<*, *, *>  $query
+     */
+    private function applyCardPeriod(mixed $query, array $filters): void
+    {
+        if ($filters['import'] !== null) {
+            return;
+        }
+
+        if (
+            $filters['kind'] === 'invoice'
+            && $filters['period'] !== null
+            && ($filters['from'] === null || $filters['to'] === null)
+        ) {
+            $query->whereHas(
+                'invoice',
+                fn ($invoice) => $invoice->whereDate(
+                    'reference_month',
+                    $filters['period'].'-01',
+                ),
+            );
+
+            return;
+        }
+
+        $this->applyDateRange($query, $filters, 'purchased_on');
     }
 
     /**

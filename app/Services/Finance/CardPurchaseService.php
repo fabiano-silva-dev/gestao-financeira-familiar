@@ -88,6 +88,60 @@ class CardPurchaseService
         }
     }
 
+    public function placeOnInvoice(
+        FinancialTransaction $transaction,
+        CreditCardInvoice $invoice,
+    ): void {
+        if (
+            $transaction->type !== FinancialTransactionType::Expense
+            || $transaction->workspace_id !== $invoice->workspace_id
+            || $transaction->credit_card_id !== $invoice->credit_card_id
+        ) {
+            throw ValidationException::withMessages([
+                'recurrence_transaction_id' => 'A previsão recorrente não é compatível com esta linha da fatura.',
+            ]);
+        }
+
+        $existingInstallments = $transaction->installments()
+            ->with(['invoice.payments', 'cardStatementEntry'])
+            ->orderBy('installment_number')
+            ->lockForUpdate()
+            ->get();
+
+        if ($this->hasReconciledInstallment($existingInstallments)) {
+            $this->throwReconciliationValidation();
+        }
+
+        $oldInvoices = $existingInstallments
+            ->pluck('invoice')
+            ->filter()
+            ->unique('id')
+            ->reject(fn (CreditCardInvoice $old): bool => $old->id === $invoice->id)
+            ->values();
+
+        $this->assertInvoicesEditable($oldInvoices);
+        $transaction->installments()->delete();
+        $this->recalculateInvoices($oldInvoices);
+
+        $purchaseDate = CarbonImmutable::parse($transaction->transaction_date);
+
+        $transaction->installments()->create([
+            'workspace_id' => $transaction->workspace_id,
+            'credit_card_invoice_id' => $invoice->id,
+            'installment_number' => 1,
+            'total_installments' => 1,
+            'amount' => $transaction->amount,
+            'competence_month' => $purchaseDate->startOfMonth()->toDateString(),
+            'due_date' => $invoice->due_date->toDateString(),
+            'expected_payment_date' => $invoice->due_date->toDateString(),
+            'status' => $transaction->status === FinancialTransactionStatus::Cancelled
+                ? TransactionInstallmentStatus::Cancelled
+                : TransactionInstallmentStatus::Open,
+        ]);
+
+        $this->recalculateInvoice($invoice->fresh());
+    }
+
     public function clear(FinancialTransaction $transaction): void
     {
         $installments = $transaction->installments()

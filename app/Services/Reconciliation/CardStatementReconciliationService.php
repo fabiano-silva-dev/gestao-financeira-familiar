@@ -174,6 +174,7 @@ final class CardStatementReconciliationService
                 'status' => FinancialTransactionStatus::Confirmed->value,
                 'installment_count' => 1,
                 'notes' => $notes,
+                'target_credit_card_invoice_id' => $invoice->id,
             ]);
 
             $installment = $confirmed->installments()

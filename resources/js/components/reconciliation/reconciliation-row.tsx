@@ -764,6 +764,12 @@ export function ReconciliationRow({
     };
 
     const conciliate = () => {
+        setActionError(null);
+        const options = {
+            ...completeOptions(),
+            onError: reportActionError,
+        };
+
         if (entry.kind === 'statement') {
             if (matchId.startsWith('refund:')) {
                 router.post(
@@ -776,7 +782,7 @@ export function ReconciliationRow({
                             matchId.slice('refund:'.length),
                         ),
                     },
-                    visitOptions(),
+                    options,
                 );
 
                 return;
@@ -793,7 +799,7 @@ export function ReconciliationRow({
                             matchId.slice('planned:'.length),
                         ),
                     },
-                    completeOptions(),
+                    options,
                 );
 
                 return;
@@ -808,7 +814,7 @@ export function ReconciliationRow({
                         query,
                     ),
                     { credit_card_invoice_id: Number(matchId.slice(8)) },
-                    completeOptions(),
+                    options,
                 );
 
                 return;
@@ -820,7 +826,7 @@ export function ReconciliationRow({
                     query,
                 ),
                 { account_movement_id: Number(matchId) },
-                completeOptions(),
+                options,
             );
 
             return;
@@ -842,7 +848,7 @@ export function ReconciliationRow({
                         matchId.slice('recurrence:'.length),
                     ),
                 },
-                completeOptions(),
+                options,
             );
 
             return;
@@ -851,7 +857,7 @@ export function ReconciliationRow({
         router.post(
             cardReconciliationUrl,
             { transaction_installment_id: Number(matchId) },
-            completeOptions(),
+            options,
         );
     };
 

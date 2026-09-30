@@ -351,6 +351,47 @@ class CardStatementReconciliationTest extends TestCase
             );
     }
 
+    public function test_invoice_period_lists_entries_from_the_invoice_reference_month(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create();
+        $juneInvoice = $this->invoice($workspace, $card, '2026-06-01');
+        $julyInvoice = $this->invoice($workspace, $card, '2026-07-01');
+        $pending = $this->statementEntry(
+            $workspace,
+            $card,
+            $juneInvoice,
+            '80.00',
+            '2026-05-20',
+            'Compra da fatura de junho',
+        );
+        $this->statementEntry(
+            $workspace,
+            $card,
+            $julyInvoice,
+            '40.00',
+            '2026-06-15',
+            'Compra da fatura de julho',
+        );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('reconciliation.index', [
+                'kind' => 'invoice',
+                'card' => $card->id,
+                'period' => '2026-06',
+                'view' => 'pending',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('reconciliation/index')
+                ->has('entries', 1)
+                ->where('entries.0.id', $pending->id)
+                ->where('viewCounts.all', 1)
+                ->where('pendingEntriesCount', 1)
+            );
+    }
+
     public function test_reconciliation_index_lists_and_reconciles_card_recurrence_candidate(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();
@@ -458,6 +499,96 @@ class CardStatementReconciliationTest extends TestCase
             $entry->transactionInstallment?->credit_card_invoice_id,
         );
         $this->assertDatabaseCount('financial_transactions', 1);
+    }
+
+    public function test_reconciliation_links_planned_recurrence_on_paid_invoice(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $card = CreditCard::factory()->for($workspace)->create([
+            'closing_day' => 25,
+            'due_day' => 10,
+        ]);
+        $invoice = $this->invoice($workspace, $card);
+        $invoice->update([
+            'status' => CreditCardInvoiceStatus::Paid,
+            'statement_amount' => '1245.00',
+            'paid_amount' => '1245.00',
+        ]);
+        $entry = $this->statementEntry(
+            $workspace,
+            $card,
+            $invoice,
+            '1245.00',
+            '2026-09-10',
+            'REGIAO ADM CENTRA',
+            null,
+            null,
+        );
+        $recurrence = FinancialRecurrence::query()->create([
+            'workspace_id' => $workspace->id,
+            'type' => FinancialTransactionType::Expense,
+            'description' => 'Escola Adventista — 1.245,00',
+            'amount' => '1245.00',
+            'financial_account_id' => $account->id,
+            'credit_card_id' => null,
+            'category_id' => null,
+            'family_member_id' => null,
+            'payment_method' => PaymentMethod::Boleto,
+            'payee_name' => 'Instituicao Adventista',
+            'payment_instructions' => null,
+            'frequency' => 'monthly',
+            'interval' => 1,
+            'starts_on' => '2026-09-07',
+            'generation_started_on' => '2026-09-07',
+            'ends_on' => null,
+            'is_active' => true,
+            'notes' => null,
+        ]);
+        $planned = $workspace->financialTransactions()->create([
+            'type' => FinancialTransactionType::Expense,
+            'transaction_date' => '2026-09-07',
+            'competence_date' => '2026-09-07',
+            'description' => 'Escola Adventista — 1.245,00',
+            'amount' => '1245.00',
+            'financial_account_id' => $account->id,
+            'credit_card_id' => null,
+            'category_id' => null,
+            'family_member_id' => null,
+            'payment_method' => PaymentMethod::Boleto,
+            'payee_name' => 'Instituicao Adventista',
+            'payment_instructions' => null,
+            'due_date' => null,
+            'settled_on' => null,
+            'financial_recurrence_id' => $recurrence->id,
+            'recurrence_occurrence_date' => '2026-09-07',
+            'status' => FinancialTransactionStatus::Planned,
+            'origin' => FinancialTransactionOrigin::Recurrence,
+            'notes' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->from(route('reconciliation.index', $this->workbenchQuery($card)))
+            ->post(
+                route('credit-card-invoices.statement-entries.reconcile', [$invoice, $entry]),
+                ['recurrence_transaction_id' => $planned->id],
+            )
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $entry->refresh();
+        $planned->refresh();
+        $invoice->refresh();
+
+        $this->assertTrue($entry->is_reconciled);
+        $this->assertSame($invoice->id, $entry->transactionInstallment?->credit_card_invoice_id);
+        $this->assertSame(FinancialTransactionStatus::Confirmed, $planned->status);
+        $this->assertSame($card->id, $planned->credit_card_id);
+        $this->assertNull($planned->financial_account_id);
+        $this->assertSame(CreditCardInvoiceStatus::Paid, $invoice->status);
+        $this->assertSame('1245.00', $invoice->paid_amount);
+        $this->assertSame('1245.00', $invoice->calculated_amount);
     }
 
     public function test_reconciliation_index_filters_statement_and_invoice_sources(): void
