@@ -4,6 +4,10 @@ namespace Tests\Feature;
 
 use App\Enums\FinancialImportStatus;
 use App\Enums\FinancialImportType;
+use App\Enums\FinancialTransactionOrigin;
+use App\Enums\FinancialTransactionStatus;
+use App\Enums\FinancialTransactionType;
+use App\Enums\PaymentMethod;
 use App\Models\BankStatementEntry;
 use App\Models\CreditCard;
 use App\Models\FinancialAccount;
@@ -59,6 +63,57 @@ class MonthlyImportClosingTest extends TestCase
                 ->where('accounts.0.status', 'pending_reconciliation')
                 ->where('accounts.0.pending_items', 1)
                 ->where('summary.pending_reconciliation', 1)
+            );
+    }
+
+
+    public function test_monthly_closing_exposes_hygiene_summary(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $card = CreditCard::factory()->for($workspace)->create();
+        $import = $this->accountImport($workspace, $account, $user, '2026-09-01', '2026-09-30');
+
+        $this->bankEntry($workspace, $account, $import, false);
+        $this->bankEntry($workspace, $account, $import, false);
+
+        $ignored = $this->bankEntry($workspace, $account, $import, false);
+        $ignored->update([
+            'amount' => '-99.00',
+            'description' => 'Movimento ignorado',
+            'is_ignored' => true,
+        ]);
+
+        $workspace->financialTransactions()->create([
+            'type' => FinancialTransactionType::Expense->value,
+            'transaction_date' => '2026-09-12',
+            'competence_date' => '2026-09-01',
+            'description' => 'Despesa sem categoria',
+            'amount' => '25.00',
+            'financial_account_id' => $account->id,
+            'payment_method' => PaymentMethod::Pix->value,
+            'status' => FinancialTransactionStatus::Planned->value,
+            'origin' => FinancialTransactionOrigin::Manual->value,
+        ]);
+
+        $workspace->creditCardInvoicePayments()->create([
+            'credit_card_id' => $card->id,
+            'credit_card_invoice_id' => null,
+            'financial_account_id' => $account->id,
+            'paid_on' => '2026-09-20',
+            'amount' => '100.00',
+            'is_advance' => true,
+            'payment_method' => PaymentMethod::Pix->value,
+        ]);
+
+        $this->page($user, $workspace, '2026-09')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('hygiene.uncategorized', 1)
+                ->where('hygiene.pending_reconciliation', 2)
+                ->where('hygiene.possible_duplicates', 2)
+                ->where('hygiene.incomplete_card_payments', 1)
+                ->where('hygiene.ignored', 1)
+                ->where('hygiene.total', 7)
             );
     }
 

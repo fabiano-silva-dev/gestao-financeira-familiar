@@ -1,5 +1,6 @@
 import { Form, Head, Link, router } from '@inertiajs/react';
 import {
+    ArrowRight,
     ArrowUpDown,
     CheckCircle2,
     ChevronDown,
@@ -7,11 +8,15 @@ import {
     ChevronRight,
     CircleAlert,
     CircleX,
+    Copy,
+    CreditCard,
+    EyeOff,
     FileText,
     History,
     ListChecks,
     RotateCcw,
     Search,
+    Tag,
     Upload,
 } from 'lucide-react';
 import { Fragment, useMemo, useState } from 'react';
@@ -89,6 +94,14 @@ type Props = {
         not_imported: number;
         pending_reconciliation: number;
         incomplete_period: number;
+    };
+    hygiene: {
+        total: number;
+        uncategorized: number;
+        pending_reconciliation: number;
+        possible_duplicates: number;
+        incomplete_card_payments: number;
+        ignored: number;
     };
     accounts: SourceItem[];
     cards: SourceItem[];
@@ -663,6 +676,7 @@ export default function MonthlyClosing({
     period,
     view,
     summary,
+    hygiene,
     accounts,
     cards,
     counts,
@@ -680,6 +694,49 @@ export default function MonthlyClosing({
         ['reconciliation', 'A conciliar', counts.reconciliation],
         ['reconciled', 'Conciliados', counts.reconciled],
         ['closed', 'Fechados', counts.closed],
+    ] as const;
+
+    const hygieneItems = [
+        {
+            key: 'uncategorized',
+            label: 'Sem categoria',
+            description: 'Lançamentos de receita ou despesa ainda sem categoria.',
+            count: hygiene.uncategorized,
+            href: `/lancamentos?period=${period}&category=none`,
+            icon: Tag,
+        },
+        {
+            key: 'pending',
+            label: 'A conciliar',
+            description: 'Movimentos importados que ainda precisam de conciliação.',
+            count: hygiene.pending_reconciliation,
+            href: `/conciliacao?period=${period}&view=pending`,
+            icon: ListChecks,
+        },
+        {
+            key: 'duplicates',
+            label: 'Possíveis duplicidades',
+            description: 'Movimentos semelhantes no mesmo período para revisar.',
+            count: hygiene.possible_duplicates,
+            href: `/conciliacao?period=${period}&view=duplicates`,
+            icon: Copy,
+        },
+        {
+            key: 'card-payments',
+            label: 'Pagamentos de cartão',
+            description: 'Pagamentos sem vínculo completo com conta ou fatura.',
+            count: hygiene.incomplete_card_payments,
+            href: `/faturas?month=${period}`,
+            icon: CreditCard,
+        },
+        {
+            key: 'ignored',
+            label: 'Ignorados',
+            description: 'Itens ignorados no mês que podem ser revisados.',
+            count: hygiene.ignored,
+            href: `/conciliacao?period=${period}&view=ignored`,
+            icon: EyeOff,
+        },
     ] as const;
 
     const visibleItems = useMemo(() => {
@@ -833,6 +890,76 @@ export default function MonthlyClosing({
                         <p className="text-warning-foreground mt-0.5 text-lg font-semibold tabular-nums">
                             {summary.incomplete_period}
                         </p>
+                    </div>
+                </div>
+
+
+                <div className="bg-card overflow-hidden rounded-lg border">
+                    <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2.5">
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                                <ListChecks className="text-primary size-4" />
+                                <h2 className="text-sm font-semibold">
+                                    Higiene do mês
+                                </h2>
+                            </div>
+                            <p className="text-muted-foreground mt-0.5 text-xs">
+                                Centraliza exceções para revisar antes de considerar
+                                o período organizado.
+                            </p>
+                        </div>
+
+                        <Badge
+                            variant={hygiene.total === 0 ? 'secondary' : 'outline'}
+                            className="ml-auto tabular-nums"
+                        >
+                            {hygiene.total === 0
+                                ? 'Sem pendências'
+                                : `${hygiene.total} ponto${hygiene.total === 1 ? '' : 's'} para revisar`}
+                        </Badge>
+                    </div>
+
+                    <div className="grid gap-2 p-2 sm:grid-cols-2 xl:grid-cols-5">
+                        {hygieneItems.map((item) => {
+                            const Icon = item.icon;
+
+                            return (
+                                <Link
+                                    key={item.key}
+                                    href={item.href}
+                                    className="group hover:bg-muted/40 flex min-w-0 items-center gap-2.5 rounded-md border p-2.5 transition-colors"
+                                >
+                                    <div className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
+                                        <Icon className="size-4" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <p className="truncate text-xs font-medium">
+                                                {item.label}
+                                            </p>
+                                            <span
+                                                className={
+                                                    item.count > 0
+                                                        ? 'text-warning-foreground ml-auto text-sm font-semibold tabular-nums'
+                                                        : 'text-muted-foreground ml-auto text-sm font-semibold tabular-nums'
+                                                }
+                                            >
+                                                {item.count}
+                                            </span>
+                                        </div>
+                                        <p className="text-muted-foreground mt-0.5 line-clamp-2 text-[11px] leading-4">
+                                            {item.description}
+                                        </p>
+                                    </div>
+                                    <ArrowRight className="text-muted-foreground size-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+                                </Link>
+                            );
+                        })}
+                    </div>
+
+                    <div className="text-muted-foreground border-t px-3 py-1.5 text-[11px]">
+                        Nesta etapa, a higiene é informativa e não bloqueia o
+                        fechamento.
                     </div>
                 </div>
 

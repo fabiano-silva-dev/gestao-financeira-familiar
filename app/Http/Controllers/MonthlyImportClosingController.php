@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Enums\FinancialImportStatus;
+use App\Enums\FinancialTransactionStatus;
+use App\Enums\FinancialTransactionType;
 use App\Models\CreditCard;
 use App\Models\FinancialAccount;
 use App\Models\FinancialImport;
 use App\Models\ImportPeriodClosure;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Reconciliation\ImportedMovementInterpreter;
 use App\Support\Workspaces\CurrentWorkspace;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
@@ -21,6 +24,7 @@ class MonthlyImportClosingController extends Controller
 {
     public function __construct(
         private readonly CurrentWorkspace $currentWorkspace,
+        private readonly ImportedMovementInterpreter $interpreter,
     ) {}
 
     public function index(Request $request): Response
@@ -59,7 +63,16 @@ class MonthlyImportClosingController extends Controller
 
         $bankEntries = $workspace->bankStatementEntries()
             ->whereBetween('occurred_on', [$monthStart->toDateString(), $monthEnd->toDateString()])
-            ->get(['id', 'financial_account_id', 'financial_import_id', 'is_reconciled', 'is_ignored']);
+            ->get([
+                'id',
+                'financial_account_id',
+                'financial_import_id',
+                'occurred_on',
+                'amount',
+                'description',
+                'is_reconciled',
+                'is_ignored',
+            ]);
         $cardEntries = $workspace->cardStatementEntries()
             ->with('invoice:id,reference_month,due_date,statement_amount,calculated_amount')
             ->whereHas('invoice', fn ($query) => $query->whereDate(
@@ -71,6 +84,10 @@ class MonthlyImportClosingController extends Controller
                 'credit_card_id',
                 'credit_card_invoice_id',
                 'financial_import_id',
+                'purchased_on',
+                'amount',
+                'description',
+                'is_payment',
                 'is_reconciled',
                 'is_ignored',
             ]);
@@ -109,6 +126,13 @@ class MonthlyImportClosingController extends Controller
             ->concat($cardItems)
             ->values();
         $filteredItems = $this->filterItems($allItems, $view);
+        $hygiene = $this->hygieneSummary(
+            $workspace,
+            $monthStart,
+            $monthEnd,
+            $bankEntries,
+            $cardEntries,
+        );
 
         return Inertia::render('imports/monthly-closing', [
             'period' => $periodKey,
@@ -123,6 +147,7 @@ class MonthlyImportClosingController extends Controller
                     ->where('has_import', true)
                     ->count(),
             ],
+            'hygiene' => $hygiene,
             'accounts' => $filteredItems->where('kind', 'account')->values()->all(),
             'cards' => $filteredItems->where('kind', 'card')->values()->all(),
             'counts' => [
@@ -395,6 +420,164 @@ class MonthlyImportClosingController extends Controller
             'imports' => $imports->map(fn (FinancialImport $import): array => $this->importDetail($import))->all(),
             'closure' => $this->closureData($closure),
         ];
+    }
+
+
+    /**
+     * @param  Collection<int, mixed>  $bankEntries
+     * @param  Collection<int, mixed>  $cardEntries
+     * @return array{
+     *     total: int,
+     *     uncategorized: int,
+     *     pending_reconciliation: int,
+     *     possible_duplicates: int,
+     *     incomplete_card_payments: int,
+     *     ignored: int
+     * }
+     */
+    private function hygieneSummary(
+        Workspace $workspace,
+        CarbonImmutable $monthStart,
+        CarbonImmutable $monthEnd,
+        Collection $bankEntries,
+        Collection $cardEntries,
+    ): array {
+        $statementEntries = $bankEntries
+            ->concat($cardEntries)
+            ->values();
+
+        $pendingReconciliation = $statementEntries
+            ->filter(
+                fn ($entry): bool => ! $entry->is_reconciled && ! $entry->is_ignored,
+            )
+            ->count();
+
+        $ignored = $statementEntries
+            ->where('is_ignored', true)
+            ->count();
+
+        $uncategorized = $workspace->financialTransactions()
+            ->whereIn('type', [
+                FinancialTransactionType::Expense->value,
+                FinancialTransactionType::Income->value,
+            ])
+            ->where('status', '!=', FinancialTransactionStatus::Cancelled->value)
+            ->whereNull('category_id')
+            ->whereBetween('transaction_date', [
+                $monthStart->toDateString(),
+                $monthEnd->toDateString(),
+            ])
+            ->count();
+
+        $incompleteCardPayments = $workspace->creditCardInvoicePayments()
+            ->whereBetween('paid_on', [
+                $monthStart->toDateString(),
+                $monthEnd->toDateString(),
+            ])
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('credit_card_invoice_id')
+                    ->orWhereNull('financial_account_id');
+            })
+            ->count();
+
+        $possibleDuplicates = $this->possibleDuplicateCount(
+            $bankEntries,
+            $cardEntries,
+        );
+
+        return [
+            'total' => $uncategorized
+                + $pendingReconciliation
+                + $possibleDuplicates
+                + $incompleteCardPayments
+                + $ignored,
+            'uncategorized' => $uncategorized,
+            'pending_reconciliation' => $pendingReconciliation,
+            'possible_duplicates' => $possibleDuplicates,
+            'incomplete_card_payments' => $incompleteCardPayments,
+            'ignored' => $ignored,
+        ];
+    }
+
+    /**
+     * @param  Collection<int, mixed>  $bankEntries
+     * @param  Collection<int, mixed>  $cardEntries
+     */
+    private function possibleDuplicateCount(
+        Collection $bankEntries,
+        Collection $cardEntries,
+    ): int {
+        $entries = $bankEntries
+            ->map(fn ($entry): array => [
+                'kind' => 'account',
+                'source_id' => (int) $entry->financial_account_id,
+                'occurred_on' => $entry->occurred_on->toDateString(),
+                'amount' => (string) $entry->amount,
+                'description' => (string) $entry->description,
+                'is_ignored' => (bool) $entry->is_ignored,
+            ])
+            ->concat($cardEntries->map(fn ($entry): array => [
+                'kind' => 'card',
+                'source_id' => (int) $entry->credit_card_id,
+                'occurred_on' => $entry->purchased_on->toDateString(),
+                'amount' => (string) $entry->amount,
+                'description' => (string) $entry->description,
+                'is_ignored' => (bool) $entry->is_ignored,
+            ]))
+            ->reject(fn (array $entry): bool => $entry['is_ignored'])
+            ->values();
+
+        $flags = array_fill(0, $entries->count(), false);
+
+        foreach ($entries as $leftIndex => $left) {
+            foreach ($entries as $rightIndex => $right) {
+                if (
+                    $rightIndex <= $leftIndex
+                    || ! $this->looksDuplicated($left, $right)
+                ) {
+                    continue;
+                }
+
+                $flags[$leftIndex] = true;
+                $flags[$rightIndex] = true;
+            }
+        }
+
+        return count(array_filter($flags));
+    }
+
+    /**
+     * @param  array<string, mixed>  $left
+     * @param  array<string, mixed>  $right
+     */
+    private function looksDuplicated(array $left, array $right): bool
+    {
+        if (
+            $left['kind'] !== $right['kind']
+            || $left['source_id'] !== $right['source_id']
+        ) {
+            return false;
+        }
+
+        if (
+            $this->interpreter->moneyToCents($left['amount'])
+            !== $this->interpreter->moneyToCents($right['amount'])
+        ) {
+            return false;
+        }
+
+        $days = (int) abs(
+            (new \DateTimeImmutable($left['occurred_on']))
+                ->diff(new \DateTimeImmutable($right['occurred_on']))
+                ->days,
+        );
+
+        return $days <= 1
+            && $this->interpreter->descriptionSimilarity(
+                $left['description'],
+                $right['description'],
+            ) >= 0.8;
     }
 
     private function recordedNoMovement(Collection $imports, int $total): bool
