@@ -387,7 +387,7 @@ class CreditCardInvoiceTest extends TestCase
         $this->assertSame(['33.34', '33.33', '33.33'], $amounts);
     }
 
-    public function test_open_invoice_must_be_closed_before_payment(): void
+    public function test_open_invoice_accepts_advance_payment_without_creating_new_expense(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();
         $account = FinancialAccount::factory()->for($workspace)->create();
@@ -405,10 +405,19 @@ class CreditCardInvoiceTest extends TestCase
                 'amount' => '100.00',
                 'payment_method' => PaymentMethod::Pix->value,
             ])
-            ->assertSessionHasErrors('amount');
+            ->assertSessionHasNoErrors();
 
-        $this->assertDatabaseCount('credit_card_invoice_payments', 0);
-        $this->assertDatabaseCount('account_movements', 0);
+        $invoice->refresh();
+        $payment = $invoice->payments()->sole();
+        $movement = $payment->movement()->sole();
+
+        $this->assertSame(CreditCardInvoiceStatus::Open, $invoice->status);
+        $this->assertSame('100.00', $invoice->paid_amount);
+        $this->assertTrue($payment->is_advance);
+        $this->assertSame(AccountMovementType::CardPayment, $movement->type);
+        $this->assertDatabaseCount('financial_transactions', 1);
+        $this->assertDatabaseCount('credit_card_invoice_payments', 1);
+        $this->assertDatabaseCount('account_movements', 1);
     }
 
     public function test_paying_invoice_changes_cash_once_without_creating_new_expense(): void
