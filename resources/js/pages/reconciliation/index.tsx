@@ -80,6 +80,30 @@ const currency = new Intl.NumberFormat('pt-BR', {
     currency: 'BRL',
 });
 
+function moneyToCents(amount: string | number): number {
+    const normalized = String(amount).trim();
+    const negative = normalized.startsWith('-');
+    const unsigned = normalized.replace(/^[+-]/, '');
+    const [wholePart = '0', decimalPart = ''] = unsigned.split('.');
+    const whole = Number.parseInt(wholePart || '0', 10);
+    const decimal = Number.parseInt(decimalPart.padEnd(2, '0').slice(0, 2) || '0', 10);
+    const cents = whole * 100 + decimal;
+
+    return negative ? -cents : cents;
+}
+
+function formatCents(cents: number): string {
+    const negative = cents < 0;
+    const absolute = Math.abs(cents);
+    const whole = Math.floor(absolute / 100);
+    const decimal = String(absolute % 100).padStart(2, '0');
+    const formattedWhole = new Intl.NumberFormat('pt-BR', {
+        maximumFractionDigits: 0,
+    }).format(whole);
+
+    return `${negative ? '-' : ''}R$ ${formattedWhole},${decimal}`;
+}
+
 const monthFormatter = new Intl.DateTimeFormat('pt-BR', {
     month: 'long',
     year: 'numeric',
@@ -374,6 +398,10 @@ export default function ReconciliationIndex({
         useState<ClassificationRulePrompt | null>(null);
     const [selected, setSelected] = useState<string[]>([]);
     const [bulkCategoryId, setBulkCategoryId] = useState('');
+    const listedTotalCents = entries.reduce(
+        (total, entry) => total + moneyToCents(entry.amount),
+        0,
+    );
     const listUrl = index.url();
 
     useEffect(() => {
@@ -617,6 +645,12 @@ export default function ReconciliationIndex({
                             </strong>
                         </span>
                     )}
+                    <span>
+                        Total listado{' '}
+                        <strong className="text-foreground tabular-nums">
+                            {formatCents(listedTotalCents)}
+                        </strong>
+                    </span>
                 </div>
 
                 {selected.length > 0 && (
