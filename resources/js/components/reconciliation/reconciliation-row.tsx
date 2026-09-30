@@ -140,7 +140,9 @@ function candidateOptionLabel(candidate: ReconciliationCandidate): string {
         );
     }
 
-    if (candidate.is_planned) {
+    if (candidate.is_recurrence_forecast) {
+        parts.push('recorrência');
+    } else if (candidate.is_planned) {
         parts.push('pré-agendado');
     }
 
@@ -824,14 +826,30 @@ export function ReconciliationRow({
             return;
         }
 
+        const cardReconciliationUrl = listingUrl(
+            CardStatementReconciliationController.store.url({
+                invoice: entry.invoice_id ?? 0,
+                entry: entry.id,
+            }),
+            query,
+        );
+
+        if (matchId.startsWith('recurrence:')) {
+            router.post(
+                cardReconciliationUrl,
+                {
+                    recurrence_transaction_id: Number(
+                        matchId.slice('recurrence:'.length),
+                    ),
+                },
+                completeOptions(),
+            );
+
+            return;
+        }
+
         router.post(
-            listingUrl(
-                CardStatementReconciliationController.store.url({
-                    invoice: entry.invoice_id ?? 0,
-                    entry: entry.id,
-                }),
-                query,
-            ),
+            cardReconciliationUrl,
             { transaction_installment_id: Number(matchId) },
             completeOptions(),
         );

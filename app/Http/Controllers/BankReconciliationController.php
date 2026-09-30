@@ -8,6 +8,7 @@ use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\FinancialImportStatus;
 use App\Enums\FinancialImportType;
 use App\Enums\FinancialTransactionOrigin;
+use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Http\Requests\ClassifyReconciliationEntryRequest;
 use App\Http\Requests\RememberReconciliationTransferRequest;
@@ -107,8 +108,10 @@ class BankReconciliationController extends Controller
                     CreditCardInvoiceStatus::Partial->value,
                 ])
                 ->get();
-        $invoiceIds = $cardEntries
+        $unreconciledCard = $cardEntries
             ->where('is_reconciled', false)
+            ->values();
+        $invoiceIds = $unreconciledCard
             ->pluck('credit_card_invoice_id')
             ->unique()
             ->values();
@@ -124,6 +127,25 @@ class BankReconciliationController extends Controller
                     'transaction.creditCard:id,name,last_four',
                 ])
                 ->get();
+        $cardIds = $unreconciledCard
+            ->pluck('credit_card_id')
+            ->filter()
+            ->unique()
+            ->values();
+        $cardRecurrenceTransactions = $cardIds->isEmpty()
+            ? collect()
+            : $workspace->financialTransactions()
+                ->where('status', FinancialTransactionStatus::Planned->value)
+                ->whereNotNull('financial_recurrence_id')
+                ->whereIn('credit_card_id', $cardIds)
+                ->whereDoesntHave('installments')
+                ->with([
+                    'recurrence:id,description,payee_name',
+                    'category:id,name,parent_id',
+                    'category.parent:id,name',
+                    'creditCard:id,name,last_four',
+                ])
+                ->get();
         $scoped = $this->markDuplicates(
             $bankEntries
                 ->map(fn (BankStatementEntry $entry): array => $entry->is_reconciled
@@ -132,7 +154,11 @@ class BankReconciliationController extends Controller
                 ->concat($cardEntries->map(
                     fn (CardStatementEntry $entry): array => $entry->is_reconciled
                         ? $this->cardHistoryData($entry)
-                        : $this->pendingCardEntryData($entry, $installments),
+                        : $this->pendingCardEntryData(
+                            $entry,
+                            $installments,
+                            $cardRecurrenceTransactions,
+                        ),
                 )),
         );
         $scoped = $this->filterColumns($scoped, $filters);
@@ -1087,15 +1113,21 @@ class BankReconciliationController extends Controller
 
     /**
      * @param  Collection<int, TransactionInstallment>  $installments
+     * @param  Collection<int, FinancialTransaction>  $recurrenceTransactions
      * @return array<string, mixed>
      */
     private function pendingCardEntryData(
         CardStatementEntry $entry,
         Collection $installments,
+        Collection $recurrenceTransactions,
     ): array {
         $candidates = $entry->is_ignored
             ? []
-            : $this->cardCandidates($entry, $installments);
+            : $this->cardCandidates(
+                $entry,
+                $installments,
+                $recurrenceTransactions,
+            );
         $suggestion = collect($candidates)->firstWhere('is_suggestion', true);
         $matcher = $this->matcherSuggestion(
             $entry->description,
@@ -1333,30 +1365,83 @@ class BankReconciliationController extends Controller
 
     /**
      * @param  Collection<int, TransactionInstallment>  $installments
+     * @param  Collection<int, FinancialTransaction>  $recurrenceTransactions
      * @return list<array<string, mixed>>
      */
-    private function cardCandidates(CardStatementEntry $entry, Collection $installments): array
-    {
-        return collect($this->cardSuggestionService->candidates($entry, $installments))
-            ->map(function (array $candidate) use ($installments): array {
-                $installment = $installments->firstWhere('id', $candidate['installment_id']);
-                $transaction = $installment?->transaction;
+    private function cardCandidates(
+        CardStatementEntry $entry,
+        Collection $installments,
+        Collection $recurrenceTransactions,
+    ): array {
+        $installmentCandidates = collect(
+            $this->cardSuggestionService->candidates($entry, $installments),
+        )->map(function (array $candidate) use ($installments): array {
+            $installment = $installments->firstWhere('id', $candidate['installment_id']);
+            $transaction = $installment?->transaction;
 
+            return [
+                'installment_id' => $candidate['installment_id'],
+                'recurrence_transaction_id' => null,
+                'is_recurrence_forecast' => false,
+                'occurred_on' => $candidate['transaction_date'],
+                'description' => $candidate['description'],
+                'amount' => $candidate['amount'],
+                'type' => 'installment',
+                'type_label' => "Parcela {$candidate['installment_number']}/{$candidate['total_installments']}",
+                'score' => $candidate['score'],
+                'confidence' => $candidate['confidence'],
+                'confidence_label' => $candidate['confidence_label'],
+                'date_distance' => $candidate['date_distance'],
+                'is_suggestion' => $candidate['is_suggestion'],
+                ...$this->internalFromTransaction($transaction, null, $installment),
+            ];
+        });
+
+        $recurrenceCandidates = collect(
+            $this->cardSuggestionService->recurrenceCandidates(
+                $entry,
+                $recurrenceTransactions,
+            ),
+        )->map(function (array $candidate) use ($recurrenceTransactions): array {
+            $transaction = $recurrenceTransactions->firstWhere(
+                'id',
+                $candidate['recurrence_transaction_id'],
+            );
+
+            return [
+                'installment_id' => null,
+                'recurrence_transaction_id' => $candidate['recurrence_transaction_id'],
+                'is_recurrence_forecast' => true,
+                'occurred_on' => $candidate['transaction_date'],
+                'description' => $candidate['description'],
+                'amount' => $candidate['amount'],
+                'type' => 'recurrence',
+                'type_label' => 'Recorrência prevista',
+                'score' => $candidate['score'],
+                'confidence' => $candidate['confidence'],
+                'confidence_label' => $candidate['confidence_label'],
+                'date_distance' => $candidate['date_distance'],
+                'is_suggestion' => $candidate['is_suggestion'],
+                'amount_difference' => $candidate['amount_difference'],
+                ...$this->internalFromTransaction($transaction),
+            ];
+        });
+
+        return $installmentCandidates
+            ->concat($recurrenceCandidates)
+            ->sort(function (array $left, array $right): int {
                 return [
-                    'installment_id' => $candidate['installment_id'],
-                    'occurred_on' => $candidate['transaction_date'],
-                    'description' => $candidate['description'],
-                    'amount' => $candidate['amount'],
-                    'type' => 'installment',
-                    'type_label' => "Parcela {$candidate['installment_number']}/{$candidate['total_installments']}",
-                    'score' => $candidate['score'],
-                    'confidence' => $candidate['confidence'],
-                    'confidence_label' => $candidate['confidence_label'],
-                    'date_distance' => $candidate['date_distance'],
-                    'is_suggestion' => $candidate['is_suggestion'],
-                    ...$this->internalFromTransaction($transaction, null, $installment),
+                    $right['score'],
+                    $left['date_distance'],
+                    $right['installment_id'] ?? $right['recurrence_transaction_id'] ?? 0,
+                ] <=> [
+                    $left['score'],
+                    $right['date_distance'],
+                    $left['installment_id'] ?? $left['recurrence_transaction_id'] ?? 0,
                 ];
             })
+            ->take(20)
+            ->values()
             ->all();
     }
 

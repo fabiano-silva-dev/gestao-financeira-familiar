@@ -21,6 +21,7 @@ use App\Models\CreditCard;
 use App\Models\CreditCardInvoice;
 use App\Models\FinancialAccount;
 use App\Models\FinancialImport;
+use App\Models\FinancialRecurrence;
 use App\Models\TransactionInstallment;
 use App\Models\User;
 use App\Models\Workspace;
@@ -348,6 +349,105 @@ class CardStatementReconciliationTest extends TestCase
                 ->where('entries.0.candidates.0.installment_id', $best->id)
                 ->where('pendingEntriesCount', 1)
             );
+    }
+
+    public function test_reconciliation_index_lists_and_reconciles_card_recurrence_candidate(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create([
+            'closing_day' => 25,
+            'due_day' => 10,
+        ]);
+        $invoice = $this->invoice($workspace, $card);
+        $entry = $this->statementEntry(
+            $workspace,
+            $card,
+            $invoice,
+            '1245.00',
+            '2026-09-10',
+            'REGIAO ADM CENTRA',
+            null,
+            null,
+        );
+        $recurrence = FinancialRecurrence::query()->create([
+            'workspace_id' => $workspace->id,
+            'type' => FinancialTransactionType::Expense,
+            'description' => 'REGIAO ADM CENTRA',
+            'amount' => '1200.00',
+            'financial_account_id' => null,
+            'credit_card_id' => $card->id,
+            'category_id' => null,
+            'family_member_id' => null,
+            'payment_method' => PaymentMethod::CreditCard,
+            'payee_name' => 'REGIAO ADM CENTRA',
+            'payment_instructions' => null,
+            'frequency' => 'monthly',
+            'interval' => 1,
+            'starts_on' => '2026-09-10',
+            'generation_started_on' => '2026-09-10',
+            'ends_on' => null,
+            'is_active' => true,
+            'notes' => null,
+        ]);
+        $planned = $workspace->financialTransactions()->create([
+            'type' => FinancialTransactionType::Expense,
+            'transaction_date' => '2026-09-10',
+            'competence_date' => '2026-09-10',
+            'description' => 'REGIAO ADM CENTRA',
+            'amount' => '1200.00',
+            'financial_account_id' => null,
+            'credit_card_id' => $card->id,
+            'category_id' => null,
+            'family_member_id' => null,
+            'payment_method' => PaymentMethod::CreditCard,
+            'payee_name' => 'REGIAO ADM CENTRA',
+            'payment_instructions' => null,
+            'due_date' => null,
+            'settled_on' => null,
+            'financial_recurrence_id' => $recurrence->id,
+            'recurrence_occurrence_date' => '2026-09-10',
+            'status' => FinancialTransactionStatus::Planned,
+            'origin' => FinancialTransactionOrigin::Recurrence,
+            'notes' => null,
+        ]);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->get(route('reconciliation.index', $this->workbenchQuery($card)))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('reconciliation/index')
+                ->has('entries', 1)
+                ->where('entries.0.id', $entry->id)
+                ->where('entries.0.kind', 'invoice')
+                ->where('entries.0.candidates.0.recurrence_transaction_id', $planned->id)
+                ->where('entries.0.candidates.0.is_recurrence_forecast', true)
+                ->where('entries.0.candidates.0.type', 'recurrence')
+                ->where('entries.0.candidates.0.is_suggestion', true)
+            );
+
+        $request->from(route('reconciliation.index', $this->workbenchQuery($card)))
+            ->post(
+                route('credit-card-invoices.statement-entries.reconcile', [$invoice, $entry]),
+                ['recurrence_transaction_id' => $planned->id],
+            )
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $entry->refresh();
+        $planned->refresh();
+
+        $this->assertTrue($entry->is_reconciled);
+        $this->assertSame(FinancialTransactionStatus::Confirmed, $planned->status);
+        $this->assertSame('1245.00', $planned->amount);
+        $this->assertSame($recurrence->id, $planned->financial_recurrence_id);
+        $this->assertSame($card->id, $planned->credit_card_id);
+        $this->assertNotNull($entry->transaction_installment_id);
+        $this->assertSame(
+            $invoice->id,
+            $entry->transactionInstallment?->credit_card_invoice_id,
+        );
+        $this->assertDatabaseCount('financial_transactions', 1);
     }
 
     public function test_reconciliation_index_filters_statement_and_invoice_sources(): void

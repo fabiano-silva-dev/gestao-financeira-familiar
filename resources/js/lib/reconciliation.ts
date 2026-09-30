@@ -45,5 +45,9 @@ export function candidateMatchId(
         return '';
     }
 
+    if (candidate.recurrence_transaction_id) {
+        return `recurrence:${candidate.recurrence_transaction_id}`;
+    }
+
     return String(candidate.installment_id ?? '');
 }

@@ -12,7 +12,10 @@ export type ReconciliationView =
 
 export type ReconciliationCandidate = {
     movement_id?: number | null;
-    installment_id?: number;
+    installment_id?: number | null;
+    recurrence_transaction_id?: number | null;
+    is_recurrence_forecast?: boolean;
+    amount_difference?: string | null;
     invoice_id?: number | null;
     invoice_payment_id?: number | null;
     transaction_id?: number | null;
