@@ -1,4 +1,4 @@
-import { Head, usePage } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import {
     CheckCircle2,
     ChevronDown,
@@ -160,6 +160,18 @@ function ItemRow({
     const expandable = item.details.length > 0 || item.children.length > 0;
 
     if (!expandable) {
+        if (item.href) {
+            return (
+                <Link
+                    href={item.href}
+                    className="hover:bg-muted/40 focus-visible:ring-ring -mx-4 flex items-center gap-3 px-4 py-3 transition-colors focus-visible:ring-2 focus-visible:outline-none md:-mx-6 md:px-6"
+                    title="Abrir lançamento"
+                >
+                    <ItemSummary item={item} mode={mode} />
+                </Link>
+            );
+        }
+
         return (
             <div className="-mx-4 flex items-center gap-3 px-4 py-3 md:-mx-6 md:px-6">
                 <ItemSummary item={item} mode={mode} />
@@ -169,15 +181,36 @@ function ItemRow({
 
     return (
         <Collapsible>
-            <CollapsibleTrigger asChild>
-                <button
-                    type="button"
-                    className="hover:bg-muted/40 focus-visible:ring-ring group -mx-4 flex w-[calc(100%+2rem)] items-center gap-3 px-4 py-3 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none md:-mx-6 md:w-[calc(100%+3rem)] md:px-6"
-                >
-                    <ItemSummary item={item} mode={mode} />
-                    <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
-                </button>
-            </CollapsibleTrigger>
+            {item.href ? (
+                <div className="hover:bg-muted/40 -mx-4 flex items-stretch transition-colors md:-mx-6">
+                    <Link
+                        href={item.href}
+                        className="focus-visible:ring-ring flex min-w-0 flex-1 items-center px-4 py-3 text-left focus-visible:ring-2 focus-visible:outline-none md:pl-6 md:pr-3"
+                        title="Abrir lançamento"
+                    >
+                        <ItemSummary item={item} mode={mode} />
+                    </Link>
+                    <CollapsibleTrigger asChild>
+                        <button
+                            type="button"
+                            aria-label="Mostrar detalhes do lançamento"
+                            className="focus-visible:ring-ring group flex shrink-0 items-center px-4 focus-visible:ring-2 focus-visible:outline-none md:pr-6"
+                        >
+                            <ChevronDown className="text-muted-foreground size-4 transition-transform group-data-[state=open]:rotate-180" />
+                        </button>
+                    </CollapsibleTrigger>
+                </div>
+            ) : (
+                <CollapsibleTrigger asChild>
+                    <button
+                        type="button"
+                        className="hover:bg-muted/40 focus-visible:ring-ring group -mx-4 flex w-[calc(100%+2rem)] items-center gap-3 px-4 py-3 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none md:-mx-6 md:w-[calc(100%+3rem)] md:px-6"
+                    >
+                        <ItemSummary item={item} mode={mode} />
+                        <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+                    </button>
+                </CollapsibleTrigger>
+            )}
             <CollapsibleContent>
                 <div className="bg-muted/20 -mx-4 border-t px-4 py-4 md:-mx-6 md:px-6">
                     {item.details.length > 0 && (

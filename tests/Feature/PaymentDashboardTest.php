@@ -56,6 +56,60 @@ class PaymentDashboardTest extends TestCase
             );
     }
 
+    public function test_finite_recurrence_shows_installment_and_links_to_generated_transaction(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-22 13:00:00'));
+
+        [$user, $workspace] = $this->userWithWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Mercado Pago Fabiano',
+            'opening_balance' => '0.00',
+        ]);
+
+        $recurrence = $workspace->financialRecurrences()->create([
+            'type' => FinancialTransactionType::Expense,
+            'description' => 'Bellart — Óculos',
+            'amount' => '468.00',
+            'financial_account_id' => $account->id,
+            'credit_card_id' => null,
+            'category_id' => null,
+            'family_member_id' => null,
+            'payment_method' => PaymentMethod::Pix,
+            'payee_name' => 'Bellart',
+            'payment_instructions' => null,
+            'frequency' => RecurrenceFrequency::Monthly,
+            'interval' => 1,
+            'starts_on' => '2026-08-05',
+            'generation_started_on' => '2026-08-05',
+            'ends_on' => '2026-11-05',
+            'is_active' => true,
+            'notes' => null,
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('payments'));
+
+        $entry = $recurrence->transactions()
+            ->whereDate('recurrence_occurrence_date', '2026-09-05')
+            ->sole();
+
+        $response
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('payable', 1)
+                ->where('payable.0.description', 'Bellart — Óculos')
+                ->where('payable.0.context', 'Mercado Pago Fabiano · Parcela 2 de 4')
+                ->where('payable.0.href', route('transactions.edit', $entry, false))
+                ->where('payable.0.details.2.label', 'Favorecido')
+                ->where('payable.0.details.2.value', 'Bellart')
+                ->where('payable.0.details.3.label', 'Parcela')
+                ->where('payable.0.details.3.value', '2 de 4')
+                ->where('payable.0.details.4.label', 'Origem')
+                ->where('payable.0.details.4.value', 'Recorrência')
+            );
+    }
+
     public function test_dashboard_summarizes_monthly_cash_commitments_without_duplicating_card_purchases(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-09-22 13:00:00'));

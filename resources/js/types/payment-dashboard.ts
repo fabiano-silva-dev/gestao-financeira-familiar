@@ -20,6 +20,7 @@ export type PaymentDashboardItem = {
     status_label: string;
     is_overdue: boolean;
     context: string | null;
+    href: string | null;
     details: PaymentDashboardDetail[];
     children: PaymentDashboardChild[];
 };

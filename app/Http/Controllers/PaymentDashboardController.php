@@ -113,7 +113,7 @@ class PaymentDashboardController extends Controller
                             ]);
                     });
             })
-            ->with(['account:id,name', 'recurrence:id,description'])
+            ->with(['account:id,name', 'recurrence:id,description,starts_on,ends_on,frequency,interval'])
             ->get()
             ->map(function (FinancialTransaction $entry) use ($today, $type): array {
                 $date = $entry->due_date ?? $entry->transaction_date;
@@ -130,8 +130,9 @@ class PaymentDashboardController extends Controller
                     date: $date->toDateString(),
                     statusLabel: $overdue ? 'Vencido' : $pendingLabel,
                     isOverdue: $overdue,
-                    context: $entry->account?->name,
+                    context: $this->transactionContext($entry),
                     details: $this->transactionDetails($entry),
+                    href: route('transactions.edit', $entry, false),
                 );
             })
             ->all();
@@ -166,7 +167,7 @@ class PaymentDashboardController extends Controller
                     ->whereColumn('transfers.transaction_date', 'financial_transactions.settled_on')
                     ->whereColumn($transferAccountColumn, 'financial_transactions.financial_account_id');
             })
-            ->with(['account:id,name', 'recurrence:id,description'])
+            ->with(['account:id,name', 'recurrence:id,description,starts_on,ends_on,frequency,interval'])
             ->get()
             ->map(fn (FinancialTransaction $entry): array => $this->item(
                 id: 'transaction-'.$entry->id,
@@ -175,8 +176,9 @@ class PaymentDashboardController extends Controller
                 amount: (string) $entry->amount,
                 date: $entry->settled_on->toDateString(),
                 statusLabel: $type === FinancialTransactionType::Expense ? 'Pago' : 'Recebido',
-                context: $entry->account?->name,
+                context: $this->transactionContext($entry),
                 details: $this->transactionDetails($entry),
+                href: route('transactions.edit', $entry, false),
             ))
             ->all();
     }
@@ -382,8 +384,54 @@ class PaymentDashboardController extends Controller
             'Forma prevista' => $entry->payment_method?->label(),
             'Favorecido' => $entry->payee_name,
             'Instruções' => $entry->payment_instructions,
+            'Parcela' => $this->recurrenceInstallmentLabel($entry),
             'Origem' => $entry->financial_recurrence_id === null ? null : 'Recorrência',
         ]);
+    }
+
+    private function transactionContext(FinancialTransaction $entry): ?string
+    {
+        $parts = [];
+
+        if ($entry->account?->name !== null && trim($entry->account->name) !== '') {
+            $parts[] = $entry->account->name;
+        }
+
+        $installment = $this->recurrenceInstallmentLabel($entry);
+
+        if ($installment !== null) {
+            $parts[] = 'Parcela '.$installment;
+        }
+
+        return $parts === [] ? null : implode(' · ', $parts);
+    }
+
+    private function recurrenceInstallmentLabel(FinancialTransaction $entry): ?string
+    {
+        $recurrence = $entry->recurrence;
+        $occurrenceDate = $entry->recurrence_occurrence_date;
+
+        if ($recurrence === null || $recurrence->ends_on === null || $occurrenceDate === null) {
+            return null;
+        }
+
+        $startsOn = CarbonImmutable::parse($recurrence->starts_on->toDateString());
+        $endsOn = CarbonImmutable::parse($recurrence->ends_on->toDateString());
+        $targetDate = CarbonImmutable::parse($occurrenceDate->toDateString());
+        $occurrences = $this->recurrenceService->occurrencesBetween(
+            $recurrence,
+            $startsOn,
+            $endsOn,
+        );
+        $total = count($occurrences);
+
+        foreach ($occurrences as $index => $occurrence) {
+            if ($occurrence->equalTo($targetDate)) {
+                return ($index + 1).' de '.$total;
+            }
+        }
+
+        return null;
     }
 
     /** @return array<int, array{label: string, value: string}> */
@@ -446,6 +494,7 @@ class PaymentDashboardController extends Controller
         ?string $context = null,
         array $details = [],
         array $children = [],
+        ?string $href = null,
     ): array {
         return [
             'id' => $id,
@@ -458,6 +507,7 @@ class PaymentDashboardController extends Controller
             'context' => $context,
             'details' => $details,
             'children' => $children,
+            'href' => $href,
         ];
     }
 
