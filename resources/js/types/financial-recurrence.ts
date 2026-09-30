@@ -32,6 +32,20 @@ export type FinancialRecurrence = {
     notes: string | null;
 };
 
+export type FinancialRecurrenceOccurrence = {
+    id: number;
+    occurrence_date: string;
+    transaction_date: string;
+    due_date: string | null;
+    settled_on: string | null;
+    amount: string;
+    status: string;
+    status_label: string;
+    account_name: string | null;
+    is_overridden: boolean;
+    is_reconciled: boolean;
+};
+
 export type RecurrenceProjectionPoint = {
     month: string;
     income: string;

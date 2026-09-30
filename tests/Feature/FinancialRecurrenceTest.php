@@ -421,6 +421,98 @@ class FinancialRecurrenceTest extends TestCase
         $this->assertDatabaseCount('financial_transactions', 4);
     }
 
+    public function test_edit_lists_realized_and_pending_recurrence_occurrences(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-21 12:00:00'));
+
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('recurrences.store'), [
+                ...$this->validRecurrenceData($account),
+                'description' => 'Condomínio',
+                'starts_on' => '2026-06-08',
+                'already_settled' => '1',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $recurrence = FinancialRecurrence::query()->sole();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('recurrences.edit', $recurrence))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('recurrences/edit')
+                ->where('recurrence.id', $recurrence->id)
+                ->has('occurrences', 4)
+                ->where('occurrences.0.status_label', 'A pagar')
+                ->where('occurrences.3.status_label', 'Pago')
+                ->where('occurrences.3.settled_on', '2026-09-08')
+            );
+    }
+
+    public function test_deleting_recurrence_archives_rule_and_preserves_realized_history(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-21 12:00:00'));
+
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('recurrences.store'), [
+            ...$this->validRecurrenceData($account),
+            'description' => 'Condomínio',
+            'starts_on' => '2026-06-08',
+            'already_settled' => '1',
+        ])->assertSessionHasNoErrors();
+
+        $recurrence = FinancialRecurrence::query()->sole();
+        $paid = $recurrence->transactions()
+            ->whereNotNull('settled_on')
+            ->sole();
+
+        $this->assertGreaterThan(
+            0,
+            $recurrence->transactions()
+                ->where('status', FinancialTransactionStatus::Planned->value)
+                ->whereDate('recurrence_occurrence_date', '>=', '2026-09-21')
+                ->count(),
+        );
+
+        $request->delete(route('recurrences.destroy', $recurrence))
+            ->assertRedirect(route('recurrences.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSoftDeleted('financial_recurrences', [
+            'id' => $recurrence->id,
+            'workspace_id' => $workspace->id,
+        ]);
+        $this->assertNull(FinancialRecurrence::query()->find($recurrence->id));
+
+        $archived = FinancialRecurrence::withTrashed()
+            ->findOrFail($recurrence->id);
+
+        $this->assertFalse($archived->is_active);
+        $this->assertSame(1, $archived->transactions()->count());
+        $this->assertNotNull(
+            $archived->transactions()->find($paid->id),
+        );
+        $this->assertNotNull($paid->fresh()?->settled_on);
+        $this->assertSame(1, $paid->fresh()?->accountMovements()->count());
+
+        $request->get(route('recurrences.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('recurrences', 0)
+                ->where('hasRecords', false)
+            );
+    }
+
     public function test_pausing_recurrence_removes_only_future_planned_occurrences(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-09-20 12:00:00'));

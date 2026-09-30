@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
 use App\Enums\RecurrenceFrequency;
@@ -11,6 +12,7 @@ use App\Models\CreditCard;
 use App\Models\FamilyMember;
 use App\Models\FinancialAccount;
 use App\Models\FinancialRecurrence;
+use App\Models\FinancialTransaction;
 use App\Models\Workspace;
 use App\Services\Finance\FinancialRecurrenceService;
 use App\Support\Listings\ListingQuery;
@@ -147,10 +149,11 @@ class FinancialRecurrenceController extends Controller
 
     public function edit(int $recurrence): Response
     {
+        $financialRecurrence = $this->findRecurrence($recurrence);
+
         return Inertia::render('recurrences/edit', [
-            'recurrence' => $this->recurrenceData(
-                $this->findRecurrence($recurrence),
-            ),
+            'recurrence' => $this->recurrenceData($financialRecurrence),
+            'occurrences' => $this->occurrenceData($financialRecurrence),
             ...$this->referenceOptions(),
         ]);
     }
@@ -183,6 +186,20 @@ class FinancialRecurrenceController extends Controller
             'message' => $financialRecurrence->is_active
                 ? 'Recorrência ativada e compromissos futuros atualizados.'
                 : 'Recorrência pausada com sucesso.',
+        ]);
+
+        return to_route('recurrences.index');
+    }
+
+    public function destroy(int $recurrence): RedirectResponse
+    {
+        $this->recurrenceService->archive(
+            $this->findRecurrence($recurrence),
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Recorrência excluída. Lançamentos realizados e históricos foram preservados.',
         ]);
 
         return to_route('recurrences.index');
@@ -279,6 +296,61 @@ class FinancialRecurrenceController extends Controller
             'name' => $model->name,
             'is_active' => $model->is_active,
         ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function occurrenceData(FinancialRecurrence $recurrence): array
+    {
+        return $recurrence->transactions()
+            ->with([
+                'account:id,name',
+                'creditCard:id,name,last_four',
+                'accountMovements:id,financial_transaction_id,is_reconciled',
+            ])
+            ->orderByDesc('recurrence_occurrence_date')
+            ->get()
+            ->map(fn (FinancialTransaction $transaction): array => [
+                'id' => $transaction->id,
+                'occurrence_date' => $transaction->recurrence_occurrence_date?->toDateString()
+                    ?? $transaction->transaction_date->toDateString(),
+                'transaction_date' => $transaction->transaction_date->toDateString(),
+                'due_date' => $transaction->due_date?->toDateString(),
+                'settled_on' => $transaction->settled_on?->toDateString(),
+                'amount' => $transaction->amount,
+                'status' => $transaction->status->value,
+                'status_label' => $this->occurrenceStatusLabel($transaction),
+                'account_name' => $transaction->account?->name
+                    ?? ($transaction->creditCard === null
+                        ? null
+                        : "{$transaction->creditCard->name} · final {$transaction->creditCard->last_four}"),
+                'is_overridden' => $transaction->recurrence_is_overridden,
+                'is_reconciled' => $transaction->accountMovements
+                    ->contains(fn ($movement): bool => (bool) $movement->is_reconciled),
+            ])
+            ->all();
+    }
+
+    private function occurrenceStatusLabel(FinancialTransaction $transaction): string
+    {
+        if ($transaction->status === FinancialTransactionStatus::Cancelled) {
+            return 'Cancelado';
+        }
+
+        if ($transaction->settled_on !== null) {
+            return $transaction->type === FinancialTransactionType::Expense
+                ? 'Pago'
+                : 'Recebido';
+        }
+
+        if ($transaction->status === FinancialTransactionStatus::Planned) {
+            return $transaction->type === FinancialTransactionType::Expense
+                ? 'A pagar'
+                : 'A receber';
+        }
+
+        return 'Confirmado';
     }
 
     /**

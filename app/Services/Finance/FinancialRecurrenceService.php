@@ -125,6 +125,15 @@ class FinancialRecurrenceService
         });
     }
 
+    public function archive(FinancialRecurrence $recurrence): void
+    {
+        DB::transaction(function () use ($recurrence): void {
+            $this->clearFuturePlannedOccurrences($recurrence);
+            $recurrence->update(['is_active' => false]);
+            $recurrence->delete();
+        });
+    }
+
     public function generateActive(?CarbonImmutable $through = null): int
     {
         $generated = 0;

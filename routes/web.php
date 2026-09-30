@@ -224,6 +224,9 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::patch('recorrencias/{recurrence}/status', [FinancialRecurrenceController::class, 'toggleStatus'])
         ->whereNumber('recurrence')
         ->name('recurrences.toggle-status');
+    Route::delete('recorrencias/{recurrence}', [FinancialRecurrenceController::class, 'destroy'])
+        ->whereNumber('recurrence')
+        ->name('recurrences.destroy');
 
     Route::get('transferencias', fn () => to_route('transactions.index'))
         ->name('transfers.index');

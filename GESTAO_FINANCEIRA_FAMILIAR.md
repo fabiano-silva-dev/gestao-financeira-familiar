@@ -159,6 +159,8 @@ Regras desta visão:
 - O **saldo projetado do mês** é calculado como entradas realizadas e previstas menos saídas realizadas e previstas do próprio período. Ele não substitui o saldo patrimonial ou o saldo atual das contas mostrado em outras visões.
 - Recorrências materializadas, parcelas, crediários e faturas futuras já conhecidas devem alimentar a projeção sem duplicar compra, parcela, fatura e pagamento.
 - Um parcelamento manual fora do cartão não é recorrência: vale para despesas e receitas e deve preservar uma transação principal com o valor total e parcelas vinculadas. Na entrada manual, o usuário informa o valor de cada parcela e a quantidade de parcelas; o sistema calcula o valor total do compromisso. A primeira parcela pode ser registrada como paga ou recebida no momento do lançamento; somente parcelas efetivamente liquidadas movimentam o caixa, enquanto as futuras permanecem em aberto e alimentam as projeções de valores a pagar ou a receber.
+- A tela de edição de uma recorrência deve mostrar as ocorrências já materializadas, permitindo abrir cada lançamento e distinguir realizados, pendentes, conciliados e ajustes manuais.
+- Excluir uma recorrência arquiva a regra e interrompe novas gerações. Somente ocorrências futuras ainda planejadas, não conciliadas e não ajustadas são removidas; pagamentos, recebimentos, conciliações e lançamentos ajustados permanecem como histórico financeiro.
 - Todas as consultas permanecem isoladas pelo workspace ativo.
 
 
