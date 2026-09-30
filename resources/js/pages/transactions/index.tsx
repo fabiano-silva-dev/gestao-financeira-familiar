@@ -50,6 +50,33 @@ const currency = new Intl.NumberFormat('pt-BR', {
     currency: 'BRL',
 });
 
+function moneyToCents(amount: string | number): number {
+    const normalized = String(amount).trim();
+    const negative = normalized.startsWith('-');
+    const unsigned = normalized.replace(/^[+-]/, '');
+    const [wholePart = '0', decimalPart = ''] = unsigned.split('.');
+    const whole = Number.parseInt(wholePart || '0', 10);
+    const decimal = Number.parseInt(
+        decimalPart.padEnd(2, '0').slice(0, 2) || '0',
+        10,
+    );
+    const cents = whole * 100 + decimal;
+
+    return negative ? -cents : cents;
+}
+
+function formatCents(cents: number): string {
+    const negative = cents < 0;
+    const absolute = Math.abs(cents);
+    const whole = Math.floor(absolute / 100);
+    const decimal = String(absolute % 100).padStart(2, '0');
+    const formattedWhole = new Intl.NumberFormat('pt-BR', {
+        maximumFractionDigits: 0,
+    }).format(whole);
+
+    return `${negative ? '-' : ''}R$ ${formattedWhole},${decimal}`;
+}
+
 const date = new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
     month: '2-digit',
@@ -196,6 +223,17 @@ export default function TransactionsIndex() {
             column,
             column === 'description' || column === 'category' ? 'asc' : 'desc',
         );
+    const listedTotalCents = entries.reduce((total, entry) => {
+        if (entry.type === 'transfer') {
+            return total;
+        }
+
+        const amount = moneyToCents(
+            entry.type === 'expense' ? entry.net_amount : entry.amount,
+        );
+
+        return total + (entry.type === 'expense' ? -amount : amount);
+    }, 0);
 
     return (
         <>
@@ -338,6 +376,15 @@ export default function TransactionsIndex() {
                                 </div>
                             }
                         />
+
+                        <div className="text-muted-foreground flex flex-wrap items-center justify-end gap-x-5 gap-y-1 text-sm">
+                            <span>
+                                Total listado{' '}
+                                <strong className="text-foreground tabular-nums">
+                                    {formatCents(listedTotalCents)}
+                                </strong>
+                            </span>
+                        </div>
 
                         {entries.length === 0 ? (
                             <ListingEmpty />
