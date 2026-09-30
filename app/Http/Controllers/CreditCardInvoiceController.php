@@ -188,6 +188,7 @@ class CreditCardInvoiceController extends Controller
                 'installments.cardStatementEntry:id,transaction_installment_id',
                 'payments.account:id,name',
                 'payments.movement.bankStatementEntry:id,account_movement_id',
+                'statementEntries.invoicePayment.account:id,name',
                 'statementEntries.transactionInstallment.transaction:id,description,transaction_date',
                 'statementEntries.reconciler:id,name',
             ]);
@@ -277,14 +278,21 @@ class CreditCardInvoiceController extends Controller
         StoreCreditCardInvoicePaymentRequest $request,
         int $invoice,
     ): RedirectResponse {
+        $creditCardInvoice = $this->findInvoice($invoice);
+        $isAdvance = $creditCardInvoice->status === CreditCardInvoiceStatus::Open;
+
         $this->invoiceService->pay(
-            $this->findInvoice($invoice),
+            $creditCardInvoice,
             $request->validated(),
+            allowOpen: $isAdvance,
+            allowAdvance: $isAdvance,
         );
 
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => 'Pagamento da fatura registrado sem criar uma nova despesa.',
+            'message' => $isAdvance
+                ? 'Pagamento antecipado registrado sem criar uma nova despesa.'
+                : 'Pagamento da fatura registrado sem criar uma nova despesa.',
         ]);
 
         return to_route('credit-card-invoices.show', $invoice);
@@ -389,13 +397,16 @@ class CreditCardInvoiceController extends Controller
             'refund_amount' => $this->invoiceService->refundAmount($invoice),
             'paid_amount' => $invoice->paid_amount,
             'outstanding_amount' => $this->invoiceService->outstandingAmount($invoice),
+            'credit_balance_amount' => $this->invoiceService->creditBalanceAmount($invoice),
             'paid_at' => $invoice->paid_at?->toDateString(),
             'status' => $isOverdue ? 'overdue' : $invoice->status->value,
             'status_label' => $isOverdue ? 'Vencida' : $invoice->status->label(),
             'can_close' => $invoice->status === CreditCardInvoiceStatus::Open,
-            'can_pay' => $invoice->status !== CreditCardInvoiceStatus::Open
-                && $invoice->status !== CreditCardInvoiceStatus::Paid
-                && $this->invoiceService->outstandingAmount($invoice) !== '0.00',
+            'can_pay' => $invoice->status === CreditCardInvoiceStatus::Open
+                || (
+                    $invoice->status !== CreditCardInvoiceStatus::Paid
+                    && $this->invoiceService->outstandingAmount($invoice) !== '0.00'
+                ),
         ];
     }
 
@@ -411,7 +422,8 @@ class CreditCardInvoiceController extends Controller
             'payment_method' => $payment->payment_method->value,
             'payment_method_label' => $payment->payment_method->label(),
             'financial_account_id' => $payment->financial_account_id,
-            'account_name' => $payment->account->name,
+            'account_name' => $payment->account?->name ?? 'Conta ainda não conciliada',
+            'is_advance' => (bool) $payment->is_advance,
             'notes' => $payment->notes,
             'is_bank_reconciled' => $payment->movement?->bankStatementEntry !== null,
         ];
@@ -466,6 +478,10 @@ class CreditCardInvoiceController extends Controller
             'installment_number' => $entry->installment_number,
             'total_installments' => $entry->total_installments,
             'source' => $entry->financial_import_id === null ? 'manual' : 'import',
+            'is_payment' => (bool) $entry->is_payment,
+            'linked_payment' => $entry->invoicePayment === null
+                ? null
+                : $this->paymentData($entry->invoicePayment),
             'is_reconciled' => $entry->is_reconciled,
             'reconciled_by_name' => $entry->reconciler?->name,
             'reconciled_at' => $entry->reconciled_at?->toIso8601String(),
@@ -479,7 +495,7 @@ class CreditCardInvoiceController extends Controller
                     'installment_number' => $linkedInstallment->installment_number,
                     'total_installments' => $linkedInstallment->total_installments,
                 ],
-            'candidates' => $entry->is_reconciled
+            'candidates' => $entry->is_reconciled || $entry->is_payment
                 ? []
                 : collect([
                     ...$this->reconciliationSuggestionService->candidates(

@@ -27,8 +27,9 @@ export type CreditCardInvoicePayment = {
     amount: string;
     payment_method: string;
     payment_method_label: string;
-    financial_account_id: number;
+    financial_account_id: number | null;
     account_name: string;
+    is_advance: boolean;
     notes: string | null;
     is_bank_reconciled: boolean;
 };
@@ -69,6 +70,8 @@ export type CreditCardInvoiceStatementEntry = {
     installment_number: number | null;
     total_installments: number | null;
     source: 'manual' | 'import';
+    is_payment: boolean;
+    linked_payment: CreditCardInvoicePayment | null;
     is_reconciled: boolean;
     reconciled_by_name: string | null;
     reconciled_at: string | null;
@@ -91,6 +94,7 @@ export type CreditCardInvoice = {
     refund_amount: string;
     paid_amount: string;
     outstanding_amount: string;
+    credit_balance_amount: string;
     paid_at: string | null;
     status: CreditCardInvoiceStatus;
     status_label: string;

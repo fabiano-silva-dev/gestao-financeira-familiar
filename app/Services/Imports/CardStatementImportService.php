@@ -136,7 +136,9 @@ final class CardStatementImportService
                 $statementEndOn = $firstRow->purchasedOn;
 
                 foreach ($statement->rows as $row) {
-                    $statementCents += $this->moneyToCents($row->amount);
+                    if (! $row->isPayment) {
+                        $statementCents += $this->moneyToCents($row->amount);
+                    }
                     $statementStartOn = $row->purchasedOn < $statementStartOn
                         ? $row->purchasedOn
                         : $statementStartOn;
@@ -166,9 +168,18 @@ final class CardStatementImportService
                             'total_installments' => $row->totalInstallments,
                             'external_id' => $row->externalId,
                             'raw_data' => $row->rawData,
+                            'is_payment' => $row->isPayment,
                             'is_reconciled' => false,
                         ],
                     );
+
+                    if ($row->isPayment && ! $entry->is_reconciled) {
+                        $this->invoiceService->registerImportedPaymentEvidence(
+                            $card,
+                            $entry,
+                            $user,
+                        );
+                    }
 
                     if ($entry->wasRecentlyCreated) {
                         $imported++;
@@ -343,20 +354,9 @@ final class CardStatementImportService
             : $reference->subMonth();
         $closingDate = $this->dateInMonth($closingMonth, $card->closing_day);
 
-        return CreditCardInvoice::query()->firstOrCreate(
-            [
-                'workspace_id' => $card->workspace_id,
-                'credit_card_id' => $card->id,
-                'reference_month' => $reference->toDateString(),
-            ],
-            [
-                'closing_date' => $closingDate->toDateString(),
-                'due_date' => $dueDate->toDateString(),
-                'calculated_amount' => '0.00',
-                'statement_amount' => null,
-                'paid_amount' => '0.00',
-                'status' => CreditCardInvoiceStatus::Open,
-            ],
+        return $this->invoiceService->resolveOrCreateOpenInvoice(
+            $card,
+            $referenceMonth,
         );
     }
 

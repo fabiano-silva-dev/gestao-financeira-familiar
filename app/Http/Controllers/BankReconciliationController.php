@@ -611,11 +611,15 @@ class BankReconciliationController extends Controller
             $statementEntry,
             $card,
             $user,
+            $request->validated('reference_month'),
         );
 
+        $referenceMonth = $request->validated('reference_month');
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => 'Pagamento do cartão conciliado. O vínculo com a fatura ficará pendente até ela ser identificada.',
+            'message' => $referenceMonth !== null
+                ? 'Pagamento antecipado conciliado e vinculado à fatura selecionada.'
+                : 'Pagamento do cartão conciliado. O vínculo com a fatura ficará pendente até ela ser identificada.',
         ]);
 
         return to_route('reconciliation.index', $this->filterQuery($request));

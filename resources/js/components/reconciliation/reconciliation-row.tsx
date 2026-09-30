@@ -287,6 +287,10 @@ export function ReconciliationRow({
     const [cardPaymentCardId, setCardPaymentCardId] = useState(
         cardOptions.length === 1 ? String(cardOptions[0].id) : '',
     );
+    const [cardPaymentReferenceMonth, setCardPaymentReferenceMonth] = useState(
+        entry.occurred_on.slice(0, 7),
+    );
+    const [manualCardPaymentMode, setManualCardPaymentMode] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
     const [suggestionDismissed, setSuggestionDismissed] = useState(false);
     const matchOverrideEntryId = useRef<number | null>(null);
@@ -298,6 +302,8 @@ export function ReconciliationRow({
 
         matchOverrideEntryId.current = null;
         setSuggestionDismissed(false);
+        setManualCardPaymentMode(false);
+        setCardPaymentReferenceMonth(entry.occurred_on.slice(0, 7));
         setRefundMode(false);
         setRefundCandidates([]);
         setRefundLoading(false);
@@ -424,8 +430,13 @@ export function ReconciliationRow({
             : null;
     const showInvoicePayment =
         !refundMode &&
-        !suggestionDismissed &&
-        (entry.is_likely_invoice_payment || selectedInvoice !== null);
+        (
+            manualCardPaymentMode
+            || (
+                !suggestionDismissed
+                && (entry.is_likely_invoice_payment || selectedInvoice !== null)
+            )
+        );
     const showRefund = refundMode || Boolean(selectedCandidate?.is_refund);
     const canRegisterPendingCardPayment =
         entry.kind === 'statement' &&
@@ -454,6 +465,7 @@ export function ReconciliationRow({
         (suggestionDismissed || !entry.is_likely_refund) &&
         !entry.is_likely_transfer &&
         !showRefund &&
+        !manualCardPaymentMode &&
         (!needsCategory || leafCategoryId !== null);
 
     const rejectMatch = () => {
@@ -954,7 +966,10 @@ export function ReconciliationRow({
                 BankReconciliationController.cardPayment.url(entry.id),
                 query,
             ),
-            { credit_card_id: Number(cardPaymentCardId) },
+            {
+                credit_card_id: Number(cardPaymentCardId),
+                reference_month: cardPaymentReferenceMonth,
+            },
             visitOptions(),
         );
     };
@@ -1372,6 +1387,7 @@ export function ReconciliationRow({
                             </div>
                         )}
                     {canRegisterPendingCardPayment && (
+                        <>
                         <label className="grid min-w-0 gap-1">
                             <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
                                 Cartão do pagamento
@@ -1406,6 +1422,23 @@ export function ReconciliationRow({
                                 </SelectContent>
                             </Select>
                         </label>
+                        <label className="grid min-w-0 gap-1">
+                            <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
+                                Fatura / mês de referência
+                            </span>
+                            <Input
+                                type="month"
+                                value={cardPaymentReferenceMonth}
+                                onChange={(event) =>
+                                    setCardPaymentReferenceMonth(event.target.value)
+                                }
+                                className="h-8"
+                            />
+                            <span className="text-muted-foreground text-xs">
+                                Se a fatura ainda não existir, ela será criada aberta.
+                            </span>
+                        </label>
+                        </>
                     )}
                     {!showInvoicePayment && !showRefund && !isTransferLine && (
                         <>
@@ -1620,17 +1653,51 @@ export function ReconciliationRow({
                                 {actionError}
                             </p>
                         )}
+                        {entry.kind === 'statement' &&
+                            outflow &&
+                            !entry.is_reconciled &&
+                            !showInvoicePayment &&
+                            !showRefund && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                        setMatchId('');
+                                        setSuggestionDismissed(true);
+                                        setManualCardPaymentMode(true);
+                                    }}
+                                >
+                                    <WalletCards />
+                                    Pagamento antecipado de cartão
+                                </Button>
+                            )}
                         {canRegisterPendingCardPayment && (
-                            <Button
-                                type="button"
-                                variant="secondary"
-                                size="sm"
-                                disabled={cardPaymentCardId === ''}
-                                onClick={registerPendingCardPayment}
-                            >
-                                <WalletCards />
-                                Registrar pagamento do cartão
-                            </Button>
+                            <>
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    disabled={
+                                        cardPaymentCardId === ''
+                                        || cardPaymentReferenceMonth === ''
+                                    }
+                                    onClick={registerPendingCardPayment}
+                                >
+                                    <WalletCards />
+                                    Conciliar pagamento antecipado
+                                </Button>
+                                {manualCardPaymentMode && (
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setManualCardPaymentMode(false)}
+                                    >
+                                        Cancelar
+                                    </Button>
+                                )}
+                            </>
                         )}
                         {entry.kind === 'statement' &&
                             !showInvoicePayment &&

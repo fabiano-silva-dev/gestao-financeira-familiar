@@ -470,7 +470,7 @@ class CardStatementImportTest extends TestCase
         Http::assertSentCount(1);
     }
 
-    public function test_nubank_invoice_creates_categorized_expenses_and_skips_payment(): void
+    public function test_nubank_invoice_creates_categorized_expenses_and_preserves_payment_evidence(): void
     {
         Storage::fake('local');
         [$user, $workspace] = $this->userAndWorkspace();
@@ -527,7 +527,13 @@ class CardStatementImportTest extends TestCase
             ->assertRedirect(route('imports.index'))
             ->assertSessionHasNoErrors();
 
-        $this->assertDatabaseCount('card_statement_entries', 2);
+        $this->assertDatabaseCount('card_statement_entries', 3);
+        $this->assertDatabaseHas('card_statement_entries', [
+            'description' => 'Pagamento recebido',
+            'is_payment' => true,
+            'is_reconciled' => true,
+        ]);
+        $this->assertDatabaseCount('credit_card_invoice_payments', 1);
         $this->assertDatabaseCount('financial_transactions', 2);
         $this->assertDatabaseMissing('financial_transactions', [
             'description' => 'Pagamento recebido',
@@ -581,12 +587,12 @@ class CardStatementImportTest extends TestCase
         $financialImport = FinancialImport::query()->sole();
         $this->assertSame(FinancialImportType::CardStatement, $financialImport->type);
         $this->assertSame(FinancialImportStatus::Completed, $financialImport->status);
-        $this->assertSame(3, $financialImport->total_records);
-        $this->assertSame(3, $financialImport->imported_records);
+        $this->assertSame(5, $financialImport->total_records);
+        $this->assertSame(5, $financialImport->imported_records);
         $this->assertSame('pdf-mercado-pago', $financialImport->metadata['source_format'] ?? null);
         $this->assertSame('mercado_pago_credit_card', $financialImport->metadata['pdf_layout'] ?? null);
 
-        $this->assertDatabaseCount('card_statement_entries', 3);
+        $this->assertDatabaseCount('card_statement_entries', 5);
         $this->assertDatabaseHas('card_statement_entries', [
             'description' => 'Smhigienizacoes Parcela 2 de 3',
             'amount' => '93.33',
@@ -604,9 +610,12 @@ class CardStatementImportTest extends TestCase
             'description' => 'DL*99 RIDE',
             'amount' => '8.60',
         ]);
-        $this->assertDatabaseMissing('card_statement_entries', [
+        $this->assertDatabaseHas('card_statement_entries', [
             'description' => 'Pagamento da fatura de agosto/2026',
+            'is_payment' => true,
+            'is_reconciled' => true,
         ]);
+        $this->assertDatabaseCount('credit_card_invoice_payments', 2);
     }
 
     public function test_invalid_statement_is_recorded_as_failed(): void

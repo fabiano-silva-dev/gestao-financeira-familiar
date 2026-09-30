@@ -6,6 +6,7 @@ use App\Enums\AccountMovementType;
 use App\Enums\CreditCardInvoiceStatus;
 use App\Enums\ExpenseRefundStatus;
 use App\Enums\TransactionInstallmentStatus;
+use App\Models\AccountMovement;
 use App\Models\CardStatementEntry;
 use App\Models\CreditCard;
 use App\Models\CreditCardInvoice;
@@ -197,6 +198,7 @@ class CreditCardInvoiceService
         ]);
 
         $this->autoLinkPendingPayments($invoice);
+        $this->syncInvoiceSettlement($invoice->refresh());
 
         return $invoice->refresh();
     }
@@ -208,8 +210,9 @@ class CreditCardInvoiceService
         CreditCardInvoice $invoice,
         array $data,
         bool $allowOpen = false,
+        bool $allowAdvance = false,
     ): CreditCardInvoice {
-        return DB::transaction(function () use ($invoice, $data, $allowOpen): CreditCardInvoice {
+        return DB::transaction(function () use ($invoice, $data, $allowOpen, $allowAdvance): CreditCardInvoice {
             $locked = CreditCardInvoice::query()
                 ->where('workspace_id', $invoice->workspace_id)
                 ->whereKey($invoice->id)
@@ -227,9 +230,12 @@ class CreditCardInvoiceService
             $paymentCents = $this->moneyToCents((string) $data['amount']);
             $outstandingCents = $this->outstandingCents($locked);
 
-            if ($paymentCents <= 0 || $paymentCents > $outstandingCents) {
+            if (
+                $paymentCents <= 0
+                || (! $allowAdvance && $paymentCents > $outstandingCents)
+            ) {
                 throw ValidationException::withMessages([
-                    'amount' => 'O pagamento deve ser maior que zero e não pode ultrapassar o saldo da fatura.',
+                    'amount' => 'O pagamento deve ser maior que zero e, quando não for antecipado, não pode ultrapassar o saldo da fatura.',
                 ]);
             }
 
@@ -239,6 +245,7 @@ class CreditCardInvoiceService
                 'financial_account_id' => $data['financial_account_id'],
                 'paid_on' => $data['paid_on'],
                 'amount' => $this->centsToMoney($paymentCents),
+                'is_advance' => $allowAdvance,
                 'payment_method' => $data['payment_method'],
                 'notes' => $data['notes'] ?? null,
             ]);
@@ -376,6 +383,7 @@ class CreditCardInvoiceService
                 'financial_account_id' => $data['financial_account_id'],
                 'paid_on' => $data['paid_on'],
                 'amount' => $this->centsToMoney($paymentCents),
+                'is_advance' => false,
                 'payment_method' => $data['payment_method'],
                 'notes' => $data['notes'] ?? null,
             ]);
@@ -388,6 +396,232 @@ class CreditCardInvoiceService
                 'amount' => '-'.$this->centsToMoney($paymentCents),
                 'type' => AccountMovementType::CardPayment,
                 'is_reconciled' => false,
+            ]);
+
+            return $payment->refresh();
+        });
+    }
+
+    public function resolveOrCreateOpenInvoice(
+        CreditCard $card,
+        string $referenceMonth,
+    ): CreditCardInvoice {
+        $reference = CarbonImmutable::createFromFormat('Y-m', $referenceMonth)
+            ->startOfMonth();
+        $dueDate = $this->dateInMonth($reference, $card->due_day);
+        $closingMonth = $card->due_day > $card->closing_day
+            ? $reference
+            : $reference->subMonth();
+        $closingDate = $this->dateInMonth($closingMonth, $card->closing_day);
+
+        return CreditCardInvoice::query()->firstOrCreate(
+            [
+                'workspace_id' => $card->workspace_id,
+                'credit_card_id' => $card->id,
+                'reference_month' => $reference->toDateString(),
+            ],
+            [
+                'closing_date' => $closingDate->toDateString(),
+                'due_date' => $dueDate->toDateString(),
+                'calculated_amount' => '0.00',
+                'statement_amount' => null,
+                'paid_amount' => '0.00',
+                'status' => CreditCardInvoiceStatus::Open,
+            ],
+        );
+    }
+
+    public function findCompatibleUnreconciledCardPayment(
+        CreditCard $card,
+        string $amount,
+        string $paidOn,
+        ?CreditCardInvoice $invoice = null,
+    ): ?CreditCardInvoicePayment {
+        $targetCents = $this->moneyToCents($amount);
+        $payments = CreditCardInvoicePayment::query()
+            ->where('workspace_id', $card->workspace_id)
+            ->where('credit_card_id', $card->id)
+            ->with(['movement.bankStatementEntry', 'invoice'])
+            ->get()
+            ->filter(function (CreditCardInvoicePayment $payment) use (
+                $targetCents,
+                $paidOn,
+                $invoice,
+            ): bool {
+                if ($this->moneyToCents((string) $payment->amount) !== $targetCents) {
+                    return false;
+                }
+
+                if ($payment->movement?->bankStatementEntry !== null) {
+                    return false;
+                }
+
+                if (
+                    $invoice instanceof CreditCardInvoice
+                    && $payment->credit_card_invoice_id !== null
+                    && $payment->credit_card_invoice_id !== $invoice->id
+                ) {
+                    return false;
+                }
+
+                return (int) abs($payment->paid_on->diffInDays($paidOn, false)) <= 7;
+            })
+            ->sortBy(fn (CreditCardInvoicePayment $payment): int => (int) abs(
+                $payment->paid_on->diffInDays($paidOn, false),
+            ))
+            ->values();
+
+        if ($payments->isEmpty()) {
+            return null;
+        }
+
+        $closestDistance = (int) abs(
+            $payments->first()->paid_on->diffInDays($paidOn, false),
+        );
+        $closest = $payments->filter(
+            fn (CreditCardInvoicePayment $payment): bool => (int) abs(
+                $payment->paid_on->diffInDays($paidOn, false),
+            ) === $closestDistance,
+        );
+
+        return $closest->count() === 1 ? $closest->first() : null;
+    }
+
+    public function attachBankMovement(
+        CreditCardInvoicePayment $payment,
+        int $accountId,
+        string $paidOn,
+        string $amount,
+    ): AccountMovement {
+        return DB::transaction(function () use (
+            $payment,
+            $accountId,
+            $paidOn,
+            $amount,
+        ): AccountMovement {
+            $locked = CreditCardInvoicePayment::query()
+                ->where('workspace_id', $payment->workspace_id)
+                ->whereKey($payment->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $amountCents = $this->moneyToCents($amount);
+
+            if (
+                $amountCents <= 0
+                || $this->moneyToCents((string) $locked->amount) !== $amountCents
+            ) {
+                throw ValidationException::withMessages([
+                    'amount' => 'O valor bancário não corresponde ao pagamento do cartão.',
+                ]);
+            }
+
+            $movement = $locked->movement()->lockForUpdate()->first();
+
+            if ($movement instanceof AccountMovement) {
+                if (
+                    $movement->financial_account_id !== $accountId
+                    || $this->moneyToCents((string) $movement->amount) !== -$amountCents
+                ) {
+                    throw ValidationException::withMessages([
+                        'financial_account_id' => 'O pagamento já possui uma movimentação em outra conta ou valor.',
+                    ]);
+                }
+
+                return $movement;
+            }
+
+            $locked->update([
+                'financial_account_id' => $accountId,
+                'paid_on' => $paidOn,
+            ]);
+
+            return $locked->movement()->create([
+                'workspace_id' => $locked->workspace_id,
+                'financial_account_id' => $accountId,
+                'occurred_on' => $paidOn,
+                'description' => 'Pagamento cartão '.$locked->creditCard()->value('name'),
+                'amount' => '-'.$this->centsToMoney($amountCents),
+                'type' => AccountMovementType::CardPayment,
+                'is_reconciled' => false,
+            ]);
+        });
+    }
+
+    public function registerImportedPaymentEvidence(
+        CreditCard $card,
+        CardStatementEntry $entry,
+        User $user,
+    ): ?CreditCardInvoicePayment {
+        return DB::transaction(function () use ($card, $entry, $user): ?CreditCardInvoicePayment {
+            $lockedEntry = CardStatementEntry::query()
+                ->where('workspace_id', $card->workspace_id)
+                ->whereKey($entry->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (! $lockedEntry->is_payment) {
+                return null;
+            }
+
+            if ($lockedEntry->credit_card_invoice_payment_id !== null) {
+                return $lockedEntry->invoicePayment()->first();
+            }
+
+            $targetCents = $this->moneyToCents(ltrim((string) $lockedEntry->amount, '-'));
+            $candidates = CreditCardInvoicePayment::query()
+                ->where('workspace_id', $card->workspace_id)
+                ->where('credit_card_id', $card->id)
+                ->whereDoesntHave('statementEntries')
+                ->get()
+                ->filter(fn (CreditCardInvoicePayment $payment): bool =>
+                    $this->moneyToCents((string) $payment->amount) === $targetCents
+                    && (int) abs(
+                        $payment->paid_on->diffInDays($lockedEntry->purchased_on, false),
+                    ) <= 7
+                )
+                ->sortBy(fn (CreditCardInvoicePayment $payment): int => (int) abs(
+                    $payment->paid_on->diffInDays($lockedEntry->purchased_on, false),
+                ))
+                ->values();
+
+            $payment = null;
+
+            if ($candidates->isNotEmpty()) {
+                $closestDistance = (int) abs(
+                    $candidates->first()->paid_on->diffInDays($lockedEntry->purchased_on, false),
+                );
+                $closest = $candidates->filter(
+                    fn (CreditCardInvoicePayment $candidate): bool => (int) abs(
+                        $candidate->paid_on->diffInDays($lockedEntry->purchased_on, false),
+                    ) === $closestDistance,
+                );
+
+                if ($closest->count() !== 1) {
+                    return null;
+                }
+
+                $payment = $closest->first();
+            }
+
+            if (! $payment instanceof CreditCardInvoicePayment) {
+                $payment = CreditCardInvoicePayment::query()->create([
+                    'workspace_id' => $card->workspace_id,
+                    'credit_card_id' => $card->id,
+                    'credit_card_invoice_id' => null,
+                    'financial_account_id' => null,
+                    'paid_on' => $lockedEntry->purchased_on->toDateString(),
+                    'amount' => $this->centsToMoney($targetCents),
+                    'is_advance' => false,
+                    'payment_method' => $card->invoice_payment_method->value,
+                    'notes' => 'Pagamento identificado na fatura importada; aguardando confirmação no extrato bancário.',
+                ]);
+            }
+
+            $lockedEntry->update([
+                'credit_card_invoice_payment_id' => $payment->id,
+                'is_reconciled' => true,
+                'reconciled_by' => $user->id,
+                'reconciled_at' => now(),
             ]);
 
             return $payment->refresh();
@@ -428,8 +662,16 @@ class CreditCardInvoiceService
 
             $paymentCents = $this->moneyToCents((string) $lockedPayment->amount);
             $outstandingCents = $this->outstandingCents($lockedInvoice);
+            $isAdvance = $lockedInvoice->status === CreditCardInvoiceStatus::Open
+                && (
+                    $lockedInvoice->statement_amount === null
+                    || $paymentCents > $outstandingCents
+                );
 
-            if ($paymentCents <= 0 || $paymentCents > $outstandingCents) {
+            if (
+                $paymentCents <= 0
+                || (! $isAdvance && $paymentCents > $outstandingCents)
+            ) {
                 throw ValidationException::withMessages([
                     'payment' => 'O valor do pagamento não é compatível com o saldo em aberto desta fatura.',
                 ]);
@@ -437,6 +679,7 @@ class CreditCardInvoiceService
 
             $lockedPayment->update([
                 'credit_card_invoice_id' => $lockedInvoice->id,
+                'is_advance' => $lockedPayment->is_advance || $isAdvance,
             ]);
             $this->syncInvoiceSettlement($lockedInvoice);
 
@@ -457,6 +700,7 @@ class CreditCardInvoiceService
             ->where('workspace_id', $invoice->workspace_id)
             ->where('credit_card_id', $invoice->credit_card_id)
             ->whereNull('credit_card_invoice_id')
+            ->whereHas('movement')
             ->orderBy('paid_on')
             ->orderBy('id')
             ->get();
@@ -501,7 +745,10 @@ class CreditCardInvoiceService
 
                 return $dateDistance <= 45
                     && $paymentCents > 0
-                    && $paymentCents <= $this->outstandingCents($candidate);
+                    && (
+                        $candidate->status === CreditCardInvoiceStatus::Open
+                        || $paymentCents <= $this->outstandingCents($candidate)
+                    );
             })
             ->values();
     }
@@ -519,7 +766,13 @@ class CreditCardInvoiceService
         $totalCents = $this->moneyToCents($this->totalAmount($invoice));
         $isPaid = $totalCents > 0 && $paidCents >= $totalCents;
         $latestPaidOn = $payments->last()?->paid_on->toDateString();
+        $hasAdvance = $payments->contains(
+            fn (CreditCardInvoicePayment $payment): bool => (bool) $payment->is_advance,
+        );
         $status = match (true) {
+            $invoice->status === CreditCardInvoiceStatus::Open
+                && $invoice->statement_amount === null
+                && $hasAdvance => CreditCardInvoiceStatus::Open,
             $isPaid => CreditCardInvoiceStatus::Paid,
             $paidCents > 0 => CreditCardInvoiceStatus::Partial,
             $invoice->statement_amount === null => CreditCardInvoiceStatus::Open,
@@ -554,6 +807,14 @@ class CreditCardInvoiceService
     public function outstandingAmount(CreditCardInvoice $invoice): string
     {
         return $this->centsToMoney($this->outstandingCents($invoice));
+    }
+
+    public function creditBalanceAmount(CreditCardInvoice $invoice): string
+    {
+        $total = $this->moneyToCents($this->totalAmount($invoice));
+        $paid = $this->moneyToCents((string) $invoice->paid_amount);
+
+        return $this->centsToMoney(max(0, $paid - $total));
     }
 
     public function grossTotalAmount(CreditCardInvoice $invoice): string

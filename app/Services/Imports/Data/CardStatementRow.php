@@ -16,5 +16,6 @@ final readonly class CardStatementRow
         public ?string $externalId,
         public array $rawData,
         public ?string $sourceCategory = null,
+        public bool $isPayment = false,
     ) {}
 }

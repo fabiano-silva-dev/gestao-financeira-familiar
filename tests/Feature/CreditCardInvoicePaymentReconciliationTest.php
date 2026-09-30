@@ -10,6 +10,7 @@ use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
 use App\Models\BankStatementEntry;
+use App\Models\CardStatementEntry;
 use App\Models\CreditCard;
 use App\Models\CreditCardInvoice;
 use App\Models\CreditCardInvoicePayment;
@@ -368,6 +369,159 @@ class CreditCardInvoicePaymentReconciliationTest extends TestCase
         $this->assertSame('50.00', $invoice->paid_amount);
         $this->assertSame(CreditCardInvoiceStatus::Paid, $invoice->status);
         $this->assertDatabaseCount('financial_transactions', 0);
+    }
+
+    public function test_bank_advance_payment_creates_selected_open_invoice(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'name' => 'Conta principal',
+            'opening_balance' => '5000.00',
+        ]);
+        $card = CreditCard::factory()->for($workspace)->create([
+            'name' => 'Nubank Fabiano',
+            'institution' => 'Nubank',
+            'closing_day' => 3,
+            'due_day' => 10,
+            'payment_account_id' => $account->id,
+            'invoice_payment_method' => PaymentMethod::Pix,
+        ]);
+        $entry = $this->bankEntry(
+            $workspace,
+            $account,
+            '-1000.00',
+            '2026-09-30',
+            'PAGAMENTO NUBANK FABIANO',
+        );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('reconciliation.card-payment', $entry), [
+                'credit_card_id' => $card->id,
+                'reference_month' => '2026-10',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $invoice = CreditCardInvoice::query()
+            ->where('credit_card_id', $card->id)
+            ->whereDate('reference_month', '2026-10-01')
+            ->sole();
+        $payment = CreditCardInvoicePayment::query()->sole();
+
+        $this->assertSame(CreditCardInvoiceStatus::Open, $invoice->status);
+        $this->assertSame('1000.00', $invoice->paid_amount);
+        $this->assertSame($invoice->id, $payment->credit_card_invoice_id);
+        $this->assertTrue($payment->is_advance);
+        $this->assertTrue($entry->fresh()->is_reconciled);
+        $this->assertTrue($payment->movement()->sole()->is_reconciled);
+        $this->assertDatabaseCount('financial_transactions', 0);
+    }
+
+    public function test_invoice_payment_line_reuses_existing_advance_without_duplicate(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create(['name' => 'Conta principal']);
+        $card = CreditCard::factory()->for($workspace)->create([
+            'name' => 'Nubank Fabiano',
+            'institution' => 'Nubank',
+            'closing_day' => 3,
+            'due_day' => 10,
+            'payment_account_id' => $account->id,
+            'invoice_payment_method' => PaymentMethod::Pix,
+        ]);
+        $entry = $this->bankEntry(
+            $workspace,
+            $account,
+            '-1000.00',
+            '2026-09-30',
+            'PAGAMENTO NUBANK FABIANO',
+        );
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('reconciliation.card-payment', $entry), [
+            'credit_card_id' => $card->id,
+            'reference_month' => '2026-10',
+        ])->assertSessionHasNoErrors();
+
+        $request->post(route('imports.card-statements.store'), [
+            'credit_card_id' => $card->id,
+            'reference_month' => '2026-10',
+            'amount_sign' => 'positive',
+            'file' => UploadedFile::fake()->createWithContent(
+                'fatura-outubro.csv',
+                "Data;Estabelecimento;Valor;Identificador\n30/09/2026;Pagamento recebido;1000,00;pag-001\n01/10/2026;Mercado;700,00;compra-001\n",
+            ),
+        ])->assertSessionHasNoErrors();
+
+        $invoice = CreditCardInvoice::query()
+            ->where('credit_card_id', $card->id)
+            ->whereDate('reference_month', '2026-10-01')
+            ->sole();
+        $payment = CreditCardInvoicePayment::query()->sole();
+        $paymentEntry = CardStatementEntry::query()
+            ->where('is_payment', true)
+            ->sole();
+
+        $this->assertSame($payment->id, $paymentEntry->credit_card_invoice_payment_id);
+        $this->assertTrue($paymentEntry->is_reconciled);
+        $this->assertSame('700.00', $invoice->statement_amount);
+        $this->assertSame('1000.00', $invoice->paid_amount);
+        $this->assertDatabaseCount('credit_card_invoice_payments', 1);
+        $this->assertDatabaseCount('account_movements', 1);
+    }
+
+    public function test_invoice_import_first_is_reused_when_bank_statement_arrives(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create(['name' => 'Conta principal']);
+        $card = CreditCard::factory()->for($workspace)->create([
+            'name' => 'Nubank Fabiano',
+            'institution' => 'Nubank',
+            'closing_day' => 3,
+            'due_day' => 10,
+            'payment_account_id' => $account->id,
+            'invoice_payment_method' => PaymentMethod::Pix,
+        ]);
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('imports.card-statements.store'), [
+            'credit_card_id' => $card->id,
+            'reference_month' => '2026-10',
+            'amount_sign' => 'positive',
+            'file' => UploadedFile::fake()->createWithContent(
+                'fatura-outubro.csv',
+                "Data;Estabelecimento;Valor;Identificador\n30/09/2026;Pagamento recebido;1000,00;pag-001\n01/10/2026;Mercado;700,00;compra-001\n",
+            ),
+        ])->assertSessionHasNoErrors();
+
+        $payment = CreditCardInvoicePayment::query()->sole();
+        $this->assertNull($payment->financial_account_id);
+        $this->assertNull($payment->movement()->first());
+
+        $entry = $this->bankEntry(
+            $workspace,
+            $account,
+            '-1000.00',
+            '2026-09-30',
+            'PAGAMENTO NUBANK FABIANO',
+        );
+        $request->post(route('reconciliation.card-payment', $entry), [
+            'credit_card_id' => $card->id,
+            'reference_month' => '2026-10',
+        ])->assertSessionHasNoErrors();
+
+        $payment->refresh();
+
+        $this->assertSame($account->id, $payment->financial_account_id);
+        $this->assertNotNull($payment->credit_card_invoice_id);
+        $this->assertTrue($payment->movement()->sole()->is_reconciled);
+        $this->assertTrue($entry->fresh()->is_reconciled);
+        $this->assertDatabaseCount('credit_card_invoice_payments', 1);
+        $this->assertDatabaseCount('account_movements', 1);
     }
 
     public function test_pending_card_payment_can_be_linked_manually_to_invoice(): void

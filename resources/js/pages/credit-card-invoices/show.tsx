@@ -175,7 +175,7 @@ export default function CreditCardInvoiceShow() {
                     </Badge>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-4">
+                <div className="grid gap-4 md:grid-cols-5">
                     <Card>
                         <CardHeader>
                             <CardTitle className="text-sm">Fatura</CardTitle>
@@ -202,6 +202,14 @@ export default function CreditCardInvoiceShow() {
                         </CardHeader>
                         <CardContent className="text-2xl font-semibold tabular-nums">
                             {currency.format(Number(invoice.paid_amount))}
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-sm">Crédito antecipado</CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-2xl font-semibold tabular-nums">
+                            {currency.format(Number(invoice.credit_balance_amount))}
                         </CardContent>
                     </Card>
                     <Card>
@@ -389,7 +397,18 @@ export default function CreditCardInvoiceShow() {
                                             </div>
                                         </div>
 
-                                        {entry.linked_installment ? (
+                                        {entry.is_payment ? (
+                                            <div className="bg-primary/5 border-primary/15 mt-4 rounded-lg border p-3">
+                                                <p className="text-sm font-medium">
+                                                    Pagamento identificado na fatura
+                                                </p>
+                                                <p className="text-muted-foreground mt-1 text-xs">
+                                                    {entry.linked_payment
+                                                        ? `${entry.linked_payment.account_name} · ${formatDate(entry.linked_payment.paid_on)} · ${entry.linked_payment.is_bank_reconciled ? 'extrato conciliado' : 'aguardando confirmação no extrato'}`
+                                                        : 'Aguardando vínculo manual por ambiguidade.'}
+                                                </p>
+                                            </div>
+                                        ) : entry.linked_installment ? (
                                             <div className="bg-positive/5 border-positive/20 mt-4 flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
                                                 <div>
                                                     <p className="text-sm font-medium">
@@ -725,9 +744,18 @@ export default function CreditCardInvoiceShow() {
                 {invoice.can_pay && (
                     <Card>
                         <CardHeader>
-                            <CardTitle>Registrar pagamento</CardTitle>
+                            <CardTitle>
+                                {invoice.status === 'open'
+                                    ? 'Registrar pagamento antecipado'
+                                    : 'Registrar pagamento'}
+                            </CardTitle>
                         </CardHeader>
                         <CardContent>
+                            {invoice.status === 'open' && (
+                                <p className="text-muted-foreground mb-4 text-sm">
+                                    O valor sai da conta agora e fica como crédito desta fatura. Não cria uma nova despesa.
+                                </p>
+                            )}
                             <Form
                                 {...CreditCardInvoiceController.pay.form(
                                     invoice.id,
@@ -864,10 +892,14 @@ export default function CreditCardInvoiceShow() {
                                                     step="0.01"
                                                     min="0.01"
                                                     max={
-                                                        invoice.outstanding_amount
+                                                        invoice.status === 'open'
+                                                            ? undefined
+                                                            : invoice.outstanding_amount
                                                     }
                                                     defaultValue={
-                                                        invoice.outstanding_amount
+                                                        invoice.outstanding_amount !== '0.00'
+                                                            ? invoice.outstanding_amount
+                                                            : undefined
                                                     }
                                                     required
                                                 />
@@ -908,7 +940,9 @@ export default function CreditCardInvoiceShow() {
                                         <div className="flex justify-end">
                                             <Button disabled={processing}>
                                                 <WalletCards />
-                                                Registrar pagamento
+                                                {invoice.status === 'open'
+                                                    ? 'Registrar antecipação'
+                                                    : 'Registrar pagamento'}
                                             </Button>
                                         </div>
                                     </>

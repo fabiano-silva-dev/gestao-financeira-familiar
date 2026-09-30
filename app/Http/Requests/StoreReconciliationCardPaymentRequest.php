@@ -32,6 +32,7 @@ class StoreReconciliationCardPaymentRequest extends FormRequest
                     ->where(fn (Builder $query): Builder => $query
                         ->where('workspace_id', $workspace->id)),
             ],
+            'reference_month' => ['nullable', 'date_format:Y-m'],
         ];
     }
 
@@ -40,6 +41,7 @@ class StoreReconciliationCardPaymentRequest extends FormRequest
     {
         return [
             'credit_card_id' => 'cartão',
+            'reference_month' => 'fatura',
         ];
     }
 }

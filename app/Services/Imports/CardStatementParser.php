@@ -203,22 +203,22 @@ final class CardStatementParser
                 );
             }
 
-            if ($this->isInvoicePayment($description)) {
-                $ignoredRows++;
+            $isPayment = $this->isInvoicePayment($description);
 
-                continue;
-            }
-
-            if ($amountSign === 'negative') {
+            if ($isPayment) {
+                $amount = ltrim($amount, '-');
+            } elseif ($amountSign === 'negative') {
                 $amount = $this->invertMoney($amount);
             }
 
-            [$installmentNumber, $totalInstallments] = $this->parseInstallment(
-                $this->optionalCell($cells, $columns['installment'] ?? null),
-                $this->optionalCell($cells, $columns['total_installments'] ?? null),
-                $description,
-                $displayRow,
-            );
+            [$installmentNumber, $totalInstallments] = $isPayment
+                ? [null, null]
+                : $this->parseInstallment(
+                    $this->optionalCell($cells, $columns['installment'] ?? null),
+                    $this->optionalCell($cells, $columns['total_installments'] ?? null),
+                    $description,
+                    $displayRow,
+                );
             $externalId = $this->optionalCell($cells, $columns['external_id'] ?? null);
             $sourceCategory = $this->optionalCell($cells, $columns['category'] ?? null);
 
@@ -231,6 +231,7 @@ final class CardStatementParser
                 externalId: $externalId !== '' ? mb_substr($externalId, 0, 255) : null,
                 rawData: $this->rawData($headers, $cells),
                 sourceCategory: $sourceCategory !== '' ? mb_substr($sourceCategory, 0, 120) : null,
+                isPayment: $isPayment,
             );
 
             if (count($rows) > self::MAX_ROWS) {
@@ -885,6 +886,10 @@ final class CardStatementParser
         $positive = 0;
 
         foreach ($rows as $row) {
+            if ($row->isPayment) {
+                continue;
+            }
+
             if (str_starts_with($row->amount, '-')) {
                 $negative++;
             } elseif ($row->amount !== '0.00') {
@@ -897,16 +902,19 @@ final class CardStatementParser
         }
 
         return array_map(
-            fn (CardStatementRow $row): CardStatementRow => new CardStatementRow(
-                purchasedOn: $row->purchasedOn,
-                description: $row->description,
-                amount: $this->invertMoney($row->amount),
-                installmentNumber: $row->installmentNumber,
-                totalInstallments: $row->totalInstallments,
-                externalId: $row->externalId,
-                rawData: $row->rawData,
-                sourceCategory: $row->sourceCategory,
-            ),
+            fn (CardStatementRow $row): CardStatementRow => $row->isPayment
+                ? $row
+                : new CardStatementRow(
+                    purchasedOn: $row->purchasedOn,
+                    description: $row->description,
+                    amount: $this->invertMoney($row->amount),
+                    installmentNumber: $row->installmentNumber,
+                    totalInstallments: $row->totalInstallments,
+                    externalId: $row->externalId,
+                    rawData: $row->rawData,
+                    sourceCategory: $row->sourceCategory,
+                    isPayment: false,
+                ),
             $rows,
         );
     }

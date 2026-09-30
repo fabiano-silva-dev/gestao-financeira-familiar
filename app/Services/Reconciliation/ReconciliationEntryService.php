@@ -448,15 +448,24 @@ final class ReconciliationEntryService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $existing = $this->invoiceService->findCompatibleUnreconciledPayment(
-                $lockedInvoice,
-                $entry->financial_account_id,
+            $existing = $this->invoiceService->findCompatibleUnreconciledCardPayment(
+                $lockedInvoice->creditCard,
                 $amount,
                 $entry->occurred_on->toDateString(),
+                $lockedInvoice,
             );
 
             if ($existing !== null) {
-                $movement = $existing->movement()->firstOrFail();
+                if ($existing->credit_card_invoice_id === null) {
+                    $this->invoiceService->linkPendingPayment($lockedInvoice, $existing);
+                }
+
+                $movement = $this->invoiceService->attachBankMovement(
+                    $existing->refresh(),
+                    $entry->financial_account_id,
+                    $entry->occurred_on->toDateString(),
+                    $amount,
+                );
 
                 $this->bankReconciliation->reconcile(
                     $workspace,
@@ -469,8 +478,13 @@ final class ReconciliationEntryService
             }
 
             $outstandingCents = $this->invoiceService->outstandingCents($lockedInvoice);
+            $allowAdvance = $lockedInvoice->status === CreditCardInvoiceStatus::Open
+                && $paymentCents > $outstandingCents;
 
-            if ($paymentCents <= 0 || $paymentCents > $outstandingCents) {
+            if (
+                $paymentCents <= 0
+                || (! $allowAdvance && $paymentCents > $outstandingCents)
+            ) {
                 throw ValidationException::withMessages([
                     'credit_card_invoice_id' => 'Não há saldo em aberto compatível com este movimento bancário.',
                 ]);
@@ -483,9 +497,12 @@ final class ReconciliationEntryService
                     'paid_on' => $entry->occurred_on->toDateString(),
                     'amount' => $amount,
                     'payment_method' => $lockedInvoice->creditCard->invoice_payment_method->value,
-                    'notes' => 'Pagamento conciliado com o movimento bancário importado.',
+                    'notes' => $allowAdvance
+                        ? 'Pagamento antecipado conciliado com o movimento bancário importado.'
+                        : 'Pagamento conciliado com o movimento bancário importado.',
                 ],
                 allowOpen: true,
+                allowAdvance: $allowAdvance,
             );
 
             $movement = $lockedInvoice->payments()
@@ -510,6 +527,7 @@ final class ReconciliationEntryService
         BankStatementEntry $entry,
         CreditCard $card,
         User $user,
+        ?string $referenceMonth = null,
     ): BankStatementEntry {
         $this->assertSameWorkspace($workspace, $entry->workspace_id);
         $this->assertSameWorkspace($workspace, $card->workspace_id);
@@ -529,18 +547,58 @@ final class ReconciliationEntryService
             $card,
             $user,
             $amount,
+            $referenceMonth,
         ): BankStatementEntry {
-            $payment = $this->invoiceService->createPendingPayment(
+            $invoice = $referenceMonth !== null
+                ? $this->invoiceService->resolveOrCreateOpenInvoice($card, $referenceMonth)
+                : null;
+            $payment = $this->invoiceService->findCompatibleUnreconciledCardPayment(
                 $card,
-                [
-                    'financial_account_id' => $entry->financial_account_id,
-                    'paid_on' => $entry->occurred_on->toDateString(),
-                    'amount' => $amount,
-                    'payment_method' => $card->invoice_payment_method->value,
-                    'notes' => 'Pagamento do cartão conciliado antes da identificação da fatura.',
-                ],
+                $amount,
+                $entry->occurred_on->toDateString(),
+                $invoice,
             );
-            $movement = $payment->movement()->firstOrFail();
+
+            if ($payment !== null && $invoice !== null && $payment->credit_card_invoice_id === null) {
+                $this->invoiceService->linkPendingPayment($invoice, $payment);
+                $payment->refresh();
+            }
+
+            if ($payment === null && $invoice !== null) {
+                $this->invoiceService->pay(
+                    $invoice,
+                    [
+                        'financial_account_id' => $entry->financial_account_id,
+                        'paid_on' => $entry->occurred_on->toDateString(),
+                        'amount' => $amount,
+                        'payment_method' => $card->invoice_payment_method->value,
+                        'notes' => 'Pagamento antecipado conciliado com o movimento bancário importado.',
+                    ],
+                    allowOpen: true,
+                    allowAdvance: true,
+                );
+                $payment = $invoice->payments()->latest('id')->firstOrFail();
+            }
+
+            if ($payment === null) {
+                $payment = $this->invoiceService->createPendingPayment(
+                    $card,
+                    [
+                        'financial_account_id' => $entry->financial_account_id,
+                        'paid_on' => $entry->occurred_on->toDateString(),
+                        'amount' => $amount,
+                        'payment_method' => $card->invoice_payment_method->value,
+                        'notes' => 'Pagamento do cartão conciliado antes da identificação da fatura.',
+                    ],
+                );
+            }
+
+            $movement = $this->invoiceService->attachBankMovement(
+                $payment->refresh(),
+                $entry->financial_account_id,
+                $entry->occurred_on->toDateString(),
+                $amount,
+            );
 
             $this->bankReconciliation->reconcile(
                 $workspace,

@@ -35,6 +35,7 @@ use Illuminate\Support\Carbon;
     'financial_import_id',
     'credit_card_id',
     'credit_card_invoice_id',
+    'credit_card_invoice_payment_id',
     'purchased_on',
     'description',
     'amount',
@@ -43,6 +44,7 @@ use Illuminate\Support\Carbon;
     'external_id',
     'deduplication_key',
     'raw_data',
+    'is_payment',
     'transaction_installment_id',
     'reconciled_by',
     'reconciled_at',
@@ -93,6 +95,12 @@ class CardStatementEntry extends Model
         return $this->belongsTo(TransactionInstallment::class);
     }
 
+    /** @return BelongsTo<CreditCardInvoicePayment, $this> */
+    public function invoicePayment(): BelongsTo
+    {
+        return $this->belongsTo(CreditCardInvoicePayment::class, 'credit_card_invoice_payment_id');
+    }
+
     /** @return BelongsTo<User, $this> */
     public function reconciler(): BelongsTo
     {
@@ -120,6 +128,7 @@ class CardStatementEntry extends Model
             'installment_number' => 'integer',
             'total_installments' => 'integer',
             'raw_data' => 'array',
+            'is_payment' => 'boolean',
             'reconciled_at' => 'datetime',
             'is_reconciled' => 'boolean',
             'is_ignored' => 'boolean',

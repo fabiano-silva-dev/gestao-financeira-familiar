@@ -6,6 +6,7 @@ use App\Enums\PaymentMethod;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
@@ -26,6 +27,7 @@ use Illuminate\Support\Carbon;
     'financial_account_id',
     'paid_on',
     'amount',
+    'is_advance',
     'payment_method',
     'notes',
 ])]
@@ -61,12 +63,19 @@ class CreditCardInvoicePayment extends Model
         return $this->hasOne(AccountMovement::class);
     }
 
+    /** @return HasMany<CardStatementEntry, $this> */
+    public function statementEntries(): HasMany
+    {
+        return $this->hasMany(CardStatementEntry::class, 'credit_card_invoice_payment_id');
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
         return [
             'paid_on' => 'date',
             'amount' => 'decimal:2',
+            'is_advance' => 'boolean',
             'payment_method' => PaymentMethod::class,
         ];
     }

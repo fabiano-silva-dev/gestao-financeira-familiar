@@ -71,7 +71,7 @@ final class FinancialImportProcessor
         }
 
         foreach ($cardEntries as $entry) {
-            if ($entry->is_reconciled || $entry->is_ignored) {
+            if ($entry->is_reconciled || $entry->is_ignored || $entry->is_payment) {
                 continue;
             }
 
@@ -498,7 +498,8 @@ final class FinancialImportProcessor
         $invoice = $entry->invoice;
 
         if (
-            ! $invoice instanceof CreditCardInvoice
+            $entry->is_payment
+            || ! $invoice instanceof CreditCardInvoice
             || $this->interpreter->moneyToCents($entry->amount) <= 0
         ) {
             return;

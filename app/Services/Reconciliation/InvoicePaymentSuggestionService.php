@@ -3,6 +3,7 @@
 namespace App\Services\Reconciliation;
 
 use App\Enums\AccountMovementType;
+use App\Enums\CreditCardInvoiceStatus;
 use App\Models\AccountMovement;
 use App\Models\BankStatementEntry;
 use App\Models\CreditCard;
@@ -43,17 +44,21 @@ final class InvoicePaymentSuggestionService
                 }
 
                 $outstandingCents = $this->invoiceService->outstandingCents($invoice);
-
-                if ($paymentCents <= 0 || $paymentCents > $outstandingCents) {
-                    return false;
-                }
-
                 $dateDistance = $this->dueDateDistance($entry, $invoice);
                 $mentionsCard = $this->mentionsCard($haystack, $invoice->creditCard);
                 $looksLikePayment = $this->interpreter->isInvoicePayment(
                     $entry->description,
                     $this->cardTokens($invoice->creditCard),
                 );
+                $canBeAdvance = $invoice->status === CreditCardInvoiceStatus::Open
+                    && ($mentionsCard || $looksLikePayment);
+
+                if (
+                    $paymentCents <= 0
+                    || ($paymentCents > $outstandingCents && ! $canBeAdvance)
+                ) {
+                    return false;
+                }
 
                 if ($paymentCents === $outstandingCents) {
                     return $dateDistance <= 45;
