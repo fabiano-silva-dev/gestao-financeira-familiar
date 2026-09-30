@@ -810,9 +810,23 @@ class FinancialRecurrenceTest extends TestCase
                 ->component('recurrences/index')
                 ->has('recurrences', 1)
                 ->has('projection', 6)
+                ->where('currentPeriod', '2026-09-01')
+                ->where('filters.period', '2026-09')
                 ->where('projection.0.month', '2026-09-01')
                 ->where('projection.0.expenses', '100.00')
                 ->where('projection.1.expenses', '100.00')
+            );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('recurrences.index', ['period' => '2026-11']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('recurrences/index')
+                ->where('currentPeriod', '2026-11-01')
+                ->where('filters.period', '2026-11')
+                ->where('projection.0.month', '2026-11-01')
+                ->where('projection.0.expenses', '100.00')
             );
 
         $recurrence = FinancialRecurrence::query()->sole();

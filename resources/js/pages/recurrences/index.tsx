@@ -6,6 +6,7 @@ import {
     Plus,
     Repeat2,
 } from 'lucide-react';
+import { MonthSelector } from '@/components/dashboard/month-selector';
 import { ListingEmpty } from '@/components/listing/listing-empty';
 import { ListingToolbar } from '@/components/listing/listing-toolbar';
 import { SortableColumn } from '@/components/listing/sortable-column';
@@ -24,6 +25,7 @@ import type {
 type Props = {
     recurrences: FinancialRecurrence[];
     projection: RecurrenceProjectionPoint[];
+    currentPeriod: string;
     filters: ListingQueryState;
     hasRecords: boolean;
     typeOptions: ListingFilterOption[];
@@ -56,6 +58,7 @@ function formatDate(value: string) {
 export default function RecurrencesIndex({
     recurrences,
     projection,
+    currentPeriod,
     filters,
     hasRecords,
     typeOptions,
@@ -89,12 +92,19 @@ export default function RecurrencesIndex({
                         </p>
                     </div>
 
-                    <Button asChild>
-                        <Link href={create()}>
-                            <Plus />
-                            Nova recorrência
-                        </Link>
-                    </Button>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <MonthSelector
+                            currentPeriod={currentPeriod}
+                            url={listUrl}
+                            query={filters}
+                        />
+                        <Button asChild>
+                            <Link href={create()}>
+                                <Plus />
+                                Nova recorrência
+                            </Link>
+                        </Button>
+                    </div>
                 </div>
 
                 <Card>

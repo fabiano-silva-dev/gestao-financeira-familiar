@@ -41,6 +41,13 @@ class FinancialRecurrenceController extends Controller
             'desc',
             ['type', 'status', 'frequency'],
         );
+        $period = $request->string('period')->toString();
+
+        if (preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $period) !== 1) {
+            $period = CarbonImmutable::today()->format('Y-m');
+        }
+
+        $currentPeriod = CarbonImmutable::parse("{$period}-01");
         $query = $workspace->financialRecurrences()
             ->with([
                 'account:id,name',
@@ -104,9 +111,13 @@ class FinancialRecurrenceController extends Controller
             'recurrences' => $recurrences,
             'projection' => $this->recurrenceService->monthlyProjection(
                 $workspace,
-                CarbonImmutable::today(),
+                $currentPeriod,
             ),
-            'filters' => $listing->toArray(),
+            'currentPeriod' => $currentPeriod->toDateString(),
+            'filters' => [
+                ...$listing->toArray(),
+                'period' => $period,
+            ],
             'hasRecords' => $workspace->financialRecurrences()->exists(),
             'typeOptions' => [
                 [
