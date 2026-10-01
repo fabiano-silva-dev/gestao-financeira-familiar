@@ -50,6 +50,17 @@ class CreditCardInvoiceController extends Controller
             ->creditCardInvoices()
             ->with('creditCard:id,name,last_four')
             ->select('credit_card_invoices.*')
+            ->withCount([
+                'statementEntries as purchase_entries_count' => fn ($entries) => $entries
+                    ->where('is_payment', false),
+                'statementEntries as reconciled_purchase_entries_count' => fn ($entries) => $entries
+                    ->where('is_payment', false)
+                    ->where('is_reconciled', true),
+                'statementEntries as ignored_purchase_entries_count' => fn ($entries) => $entries
+                    ->where('is_payment', false)
+                    ->where('is_ignored', true)
+                    ->where('is_reconciled', false),
+            ])
             ->leftJoin(
                 'credit_cards',
                 'credit_cards.id',
@@ -381,6 +392,42 @@ class CreditCardInvoiceController extends Controller
     {
         $isOverdue = $invoice->status !== CreditCardInvoiceStatus::Paid
             && $invoice->due_date->isBefore(CarbonImmutable::today());
+        $statementEntries = $invoice->relationLoaded('statementEntries')
+            ? $invoice->statementEntries->where('is_payment', false)
+            : null;
+        $purchaseEntriesCount = $invoice->getAttribute('purchase_entries_count');
+        $reconciledPurchaseEntriesCount = $invoice->getAttribute(
+            'reconciled_purchase_entries_count',
+        );
+        $ignoredPurchaseEntriesCount = $invoice->getAttribute(
+            'ignored_purchase_entries_count',
+        );
+
+        if ($purchaseEntriesCount === null) {
+            $purchaseEntriesCount = $statementEntries?->count()
+                ?? $invoice->statementEntries()->where('is_payment', false)->count();
+        }
+
+        if ($reconciledPurchaseEntriesCount === null) {
+            $reconciledPurchaseEntriesCount = $statementEntries?->where('is_reconciled', true)->count()
+                ?? $invoice->statementEntries()
+                    ->where('is_payment', false)
+                    ->where('is_reconciled', true)
+                    ->count();
+        }
+
+        if ($ignoredPurchaseEntriesCount === null) {
+            $ignoredPurchaseEntriesCount = $statementEntries
+                ? $statementEntries
+                    ->where('is_ignored', true)
+                    ->where('is_reconciled', false)
+                    ->count()
+                : $invoice->statementEntries()
+                    ->where('is_payment', false)
+                    ->where('is_ignored', true)
+                    ->where('is_reconciled', false)
+                    ->count();
+        }
 
         return [
             'id' => $invoice->id,
@@ -401,6 +448,9 @@ class CreditCardInvoiceController extends Controller
             'paid_at' => $invoice->paid_at?->toDateString(),
             'status' => $isOverdue ? 'overdue' : $invoice->status->value,
             'status_label' => $isOverdue ? 'Vencida' : $invoice->status->label(),
+            'purchase_entries_count' => (int) $purchaseEntriesCount,
+            'reconciled_purchase_entries_count' => (int) $reconciledPurchaseEntriesCount,
+            'ignored_purchase_entries_count' => (int) $ignoredPurchaseEntriesCount,
             'can_close' => $invoice->status === CreditCardInvoiceStatus::Open,
             'can_pay' => $invoice->status === CreditCardInvoiceStatus::Open
                 || (

@@ -1,5 +1,11 @@
 import { Head, Link, usePage } from '@inertiajs/react';
-import { ArrowRight, Plus, ReceiptText } from 'lucide-react';
+import {
+    ArrowRight,
+    CheckCheck,
+    ListChecks,
+    Plus,
+    ReceiptText,
+} from 'lucide-react';
 import { MonthSelector } from '@/components/dashboard/month-selector';
 import { ListingEmpty } from '@/components/listing/listing-empty';
 import { ListingToolbar } from '@/components/listing/listing-toolbar';
@@ -9,6 +15,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { sortListing } from '@/lib/listing';
 import { create, index, show } from '@/routes/credit-card-invoices';
+import { index as reconciliationIndex } from '@/routes/reconciliation';
+import { index as transactionsIndex } from '@/routes/transactions';
 import type {
     CreditCardInvoice,
     ListingFilterOption,
@@ -49,7 +57,7 @@ function statusVariant(status: CreditCardInvoice['status']) {
 }
 
 const rowGridClass =
-    'md:grid-cols-[minmax(0,1.4fr)_minmax(7rem,0.6fr)_minmax(8rem,0.7fr)_minmax(7rem,0.6fr)_minmax(8rem,0.7fr)_1.25rem]';
+    'md:grid-cols-[minmax(0,1.2fr)_minmax(6rem,0.55fr)_minmax(7rem,0.65fr)_minmax(6.5rem,0.6fr)_minmax(10rem,0.9fr)_minmax(7rem,0.65fr)_minmax(16rem,1.15fr)]';
 
 export default function CreditCardInvoicesIndex() {
     const {
@@ -200,6 +208,7 @@ export default function CreditCardInvoicesIndex() {
                                         direction={filters.direction}
                                         onSort={onSort}
                                     />
+                                    <span>Conciliação</span>
                                     <SortableColumn
                                         column="amount"
                                         label="Valor"
@@ -208,55 +217,141 @@ export default function CreditCardInvoicesIndex() {
                                         onSort={onSort}
                                         align="right"
                                     />
-                                    <span className="sr-only">Abrir</span>
+                                    <span>Ações</span>
                                 </div>
                                 <div className="divide-y">
-                                    {invoices.map((invoice) => (
-                                        <Link
-                                            key={invoice.id}
-                                            href={show(invoice.id)}
-                                            className={`hover:bg-muted/40 focus-visible:ring-ring group grid grid-cols-1 gap-2 px-4 py-3 transition-colors focus-visible:ring-2 focus-visible:outline-none md:items-center md:gap-3 ${rowGridClass}`}
-                                        >
-                                            <div className="min-w-0">
-                                                <p className="truncate font-medium">
-                                                    {invoice.credit_card_name}
-                                                </p>
-                                                <p className="text-muted-foreground mt-0.5 truncate text-xs">
-                                                    final{' '}
-                                                    {
-                                                        invoice.credit_card_last_four
-                                                    }
-                                                </p>
-                                            </div>
-                                            <p className="text-muted-foreground hidden text-sm capitalize md:block md:text-foreground">
-                                                {month.format(
-                                                    new Date(
-                                                        `${invoice.reference_month}T00:00:00Z`,
-                                                    ),
-                                                )}
-                                            </p>
-                                            <p className="text-muted-foreground hidden text-sm md:block md:text-foreground">
-                                                {formatDate(invoice.due_date)}
-                                            </p>
-                                            <Badge
-                                                variant={statusVariant(
-                                                    invoice.status,
-                                                )}
-                                                className="w-fit"
+                                    {invoices.map((invoice) => {
+                                        const pendingPurchases = Math.max(
+                                            0,
+                                            invoice.purchase_entries_count -
+                                                invoice.reconciled_purchase_entries_count -
+                                                invoice.ignored_purchase_entries_count,
+                                        );
+                                        const period =
+                                            invoice.reference_month.slice(0, 7);
+
+                                        return (
+                                            <div
+                                                key={invoice.id}
+                                                className={`hover:bg-muted/40 grid grid-cols-1 gap-2 px-4 py-3 transition-colors md:items-center md:gap-3 ${rowGridClass}`}
                                             >
-                                                {invoice.status_label}
-                                            </Badge>
-                                            <p className="text-right text-sm font-semibold tabular-nums">
-                                                {currency.format(
-                                                    Number(
-                                                        invoice.statement_amount ??
-                                                            invoice.calculated_amount,
-                                                    ),
-                                                )}
-                                            </p>
-                                            <ArrowRight className="text-muted-foreground hidden size-4 shrink-0 transition-transform group-hover:translate-x-0.5 md:block" />
-                                        </Link>
-                                    ))}
+                                                <div className="min-w-0">
+                                                    <Link
+                                                        href={show(invoice.id)}
+                                                        className="hover:text-primary focus-visible:ring-ring inline-flex min-w-0 items-center gap-1 rounded-sm focus-visible:ring-2 focus-visible:outline-none"
+                                                    >
+                                                        <span className="truncate font-medium">
+                                                            {
+                                                                invoice.credit_card_name
+                                                            }
+                                                        </span>
+                                                        <ArrowRight className="text-muted-foreground size-3.5 shrink-0" />
+                                                    </Link>
+                                                    <p className="text-muted-foreground mt-0.5 truncate text-xs">
+                                                        final{' '}
+                                                        {
+                                                            invoice.credit_card_last_four
+                                                        }
+                                                    </p>
+                                                </div>
+                                                <p className="text-muted-foreground hidden text-sm capitalize md:block md:text-foreground">
+                                                    {month.format(
+                                                        new Date(
+                                                            `${invoice.reference_month}T00:00:00Z`,
+                                                        ),
+                                                    )}
+                                                </p>
+                                                <p className="text-muted-foreground hidden text-sm md:block md:text-foreground">
+                                                    {formatDate(
+                                                        invoice.due_date,
+                                                    )}
+                                                </p>
+                                                <Badge
+                                                    variant={statusVariant(
+                                                        invoice.status,
+                                                    )}
+                                                    className="w-fit"
+                                                >
+                                                    {invoice.status_label}
+                                                </Badge>
+                                                <div className="flex min-w-0 flex-col items-start gap-1">
+                                                    {invoice.purchase_entries_count ===
+                                                    0 ? (
+                                                        <span className="text-muted-foreground text-xs">
+                                                            Sem compras
+                                                        </span>
+                                                    ) : (
+                                                        <>
+                                                            <Badge
+                                                                variant={
+                                                                    pendingPurchases >
+                                                                    0
+                                                                        ? 'outline'
+                                                                        : 'secondary'
+                                                                }
+                                                            >
+                                                                {
+                                                                    invoice.reconciled_purchase_entries_count
+                                                                }
+                                                                /
+                                                                {
+                                                                    invoice.purchase_entries_count
+                                                                }{' '}
+                                                                conciliados
+                                                            </Badge>
+                                                            <p className="text-muted-foreground text-xs">
+                                                                {pendingPurchases >
+                                                                    0 &&
+                                                                    `${pendingPurchases} pendente${pendingPurchases === 1 ? '' : 's'}`}
+                                                                {pendingPurchases >
+                                                                    0 &&
+                                                                    invoice.ignored_purchase_entries_count >
+                                                                        0 &&
+                                                                    ' · '}
+                                                                {invoice.ignored_purchase_entries_count >
+                                                                    0 &&
+                                                                    `${invoice.ignored_purchase_entries_count} ignorado${invoice.ignored_purchase_entries_count === 1 ? '' : 's'}`}
+                                                            </p>
+                                                        </>
+                                                    )}
+                                                </div>
+                                                <p className="text-right text-sm font-semibold tabular-nums">
+                                                    {currency.format(
+                                                        Number(
+                                                            invoice.statement_amount ??
+                                                                invoice.calculated_amount,
+                                                        ),
+                                                    )}
+                                                </p>
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        asChild
+                                                    >
+                                                        <Link
+                                                            href={`${reconciliationIndex.url()}?kind=invoice&invoice=${invoice.id}&period=${period}&view=all`}
+                                                        >
+                                                            <CheckCheck />
+                                                            Conciliar
+                                                        </Link>
+                                                    </Button>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        asChild
+                                                    >
+                                                        <Link
+                                                            href={`${transactionsIndex.url()}?invoice=${invoice.id}&period=${period}`}
+                                                        >
+                                                            <ListChecks />
+                                                            Lançamentos
+                                                        </Link>
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </Card>
                         )}

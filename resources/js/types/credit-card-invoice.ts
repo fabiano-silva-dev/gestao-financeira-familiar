@@ -98,6 +98,9 @@ export type CreditCardInvoice = {
     paid_at: string | null;
     status: CreditCardInvoiceStatus;
     status_label: string;
+    purchase_entries_count: number;
+    reconciled_purchase_entries_count: number;
+    ignored_purchase_entries_count: number;
     can_close: boolean;
     can_pay: boolean;
     payment_instructions?: string | null;

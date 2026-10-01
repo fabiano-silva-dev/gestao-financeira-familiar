@@ -15,6 +15,7 @@ use App\Models\BankStatementEntry;
 use App\Models\CardStatementEntry;
 use App\Models\Category;
 use App\Models\CreditCard;
+use App\Models\CreditCardInvoice;
 use App\Models\FamilyMember;
 use App\Models\FinancialAccount;
 use App\Models\FinancialImport;
@@ -53,7 +54,7 @@ class FinancialTransactionController extends Controller
             ['description', 'date', 'category', 'status', 'amount'],
             'date',
             'desc',
-            ['type', 'status', 'settlement', 'category', 'account', 'period', 'import'],
+            ['type', 'status', 'settlement', 'category', 'account', 'period', 'import', 'invoice'],
         );
         $query = $workspace
             ->financialTransactions()
@@ -172,6 +173,27 @@ class FinancialTransactionController extends Controller
                         ),
                     );
                 });
+            } else {
+                $query->whereRaw('1 = 0');
+            }
+        }
+
+        $invoiceId = $listing->intFilter('invoice');
+
+        if ($invoiceId !== null) {
+            $invoice = $workspace->creditCardInvoices()->find($invoiceId);
+
+            if ($invoice instanceof CreditCardInvoice) {
+                $query->whereHas(
+                    'installments',
+                    fn (Builder $installments) => $installments
+                        ->where('credit_card_invoice_id', $invoice->id)
+                        ->where(
+                            'status',
+                            '!=',
+                            TransactionInstallmentStatus::Cancelled->value,
+                        ),
+                );
             } else {
                 $query->whereRaw('1 = 0');
             }

@@ -834,6 +834,7 @@ class BankReconciliationController extends Controller
                 'kind',
                 'account',
                 'card',
+                'invoice',
                 'view',
                 'period',
                 'from',
@@ -865,13 +866,20 @@ class BankReconciliationController extends Controller
         $from = $this->normalizeDate($listing->filter('from'));
         $to = $this->normalizeDate($listing->filter('to'));
         $import = $listing->intFilter('import');
+        $invoice = $listing->intFilter('invoice');
         $period = $this->normalizePeriod($listing->filter('period'));
 
         if ($from !== null && $to !== null && $from > $to) {
             [$from, $to] = [$to, $from];
         }
 
-        if ($import === null && $period === null && $from === null && $to === null) {
+        if (
+            $import === null
+            && $invoice === null
+            && $period === null
+            && $from === null
+            && $to === null
+        ) {
             $period = CarbonImmutable::today()->format('Y-m');
         }
 
@@ -883,6 +891,7 @@ class BankReconciliationController extends Controller
             'kind' => in_array($kind, ['statement', 'invoice'], true) ? $kind : 'all',
             'account' => $listing->intFilter('account'),
             'card' => $listing->intFilter('card'),
+            'invoice' => $invoice,
             'import' => $import,
             'period' => $period,
             'from' => $from,
@@ -953,7 +962,7 @@ class BankReconciliationController extends Controller
      */
     private function hasScope(array $filters): bool
     {
-        if ($filters['import'] !== null) {
+        if ($filters['import'] !== null || $filters['invoice'] !== null) {
             return true;
         }
 
@@ -1043,11 +1052,20 @@ class BankReconciliationController extends Controller
 
         $query = $workspace->cardStatementEntries()
             ->when(
+                $filters['invoice'] !== null,
+                fn ($query) => $query->where(
+                    'credit_card_invoice_id',
+                    $filters['invoice'],
+                ),
+            )
+            ->when(
                 $filters['import'] !== null,
                 fn ($query) => $query->where('financial_import_id', $filters['import']),
             )
             ->when(
-                $filters['import'] === null && $filters['card'] !== null,
+                $filters['import'] === null
+                    && $filters['invoice'] === null
+                    && $filters['card'] !== null,
                 fn ($query) => $query->where('credit_card_id', $filters['card']),
             );
         $this->applyCardPeriod($query, $filters);
