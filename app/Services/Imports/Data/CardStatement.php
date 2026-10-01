@@ -13,5 +13,6 @@ final readonly class CardStatement
         public array $headers,
         public string $sourceFormat,
         public int $ignoredRows,
+        public ?string $statementAmount = null,
     ) {}
 }

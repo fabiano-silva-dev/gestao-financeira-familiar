@@ -143,7 +143,7 @@ class CardStatementReconciliationTest extends TestCase
             $workspace,
             $card,
             $invoice,
-            '89.89',
+            '89.88',
         );
         $wrongNumber = $this->installment(
             $workspace,
@@ -318,6 +318,56 @@ class CardStatementReconciliationTest extends TestCase
             $purchase->fresh()->description,
         );
         $this->assertSame($installment->id, $entry->fresh()->transaction_installment_id);
+    }
+
+    public function test_category_change_keeps_reconciled_installment_amounts(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create([
+            'closing_day' => 5,
+            'due_day' => 12,
+        ]);
+        $category = Category::factory()->for($workspace)->create([
+            'name' => 'Saúde',
+            'type' => CategoryType::Expense,
+        ]);
+        $service = app(FinancialEntryService::class);
+        $data = $this->cardPurchaseData($card);
+        $purchase = $service->create($workspace, $data);
+        $first = $purchase->installments()->where('installment_number', 1)->firstOrFail();
+        $second = $purchase->installments()->where('installment_number', 2)->firstOrFail();
+        $invoice = $second->invoice()->firstOrFail();
+        $entry = $this->statementEntry(
+            $workspace,
+            $card,
+            $invoice,
+            '99.99',
+            '2026-09-20',
+            'Compra parcelada',
+            2,
+            10,
+        );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(
+                route('credit-card-invoices.statement-entries.reconcile', [$invoice, $entry]),
+                ['transaction_installment_id' => $second->id],
+            )
+            ->assertSessionHasNoErrors();
+
+        $first->update(['amount' => '100.01']);
+        $second->update(['status' => TransactionInstallmentStatus::Paid]);
+
+        $updated = $service->update($purchase->fresh(), [
+            ...$data,
+            'category_id' => $category->id,
+        ]);
+
+        $this->assertSame($category->id, $updated->category_id);
+        $this->assertSame('100.01', $first->fresh()->amount);
+        $this->assertSame('99.99', $second->fresh()->amount);
+        $this->assertSame($second->id, $entry->fresh()->transaction_installment_id);
     }
 
     public function test_reconciliation_index_lists_invoice_entries_with_candidates(): void

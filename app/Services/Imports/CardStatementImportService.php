@@ -188,7 +188,8 @@ final class CardStatementImportService
                     }
                 }
 
-                $statementAmount = $this->centsToMoney($statementCents);
+                $statementAmount = $statement->statementAmount
+                    ?? $this->centsToMoney($statementCents);
                 $statementApplied = $invoice->status === CreditCardInvoiceStatus::Open;
 
                 if ($statementApplied) {

@@ -61,6 +61,44 @@ class MercadoPagoCardStatementParserTest extends TestCase
         $this->assertSame('2027-01-03', $table[2][0]);
     }
 
+    public function test_it_reads_total_a_pagar_and_imports_credits_as_reductions(): void
+    {
+        $lines = [
+            'Total a pagar Vence em Limite total Saque total',
+            'R$ 2.293,34 08/06/2026 R$ 2.500,00 R$ 50,00',
+            'Pagar o valor total da fatura é sempre a sua melhor opção',
+            'Pague sua fatura pelo app Mercado Pago',
+            'Vencimento: 08/06/2026',
+            'Detalhes de consumo',
+            '06/05 Crédito concedido R$ 65,00',
+            '23/05 Crédito concedido R$ 19,90',
+            '04/05 Pagamento da fatura de maio/2026 R$ 870,00',
+            'Cartão Visa [************3736]',
+            '05/05 LOJA TESTE R$ 80,00',
+        ];
+
+        $this->assertSame('2293.34', $this->parser()->statementTotalFromLines($lines));
+
+        $table = $this->parser()->parseLines($lines);
+
+        $this->assertSame('-65,00', $table[1][2]);
+        $this->assertSame('Crédito concedido', $table[1][1]);
+        $this->assertSame('-19,90', $table[2][2]);
+        $this->assertSame('80,00', $table[4][2]);
+    }
+
+    public function test_it_reads_total_a_pagar_when_the_amount_is_on_the_next_line(): void
+    {
+        $total = $this->parser()->statementTotalFromLines([
+            'Total a pagar Vence em Limite total Saque total',
+            '07/07/2026 R$ 3.800,00 R$ 50,00',
+            'R$ 3.281,00',
+            'Pagar o valor total da fatura é sempre a sua melhor opção',
+        ]);
+
+        $this->assertSame('3281.00', $total);
+    }
+
     public function test_it_rejects_unknown_pdf_layout(): void
     {
         $this->expectException(CardStatementParseException::class);

@@ -27,9 +27,9 @@ type Props = {
 
 export function EntryOriginBanner({ entry }: Props) {
     const Icon = originIcons[entry.origin] ?? FileText;
-
-    return (
-        <div className="border-primary/20 bg-primary/5 rounded-lg border p-3 text-sm">
+    const href = entry.origin_source.href;
+    const originBody = (
+        <>
             <p className="flex items-center gap-2 font-medium">
                 <Icon className="text-primary size-4" />
                 Origem: {entry.origin_label}
@@ -39,15 +39,30 @@ export function EntryOriginBanner({ entry }: Props) {
                     {entry.origin_source.summary}
                 </p>
             )}
+        </>
+    );
+
+    return (
+        <div className="border-primary/20 bg-primary/5 rounded-lg border text-sm">
+            {href !== null ? (
+                <Link
+                    href={href}
+                    className="hover:bg-primary/10 focus-visible:ring-ring block rounded-lg p-3 transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                >
+                    {originBody}
+                </Link>
+            ) : (
+                <div className="p-3">{originBody}</div>
+            )}
             {entry.financial_recurrence_id !== null &&
                 (entry.recurrence_was_removed ? (
-                    <p className="text-muted-foreground mt-1 text-xs">
+                    <p className="text-muted-foreground px-3 pb-3 text-xs">
                         A recorrência que gerou este lançamento já foi
                         excluída. A exclusão aqui vale somente para esta
                         ocorrência.
                     </p>
                 ) : (
-                    <p className="text-muted-foreground mt-1 text-xs">
+                    <p className="text-muted-foreground px-3 pb-3 text-xs">
                         Alterações aqui valem somente para esta ocorrência.
                         Para mudar as próximas,{' '}
                         <Link

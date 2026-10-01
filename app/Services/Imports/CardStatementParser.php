@@ -124,7 +124,11 @@ final class CardStatementParser
             ),
         };
 
-        return $this->normalizeTable($table, $sourceFormat, $amountSign);
+        $statementAmount = $extension === 'pdf'
+            ? $this->mercadoPagoParser->statementTotal($contents)
+            : null;
+
+        return $this->normalizeTable($table, $sourceFormat, $amountSign, $statementAmount);
     }
 
     /**
@@ -148,6 +152,7 @@ final class CardStatementParser
         array $table,
         string $sourceFormat,
         string $amountSign,
+        ?string $statementAmount = null,
     ): CardStatement {
         if ($table === []) {
             throw new CardStatementParseException('O arquivo não possui linhas para importar.');
@@ -252,6 +257,7 @@ final class CardStatementParser
             $headers,
             $sourceFormat,
             $ignoredRows,
+            $statementAmount,
         );
     }
 

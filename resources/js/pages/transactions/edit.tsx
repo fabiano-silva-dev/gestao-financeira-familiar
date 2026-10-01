@@ -27,7 +27,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { index } from '@/routes/transactions';
+import { index, mergeInstallmentPlan } from '@/routes/transactions';
 import type {
     FinancialEntry,
     FinancialEntryReferenceOption,
@@ -49,6 +49,15 @@ type Props = {
     memberOptions: FinancialEntryReferenceOption[];
     paymentMethods: PaymentMethodOption[];
     refundInvoiceOptions: Array<{ id: number; label: string }>;
+    installmentPlan: {
+        canonical_id: number;
+        is_canonical: boolean;
+        duplicates: Array<{
+            id: number;
+            description: string;
+            amount: string;
+        }>;
+    } | null;
 };
 
 export default function TransactionsEdit({
@@ -56,6 +65,7 @@ export default function TransactionsEdit({
     typeOptions,
     accountOptions,
     refundInvoiceOptions,
+    installmentPlan,
     ...formProps
 }: Props) {
     const [type, setType] = useState<FinancialEntryType>(entry.type);
@@ -74,11 +84,28 @@ export default function TransactionsEdit({
     const [refundInvoiceId, setRefundInvoiceId] = useState(
         refundInvoiceOptions[0] ? String(refundInvoiceOptions[0].id) : '',
     );
+    const [confirmMergeOpen, setConfirmMergeOpen] = useState(false);
+    const [mergingPlan, setMergingPlan] = useState(false);
+    const [mergeError, setMergeError] = useState<string | null>(null);
     const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
     const [deletingOccurrence, setDeletingOccurrence] = useState(false);
     const [deleteError, setDeleteError] = useState<string | null>(null);
     const canDeleteOccurrence =
         !isTransfer && entry.financial_recurrence_id !== null;
+
+    function mergePlan() {
+        setMergingPlan(true);
+        setMergeError(null);
+        router.post(mergeInstallmentPlan.url(entry.id), {}, {
+            onError: (errors) => {
+                setMergeError(
+                    errors.entry ??
+                        'Não foi possível unir as compras parceladas.',
+                );
+            },
+            onFinish: () => setMergingPlan(false),
+        });
+    }
 
     function deleteOccurrence() {
         setDeletingOccurrence(true);
@@ -136,6 +163,29 @@ export default function TransactionsEdit({
                     </CardHeader>
                     <CardContent className="space-y-6">
                         <EntryOriginBanner entry={entry} />
+                        {installmentPlan != null && (
+                            <div className="border-primary/20 bg-primary/5 rounded-lg border p-3 text-sm">
+                                <p className="font-medium">
+                                    Compra parcelada repetida
+                                </p>
+                                <p className="text-muted-foreground mt-1 text-xs">
+                                    Outra fatura lançou esta mesma compra de
+                                    novo e a parcela seguinte não foi
+                                    reconhecida como continuação do
+                                    parcelamento.
+                                </p>
+                                <Button
+                                    type="button"
+                                    className="mt-3"
+                                    onClick={() => {
+                                        setMergeError(null);
+                                        setConfirmMergeOpen(true);
+                                    }}
+                                >
+                                    Unir em uma só compra
+                                </Button>
+                            </div>
+                        )}
                         <EntryTypeSwitcher
                             value={type}
                             options={typeOptions}
@@ -423,6 +473,45 @@ export default function TransactionsEdit({
                     </Card>
                 )}
             </div>
+
+            <Dialog
+                open={confirmMergeOpen}
+                onOpenChange={(open) => {
+                    if (!mergingPlan) {
+                        setConfirmMergeOpen(open);
+                    }
+                }}
+            >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Unir em uma só compra?</DialogTitle>
+                        <DialogDescription>
+                            As parcelas já conciliadas ficam na compra que tem
+                            a parcela mais antiga. A compra repetida e as
+                            parcelas projetadas em dobro são removidas. O valor
+                            de cada parcela passa a ser o que veio na fatura.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <InputError message={mergeError ?? undefined} />
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={mergingPlan}
+                            onClick={() => setConfirmMergeOpen(false)}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            type="button"
+                            disabled={mergingPlan}
+                            onClick={mergePlan}
+                        >
+                            {mergingPlan ? 'Unindo...' : 'Unir compras'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <Dialog
                 open={confirmDeleteOpen}

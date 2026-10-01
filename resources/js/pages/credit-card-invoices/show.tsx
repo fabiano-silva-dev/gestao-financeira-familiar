@@ -12,7 +12,7 @@ import {
     Trash2,
     WalletCards,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import CardStatementReconciliationController from '@/actions/App/Http/Controllers/CardStatementReconciliationController';
 import CreditCardInvoiceController from '@/actions/App/Http/Controllers/CreditCardInvoiceController';
 import InputError from '@/components/input-error';
@@ -37,10 +37,11 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { index } from '@/routes/credit-card-invoices';
-import { createExpense } from '@/routes/transactions';
+import { createExpense, edit as editTransaction } from '@/routes/transactions';
 import type {
     CreditCardInvoice,
     CreditCardInvoicePayment,
+    CreditCardInvoiceStatementEntry,
     FinancialEntryReferenceOption,
     PaymentMethodOption,
 } from '@/types';
@@ -97,7 +98,40 @@ function confidenceVariant(confidence: 'high' | 'medium' | 'low') {
     return 'outline' as const;
 }
 
+function StatementLineSummary({
+    entry,
+}: {
+    entry: CreditCardInvoiceStatementEntry;
+}) {
+    return (
+        <>
+            <div className="min-w-0">
+                <p className="truncate font-medium">{entry.description}</p>
+                <p className="text-muted-foreground text-xs">
+                    Compra em {formatDate(entry.purchased_on)}
+                    {entry.installment_number && entry.total_installments
+                        ? ` · parcela ${entry.installment_number}/${entry.total_installments}`
+                        : ''}
+                    {' · '}
+                    {entry.source === 'manual'
+                        ? 'lançamento manual'
+                        : 'importada'}
+                </p>
+            </div>
+            <div className="flex items-center gap-3">
+                <Badge variant="outline">
+                    {entry.is_reconciled ? 'Conciliada' : 'Pendente'}
+                </Badge>
+                <p className="font-semibold tabular-nums">
+                    {currency.format(Number(entry.amount))}
+                </p>
+            </div>
+        </>
+    );
+}
+
 export default function CreditCardInvoiceShow() {
+    const { props, url: pageUrl } = usePage<Props>();
     const {
         invoice,
         accountOptions,
@@ -106,7 +140,10 @@ export default function CreditCardInvoiceShow() {
         defaultPaymentMethod,
         defaultPaymentDate,
         unlinkedPayments = [],
-    } = usePage<Props>().props;
+    } = props;
+    const highlightedLine = new URLSearchParams(
+        pageUrl.includes('?') ? pageUrl.slice(pageUrl.indexOf('?')) : '',
+    ).get('linha');
     const [accountId, setAccountId] = useState(
         defaultPaymentAccountId ? String(defaultPaymentAccountId) : '',
     );
@@ -136,6 +173,16 @@ export default function CreditCardInvoiceShow() {
             return selected;
         }, {}),
     );
+
+    useEffect(() => {
+        if (highlightedLine === null) {
+            return;
+        }
+
+        document
+            .getElementById(`fatura-linha-${highlightedLine}`)
+            ?.scrollIntoView({ block: 'center' });
+    }, [highlightedLine]);
 
     return (
         <>
@@ -302,9 +349,12 @@ export default function CreditCardInvoiceShow() {
                             </p>
                         ) : (
                             installments.map((installment) => (
-                                <div
+                                <Link
                                     key={installment.id}
-                                    className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+                                    href={editTransaction(
+                                        installment.transaction_id,
+                                    )}
+                                    className="hover:bg-muted/40 focus-visible:ring-ring flex flex-col gap-2 rounded-lg border p-3 transition-colors focus-visible:ring-2 focus-visible:outline-none sm:flex-row sm:items-center sm:justify-between"
                                 >
                                     <div className="min-w-0">
                                         <p className="font-medium">
@@ -336,7 +386,7 @@ export default function CreditCardInvoiceShow() {
                                             )}
                                         </p>
                                     </div>
-                                </div>
+                                </Link>
                             ))
                         )}
                     </CardContent>
@@ -361,41 +411,32 @@ export default function CreditCardInvoiceShow() {
                                 return (
                                     <div
                                         key={entry.id}
-                                        className="rounded-lg border p-4"
+                                        id={`fatura-linha-${entry.id}`}
+                                        className={`rounded-lg border p-4 ${
+                                            highlightedLine === String(entry.id)
+                                                ? 'border-primary bg-primary/5 ring-primary/30 ring-2'
+                                                : ''
+                                        }`}
                                     >
-                                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                            <div className="min-w-0">
-                                                <p className="truncate font-medium">
-                                                    {entry.description}
-                                                </p>
-                                                <p className="text-muted-foreground text-xs">
-                                                    Compra em{' '}
-                                                    {formatDate(
-                                                        entry.purchased_on,
-                                                    )}
-                                                    {entry.installment_number &&
-                                                    entry.total_installments
-                                                        ? ` · parcela ${entry.installment_number}/${entry.total_installments}`
-                                                        : ''}
-                                                    {' · '}
-                                                    {entry.source === 'manual'
-                                                        ? 'lançamento manual'
-                                                        : 'importada'}
-                                                </p>
+                                        {entry.linked_installment ? (
+                                            <Link
+                                                href={editTransaction(
+                                                    entry.linked_installment
+                                                        .transaction_id,
+                                                )}
+                                                className="hover:bg-muted/40 focus-visible:ring-ring -mx-1 flex flex-col gap-2 rounded-md px-1 py-1 transition-colors focus-visible:ring-2 focus-visible:outline-none sm:flex-row sm:items-start sm:justify-between"
+                                            >
+                                                <StatementLineSummary
+                                                    entry={entry}
+                                                />
+                                            </Link>
+                                        ) : (
+                                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                                <StatementLineSummary
+                                                    entry={entry}
+                                                />
                                             </div>
-                                            <div className="flex items-center gap-3">
-                                                <Badge variant="outline">
-                                                    {entry.is_reconciled
-                                                        ? 'Conciliada'
-                                                        : 'Pendente'}
-                                                </Badge>
-                                                <p className="font-semibold tabular-nums">
-                                                    {currency.format(
-                                                        Number(entry.amount),
-                                                    )}
-                                                </p>
-                                            </div>
-                                        </div>
+                                        )}
 
                                         {entry.is_payment ? (
                                             <div className="bg-primary/5 border-primary/15 mt-4 rounded-lg border p-3">
@@ -410,7 +451,13 @@ export default function CreditCardInvoiceShow() {
                                             </div>
                                         ) : entry.linked_installment ? (
                                             <div className="bg-positive/5 border-positive/20 mt-4 flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
-                                                <div>
+                                                <Link
+                                                    href={editTransaction(
+                                                        entry.linked_installment
+                                                            .transaction_id,
+                                                    )}
+                                                    className="hover:bg-positive/10 focus-visible:ring-ring min-w-0 flex-1 rounded-md transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                                                >
                                                     <p className="text-sm font-medium">
                                                         Vinculada a{' '}
                                                         {
@@ -452,7 +499,7 @@ export default function CreditCardInvoiceShow() {
                                                                 : ''}
                                                         </p>
                                                     )}
-                                                </div>
+                                                </Link>
                                                 <Form
                                                     {...CardStatementReconciliationController.destroy.form(
                                                         {
@@ -481,7 +528,12 @@ export default function CreditCardInvoiceShow() {
                                         ) : (
                                             <>
                                                 {suggestion && (
-                                                    <div className="bg-primary/5 border-primary/15 mt-4 rounded-lg border p-3">
+                                                    <Link
+                                                        href={editTransaction(
+                                                            suggestion.transaction_id,
+                                                        )}
+                                                        className="bg-primary/5 border-primary/15 hover:bg-primary/10 focus-visible:ring-ring mt-4 block rounded-lg border p-3 transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                                                    >
                                                         <div className="flex flex-wrap items-center gap-2">
                                                             <Sparkles className="text-primary size-4" />
                                                             <p className="text-sm font-medium">
@@ -517,7 +569,7 @@ export default function CreditCardInvoiceShow() {
                                                                 suggestion.transaction_date,
                                                             )}
                                                         </p>
-                                                    </div>
+                                                    </Link>
                                                 )}
 
                                                 {entry.candidates.length > 0 ? (

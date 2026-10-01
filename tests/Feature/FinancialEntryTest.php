@@ -505,9 +505,107 @@ class FinancialEntryTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('transactions/index')
-                ->has('entries', 1)
+                ->has('entries', 2)
                 ->where('filters.period', '2026-09')
                 ->where('entries.0.id', $inMonth->id)
+                ->where('entries.1.id', $installmentPurchase->id)
+                ->where('entries.1.period_amount', '30.00')
+                ->where('entries.1.period_note', 'Parcela 2 de 3')
+            );
+
+        $request = $this->actingAs($user)
+            ->withSession([
+                CurrentWorkspace::SESSION_KEY => $workspace->id,
+            ]);
+
+        $request->get(route('transactions.index', ['period' => '2026-08']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('transactions/index')
+                ->has('entries', 0)
+            );
+    }
+
+    public function test_month_listing_matches_category_chart_by_installment_competence(): void
+    {
+        $user = User::factory()->create();
+        $workspace = Workspace::factory()->create();
+        $user->workspaces()->attach($workspace, ['role' => 'owner']);
+        $category = Category::factory()->for($workspace)->create([
+            'name' => 'Mercado',
+        ]);
+        $card = CreditCard::factory()->for($workspace)->create([
+            'closing_day' => 5,
+            'due_day' => 12,
+        ]);
+        $service = app(FinancialEntryService::class);
+        $purchase = [
+            'type' => FinancialTransactionType::Expense->value,
+            'financial_account_id' => null,
+            'credit_card_id' => $card->id,
+            'category_id' => $category->id,
+            'family_member_id' => null,
+            'payment_method' => PaymentMethod::CreditCard->value,
+            'payee_name' => null,
+            'payment_instructions' => null,
+            'due_date' => null,
+            'status' => FinancialTransactionStatus::Confirmed->value,
+            'notes' => null,
+        ];
+
+        $service->create($workspace, [
+            ...$purchase,
+            'transaction_date' => '2026-05-13',
+            'description' => 'Compra parcelada de maio',
+            'amount' => '80.00',
+            'installment_count' => 4,
+        ]);
+        $service->create($workspace, [
+            ...$purchase,
+            'transaction_date' => '2026-08-02',
+            'description' => 'Compra à vista de agosto',
+            'amount' => '50.00',
+            'installment_count' => 1,
+        ]);
+        $service->create($workspace, [
+            ...$purchase,
+            'transaction_date' => '2026-08-10',
+            'description' => 'Compra parcelada de agosto',
+            'amount' => '90.00',
+            'installment_count' => 3,
+        ]);
+
+        $filters = [
+            'type' => 'expense',
+            'status' => 'confirmed',
+            'category' => $category->id,
+            'period' => '2026-08',
+        ];
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('dashboard', ['period' => '2026-08']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('categoryExpenses.0.name', 'Mercado')
+                ->where('categoryExpenses.0.amount', '100.00')
+            );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('transactions.index', $filters))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('entries', 3)
+                ->where('entries.0.description', 'Compra parcelada de agosto')
+                ->where('entries.0.period_amount', '30.00')
+                ->where('entries.0.period_note', 'Parcela 1 de 3')
+                ->where('entries.1.description', 'Compra à vista de agosto')
+                ->where('entries.1.period_amount', '50.00')
+                ->where('entries.1.period_note', null)
+                ->where('entries.2.description', 'Compra parcelada de maio')
+                ->where('entries.2.period_amount', '20.00')
+                ->where('entries.2.period_note', 'Parcela 4 de 4')
             );
     }
 
@@ -834,6 +932,7 @@ class FinancialEntryTest extends TestCase
                 ->where('entry.origin_label', 'Lançamento manual')
                 ->where('entry.origin_source.kind', 'manual')
                 ->where('entry.origin_source.filename', null)
+                ->where('entry.origin_source.href', null)
             );
     }
 
@@ -863,7 +962,7 @@ class FinancialEntryTest extends TestCase
             'imported_at' => now(),
         ]);
 
-        BankStatementEntry::query()->create([
+        $statement = BankStatementEntry::query()->create([
             'workspace_id' => $workspace->id,
             'financial_import_id' => $import->id,
             'financial_account_id' => $account->id,
@@ -890,6 +989,13 @@ class FinancialEntryTest extends TestCase
                 ->where(
                     'entry.origin_source.summary',
                     'Arquivo extrato-junho.ofx · Conta principal',
+                )
+                ->where(
+                    'entry.origin_source.href',
+                    route('reconciliation.index', [
+                        'account' => $account->id,
+                        'period' => $statement->occurred_on->format('Y-m'),
+                    ], false),
                 )
             );
     }
@@ -926,7 +1032,7 @@ class FinancialEntryTest extends TestCase
             'imported_at' => now(),
         ]);
 
-        CardStatementEntry::query()->create([
+        $statement = CardStatementEntry::query()->create([
             'workspace_id' => $workspace->id,
             'financial_import_id' => $import->id,
             'credit_card_id' => $card->id,
@@ -952,6 +1058,13 @@ class FinancialEntryTest extends TestCase
                 ->where(
                     'entry.origin_source.summary',
                     'Arquivo fatura-setembro.pdf · Nubank · final 1234 · Competência '.$installment->invoice->reference_month->format('m/Y'),
+                )
+                ->where(
+                    'entry.origin_source.href',
+                    route('credit-card-invoices.show', [
+                        'invoice' => $installment->credit_card_invoice_id,
+                        'linha' => $statement->id,
+                    ], false),
                 )
             );
     }

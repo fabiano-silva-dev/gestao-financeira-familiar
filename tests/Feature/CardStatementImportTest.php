@@ -618,6 +618,63 @@ class CardStatementImportTest extends TestCase
         $this->assertDatabaseCount('credit_card_invoice_payments', 2);
     }
 
+    public function test_mercado_pago_pdf_uses_operator_total_and_negative_credits(): void
+    {
+        Storage::fake('local');
+        [$user, $workspace] = $this->userAndWorkspace();
+        $card = CreditCard::factory()->for($workspace)->create([
+            'name' => 'Mercado Pago Fabiano',
+            'last_four' => '3736',
+            'closing_day' => 2,
+            'due_day' => 8,
+        ]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('imports.store'), [
+                'kind' => 'invoice',
+                'credit_card_id' => $card->id,
+                'reference_month' => '2026-06',
+                'amount_sign' => 'auto',
+                'pdf_layout' => 'mercado_pago_credit_card',
+                'file' => UploadedFile::fake()->createWithContent(
+                    'fatura-junho-mercado-pago.pdf',
+                    $this->mercadoPagoPdf([
+                        'Total a pagar Vence em Limite total Saque total',
+                        'R$ 2.293,34 08/06/2026 R$ 2.500,00 R$ 50,00',
+                        'Pagar o valor total da fatura é sempre a sua melhor opção',
+                        'Pague sua fatura pelo app Mercado Pago',
+                        'Vencimento: 08/06/2026',
+                        'Detalhes de consumo',
+                        '06/05 Credito concedido R$ 65,00',
+                        '04/05 Pagamento da fatura de maio/2026 R$ 10,00',
+                        'Cartão Visa [************3736]',
+                        '05/05 LOJA TESTE R$ 80,00',
+                    ]),
+                ),
+            ])
+            ->assertRedirect(route('imports.index'))
+            ->assertSessionHasNoErrors();
+
+        $invoice = CreditCardInvoice::query()->sole();
+
+        $this->assertSame('2293.34', $invoice->statement_amount);
+        $this->assertDatabaseHas('card_statement_entries', [
+            'description' => 'Credito concedido',
+            'amount' => '-65.00',
+            'is_payment' => false,
+        ]);
+        $this->assertDatabaseHas('card_statement_entries', [
+            'description' => 'LOJA TESTE',
+            'amount' => '80.00',
+        ]);
+        $this->assertDatabaseHas('card_statement_entries', [
+            'description' => 'Pagamento da fatura de maio/2026',
+            'is_payment' => true,
+            'amount' => '10.00',
+        ]);
+    }
+
     public function test_invalid_statement_is_recorded_as_failed(): void
     {
         Storage::fake('local');
@@ -668,9 +725,10 @@ class CardStatementImportTest extends TestCase
         return "Data da compra;Estabelecimento;Valor (R$);Parcela;Identificador\n10/09/2026;Vôlei Lidiane;89,90;2/10;linha-001\n12/09/2026;Estorno mensalidade;-10,00;;linha-002\n";
     }
 
-    private function mercadoPagoPdf(): string
+    /** @param  array<int, string>|null  $lines */
+    private function mercadoPagoPdf(?array $lines = null): string
     {
-        $lines = [
+        $lines ??= [
             'Pague sua fatura pelo app Mercado Pago',
             'Vencimento: 08/09/2026',
             'Detalhes de consumo',

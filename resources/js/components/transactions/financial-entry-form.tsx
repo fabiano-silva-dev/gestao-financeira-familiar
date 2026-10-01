@@ -857,6 +857,8 @@ export default function FinancialEntryForm({
                         <InputError message={errors.notes} />
                     </div>
 
+                    <InputError message={errors.reconciliation} />
+
                     <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                         <Button
                             variant="outline"

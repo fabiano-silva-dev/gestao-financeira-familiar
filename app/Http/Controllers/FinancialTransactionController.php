@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ExpenseRefundOrigin;
+use App\Enums\ExpenseRefundStatus;
 use App\Enums\FinancialTransactionOrigin;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
@@ -18,8 +19,10 @@ use App\Models\FamilyMember;
 use App\Models\FinancialAccount;
 use App\Models\FinancialImport;
 use App\Models\FinancialTransaction;
+use App\Models\TransactionInstallment;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Finance\CardInstallmentPlanService;
 use App\Services\Finance\ExpenseRefundService;
 use App\Services\Finance\FinancialEntryService;
 use App\Services\Finance\TransferService;
@@ -39,6 +42,7 @@ class FinancialTransactionController extends Controller
         private readonly FinancialEntryService $entryService,
         private readonly TransferService $transferService,
         private readonly ExpenseRefundService $refundService,
+        private readonly CardInstallmentPlanService $installmentPlanService,
     ) {}
 
     public function index(Request $request): Response
@@ -74,6 +78,9 @@ class FinancialTransactionController extends Controller
                 'refunds.creator:id,name',
                 'refunds.linker:id,name',
                 'recurrence' => fn ($query) => $query->withTrashed()->select('id', 'deleted_at'),
+                'installments' => fn ($query) => $query
+                    ->where('status', '!=', TransactionInstallmentStatus::Cancelled->value)
+                    ->orderBy('installment_number'),
             ])
             ->withCount('installments')
             ->select('financial_transactions.*');
@@ -171,12 +178,54 @@ class FinancialTransactionController extends Controller
         }
 
         $monthStart = $this->periodStart($listing->filter('period'));
-        $query->whereDate('financial_transactions.transaction_date', '>=', $monthStart->toDateString())
-            ->whereDate(
-                'financial_transactions.transaction_date',
-                '<=',
-                $monthStart->endOfMonth()->toDateString(),
-            );
+        $monthStartDate = $monthStart->toDateString();
+        $monthEndDate = $monthStart->endOfMonth()->toDateString();
+        $query->where(function (Builder $period) use ($monthStartDate, $monthEndDate): void {
+            $period->where(function (Builder $byInstallment) use ($monthStartDate, $monthEndDate): void {
+                $byInstallment
+                    ->where(
+                        'financial_transactions.type',
+                        FinancialTransactionType::Expense->value,
+                    )
+                    ->whereHas(
+                        'installments',
+                        function (Builder $installments) use ($monthStartDate, $monthEndDate): void {
+                            $installments
+                                ->where(
+                                    'status',
+                                    '!=',
+                                    TransactionInstallmentStatus::Cancelled->value,
+                                )
+                                ->whereBetween('competence_month', [
+                                    $monthStartDate,
+                                    $monthEndDate,
+                                ]);
+                        },
+                    );
+            })->orWhere(function (Builder $byTransactionDate) use ($monthStartDate, $monthEndDate): void {
+                $byTransactionDate
+                    ->where(function (Builder $withoutActiveInstallments): void {
+                        $withoutActiveInstallments
+                            ->where(
+                                'financial_transactions.type',
+                                '!=',
+                                FinancialTransactionType::Expense->value,
+                            )
+                            ->orWhereDoesntHave(
+                                'installments',
+                                function (Builder $installments): void {
+                                    $installments->where(
+                                        'status',
+                                        '!=',
+                                        TransactionInstallmentStatus::Cancelled->value,
+                                    );
+                                },
+                            );
+                    })
+                    ->whereDate('financial_transactions.transaction_date', '>=', $monthStartDate)
+                    ->whereDate('financial_transactions.transaction_date', '<=', $monthEndDate);
+            });
+        });
 
         $listing->applySort($query, [
             'description' => 'financial_transactions.description',
@@ -196,7 +245,15 @@ class FinancialTransactionController extends Controller
         return Inertia::render('transactions/index', [
             'entries' => $query
                 ->get()
-                ->map(fn (FinancialTransaction $entry): array => $this->entryData($entry)),
+                ->map(function (FinancialTransaction $entry) use ($monthStartDate, $monthEndDate): array {
+                    $period = $this->periodAmount($entry, $monthStartDate, $monthEndDate);
+                    $entry->unsetRelation('installments');
+
+                    return [
+                        ...$this->entryData($entry),
+                        ...$period,
+                    ];
+                }),
             'filters' => [
                 ...$listing->toArray(),
                 'period' => $monthStart->format('Y-m'),
@@ -280,6 +337,7 @@ class FinancialTransactionController extends Controller
 
         return Inertia::render('transactions/edit', [
             'entry' => $this->entryData($financialEntry),
+            'installmentPlan' => $this->installmentPlanService->summary($financialEntry),
             'typeOptions' => FinancialTransactionType::options(),
             'refundInvoiceOptions' => $financialEntry->credit_card_id === null
                 ? []
@@ -313,6 +371,22 @@ class FinancialTransactionController extends Controller
         ]);
 
         return to_route('transactions.index');
+    }
+
+    public function mergeInstallmentPlan(int $entry): RedirectResponse
+    {
+        $financialEntry = $this->findEntry($entry);
+        $canonical = $this->installmentPlanService->merge(
+            $this->workspace(),
+            $financialEntry,
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Compra parcelada unificada. As próximas faturas seguem esta compra.',
+        ]);
+
+        return to_route('transactions.edit', $canonical);
     }
 
     public function advanceStatus(int $entry): RedirectResponse
@@ -720,7 +794,8 @@ class FinancialTransactionController extends Controller
      *     filename: string|null,
      *     target_name: string|null,
      *     invoice_month: string|null,
-     *     summary: string|null
+     *     summary: string|null,
+     *     href: string|null
      * }
      */
     private function originSource(FinancialTransaction $entry): array
@@ -750,7 +825,40 @@ class FinancialTransactionController extends Controller
             'target_name' => $targetName,
             'invoice_month' => $invoiceMonthValue,
             'summary' => $summary,
+            'href' => $this->originHref($entry, $bankEntry, $cardEntry),
         ];
+    }
+
+    private function originHref(
+        FinancialTransaction $entry,
+        ?BankStatementEntry $bankEntry,
+        ?CardStatementEntry $cardEntry,
+    ): ?string {
+        if ($cardEntry?->credit_card_invoice_id !== null) {
+            return route('credit-card-invoices.show', [
+                'invoice' => $cardEntry->credit_card_invoice_id,
+                'linha' => $cardEntry->id,
+            ], false);
+        }
+
+        $invoiceId = $entry->relationLoaded('installments')
+            ? $entry->installments
+                ->first(fn ($installment) => $installment->credit_card_invoice_id !== null)
+                ?->credit_card_invoice_id
+            : null;
+
+        if ($invoiceId !== null) {
+            return route('credit-card-invoices.show', $invoiceId, false);
+        }
+
+        if ($bankEntry?->financial_account_id !== null) {
+            return route('reconciliation.index', [
+                'account' => $bankEntry->financial_account_id,
+                'period' => $bankEntry->occurred_on->format('Y-m'),
+            ], false);
+        }
+
+        return null;
     }
 
     private function relatedBankStatementEntry(FinancialTransaction $entry): ?BankStatementEntry
@@ -863,6 +971,120 @@ class FinancialTransactionController extends Controller
         }
 
         return $entry->status->label();
+    }
+
+    /**
+     * @return array{period_amount: string|null, period_note: string|null}
+     */
+    private function periodAmount(
+        FinancialTransaction $entry,
+        string $monthStart,
+        string $monthEnd,
+    ): array {
+        $empty = [
+            'period_amount' => null,
+            'period_note' => null,
+        ];
+
+        if (
+            $entry->type !== FinancialTransactionType::Expense
+            || ! $entry->relationLoaded('installments')
+        ) {
+            return $empty;
+        }
+
+        $inMonth = $entry->installments
+            ->filter(function (TransactionInstallment $installment) use ($monthStart, $monthEnd): bool {
+                $competence = $installment->competence_month->toDateString();
+
+                return $installment->status !== TransactionInstallmentStatus::Cancelled
+                    && $competence >= $monthStart
+                    && $competence <= $monthEnd;
+            })
+            ->sortBy('installment_number')
+            ->values();
+
+        if ($inMonth->isEmpty()) {
+            return $empty;
+        }
+
+        $hasRefund = $this->hasConfirmedRefund($entry);
+        $cents = 0;
+
+        foreach ($inMonth as $installment) {
+            $gross = $this->moneyToCents((string) $installment->amount);
+            $refund = 0;
+
+            if ($hasRefund) {
+                $installment->setRelation('transaction', $entry);
+                $refund = $this->refundService
+                    ->allocatedRefundCentsForInstallment($installment);
+            }
+
+            $cents += max(0, $gross - $refund);
+        }
+
+        $net = $hasRefund
+            ? $this->refundService->netAmountCents($entry)
+            : $this->moneyToCents((string) $entry->amount);
+        $note = null;
+
+        if ($cents !== $net) {
+            if ($inMonth->count() === 1) {
+                $item = $inMonth->first();
+                $note = "Parcela {$item->installment_number} de {$item->total_installments}";
+            } else {
+                $note = $inMonth->count().' parcelas neste mês';
+            }
+        }
+
+        return [
+            'period_amount' => $this->centsToMoney($cents),
+            'period_note' => $note,
+        ];
+    }
+
+    private function hasConfirmedRefund(FinancialTransaction $entry): bool
+    {
+        if (! $entry->relationLoaded('refunds')) {
+            return $entry->refunds()
+                ->where('status', ExpenseRefundStatus::Confirmed->value)
+                ->where('amount', '>', 0)
+                ->exists();
+        }
+
+        return $entry->refunds->contains(
+            fn ($refund): bool => $refund->status === ExpenseRefundStatus::Confirmed
+                && $this->moneyToCents((string) $refund->amount) > 0,
+        );
+    }
+
+    private function moneyToCents(string $amount): int
+    {
+        $amount = trim($amount);
+        $negative = str_starts_with($amount, '-');
+
+        if ($negative) {
+            $amount = substr($amount, 1);
+        }
+
+        [$whole, $decimal] = array_pad(explode('.', $amount, 2), 2, '0');
+        $decimal = str_pad(substr($decimal, 0, 2), 2, '0');
+        $cents = ((int) $whole * 100) + (int) $decimal;
+
+        return $negative ? -$cents : $cents;
+    }
+
+    private function centsToMoney(int $cents): string
+    {
+        $negative = $cents < 0;
+        $absolute = abs($cents);
+
+        return ($negative ? '-' : '').sprintf(
+            '%d.%02d',
+            intdiv($absolute, 100),
+            $absolute % 100,
+        );
     }
 
     private function periodStart(?string $period): CarbonImmutable

@@ -210,6 +210,9 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::put('lancamentos/{entry}', [FinancialTransactionController::class, 'update'])
         ->whereNumber('entry')
         ->name('transactions.update');
+    Route::post('lancamentos/{entry}/parcelamento-duplicado', [FinancialTransactionController::class, 'mergeInstallmentPlan'])
+        ->whereNumber('entry')
+        ->name('transactions.merge-installment-plan');
     Route::post('lancamentos/{entry}/reembolsos', [FinancialTransactionController::class, 'refund'])
         ->whereNumber('entry')
         ->name('transactions.refunds.store');

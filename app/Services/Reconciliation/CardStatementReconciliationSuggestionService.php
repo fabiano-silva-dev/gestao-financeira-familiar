@@ -35,18 +35,35 @@ final class CardStatementReconciliationSuggestionService
         $entryCents = $this->moneyToCents($entry->amount);
 
         return $installments
-            ->filter(fn (TransactionInstallment $installment): bool => $installment->credit_card_invoice_id === $entry->credit_card_invoice_id
-                && $this->moneyToCents($installment->amount) === $entryCents
-                && $installment->cardStatementEntry === null
-                && (
-                    $entry->installment_number === null
-                    || $entry->installment_number === $installment->installment_number
-                )
-                && (
-                    $entry->total_installments === null
-                    || $entry->total_installments === $installment->total_installments
-                ))
-            ->map(function (TransactionInstallment $installment) use ($entry): array {
+            ->filter(function (TransactionInstallment $installment) use ($entry, $entryCents): bool {
+                if (
+                    $installment->credit_card_invoice_id !== $entry->credit_card_invoice_id
+                    || $installment->cardStatementEntry !== null
+                ) {
+                    return false;
+                }
+
+                if (
+                    $entry->installment_number !== null
+                    && $entry->installment_number !== $installment->installment_number
+                ) {
+                    return false;
+                }
+
+                if (
+                    $entry->total_installments !== null
+                    && $entry->total_installments !== $installment->total_installments
+                ) {
+                    return false;
+                }
+
+                $difference = abs($this->moneyToCents($installment->amount) - $entryCents);
+                $sameParcel = $entry->installment_number !== null
+                    && $entry->installment_number === $installment->installment_number;
+
+                return $difference === 0 || ($sameParcel && $difference === 1);
+            })
+            ->map(function (TransactionInstallment $installment) use ($entry, $entryCents): array {
                 $transaction = $installment->transaction;
                 $dateDistance = (int) abs(
                     $entry->purchased_on->diffInDays($transaction->transaction_date, false),
@@ -65,7 +82,11 @@ final class CardStatementReconciliationSuggestionService
                     default => 0,
                 };
                 $installmentScore = $entry->installment_number !== null ? 20 : 0;
-                $score = min(100, 55 + $installmentScore + $dateScore + $descriptionScore);
+                $amountDifference = $entryCents - $this->moneyToCents($installment->amount);
+                $score = min(
+                    100,
+                    55 + $installmentScore + $dateScore + $descriptionScore - (abs($amountDifference) * 5),
+                );
                 [$confidence, $confidenceLabel] = match (true) {
                     $score >= 85 => ['high', 'Alta confiança'],
                     $score >= 75 => ['medium', 'Média confiança'],
@@ -88,7 +109,7 @@ final class CardStatementReconciliationSuggestionService
                     'date_distance' => $dateDistance,
                     'is_suggestion' => $score >= 75,
                     'is_recurrence_forecast' => false,
-                    'amount_difference' => '0.00',
+                    'amount_difference' => $this->centsToMoney($amountDifference),
                 ];
             })
             ->sort(function (array $left, array $right): int {

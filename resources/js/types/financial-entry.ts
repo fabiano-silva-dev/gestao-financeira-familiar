@@ -19,6 +19,7 @@ export type FinancialEntryOriginSource = {
     target_name: string | null;
     invoice_month: string | null;
     summary: string | null;
+    href: string | null;
 };
 
 export type ExpenseRefundItem = {
@@ -51,6 +52,8 @@ export type FinancialEntry = {
     refunded_amount: string;
     refundable_amount: string;
     net_amount: string;
+    period_amount?: string | null;
+    period_note?: string | null;
     refund_status: 'none' | 'partial' | 'refunded';
     refund_status_label: string;
     refunds: ExpenseRefundItem[];

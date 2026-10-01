@@ -29,6 +29,59 @@ final class MercadoPagoCardStatementParser
         return $this->parseLines($lines);
     }
 
+    public function statementTotal(string $contents): ?string
+    {
+        try {
+            $text = $this->textExtractor->extract($contents);
+        } catch (BankStatementParseException) {
+            return null;
+        }
+
+        return $this->statementTotalFromLines(preg_split('/\R/u', $text) ?: []);
+    }
+
+    /**
+     * @param  array<int, string>  $lines
+     */
+    public function statementTotalFromLines(array $lines): ?string
+    {
+        $awaitingAmount = false;
+
+        foreach ($lines as $rawLine) {
+            $line = $this->normalizeLine($rawLine);
+
+            if ($line === '') {
+                continue;
+            }
+
+            if (! $awaitingAmount) {
+                if (str_contains(mb_strtolower($line), 'total a pagar')) {
+                    $awaitingAmount = true;
+                }
+
+                continue;
+            }
+
+            if (str_starts_with(mb_strtolower($line), 'pagar o valor')) {
+                break;
+            }
+
+            if (preg_match(
+                '/^R\$\s*([\d.]+,\d{2})\s+\d{2}\/\d{2}\/\d{4}/u',
+                $line,
+                $match,
+            ) === 1) {
+                return $this->brazilianMoney($match[1]);
+            }
+
+            if (preg_match('/^R\$\s*([\d.]+,\d{2})$/u', $line, $match) === 1) {
+                return $this->brazilianMoney($match[1]);
+            }
+        }
+
+        return null;
+    }
+
     /**
      * @param  array<int, string>  $lines
      * @return array<int, array<int, string>>
@@ -109,10 +162,16 @@ final class MercadoPagoCardStatementParser
                 continue;
             }
 
+            $amount = $match[3];
+
+            if ($this->isStatementCredit($match[2]) && ! str_starts_with($amount, '-')) {
+                $amount = '-'.$amount;
+            }
+
             $rows[] = [
                 $this->expandDate($match[1], $dueDate),
                 $match[2],
-                $match[3],
+                $amount,
                 $cardLabel,
             ];
         }
@@ -131,6 +190,27 @@ final class MercadoPagoCardStatementParser
         return str_contains($normalized, 'DETALHES DE CONSUMO')
             || str_contains($normalized, 'MOVIMENTACOES NA FATURA')
             || str_contains($normalized, 'CARTAO');
+    }
+
+    private function isStatementCredit(string $description): bool
+    {
+        $normalized = mb_strtolower($this->ascii($description));
+
+        return str_contains($normalized, 'credito concedido')
+            || str_contains($normalized, 'estorno');
+    }
+
+    private function brazilianMoney(string $value): ?string
+    {
+        $negative = str_starts_with($value, '-');
+        $numeric = str_replace('.', '', ltrim($value, '-'));
+        $numeric = str_replace(',', '.', $numeric);
+
+        if (preg_match('/^\d+\.\d{2}$/', $numeric) !== 1) {
+            return null;
+        }
+
+        return ($negative ? '-' : '').$numeric;
     }
 
     private function isTrailerSection(string $line): bool

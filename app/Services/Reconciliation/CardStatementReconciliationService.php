@@ -5,6 +5,7 @@ namespace App\Services\Reconciliation;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
+use App\Enums\TransactionInstallmentStatus;
 use App\Models\CardStatementEntry;
 use App\Models\CreditCardInvoice;
 use App\Models\FinancialTransaction;
@@ -75,10 +76,27 @@ final class CardStatementReconciliationService
                 ]);
             }
 
-            if ($this->moneyToCents($lockedEntry->amount) !== $this->moneyToCents($lockedInstallment->amount)) {
-                throw ValidationException::withMessages([
-                    'transaction_installment_id' => 'O valor da parcela deve coincidir com o valor da linha importada.',
-                ]);
+            $entryCents = $this->moneyToCents($lockedEntry->amount);
+            $installmentCents = $this->moneyToCents($lockedInstallment->amount);
+
+            if ($entryCents !== $installmentCents) {
+                $sameParcel = $lockedEntry->installment_number !== null
+                    && $lockedEntry->installment_number === $lockedInstallment->installment_number;
+
+                if (! $sameParcel || abs($entryCents - $installmentCents) !== 1) {
+                    throw ValidationException::withMessages([
+                        'transaction_installment_id' => 'O valor da parcela deve coincidir com o valor da linha importada.',
+                    ]);
+                }
+
+                $lockedInstallment->update(['amount' => $lockedEntry->amount]);
+                $transaction = $lockedInstallment->transaction()->first();
+
+                if ($transaction instanceof FinancialTransaction) {
+                    $this->refreshTransactionTotal($transaction);
+                }
+
+                $this->syncInvoice($invoice);
             }
 
             if (
@@ -213,6 +231,52 @@ final class CardStatementReconciliationService
 
             return $lockedEntry->refresh();
         });
+    }
+
+    private function refreshTransactionTotal(FinancialTransaction $transaction): void
+    {
+        $cents = 0;
+
+        foreach (
+            $transaction->installments()
+                ->where('status', '!=', TransactionInstallmentStatus::Cancelled->value)
+                ->pluck('amount') as $amount
+        ) {
+            $cents += $this->moneyToCents((string) $amount);
+        }
+
+        $notes = $transaction->notes;
+        $updates = ['amount' => $this->centsToMoney($cents)];
+
+        if (is_string($notes) && str_contains($notes, 'Valor total estimado')) {
+            $replaced = preg_replace(
+                '/Valor total estimado a partir de \d+ parcelas de [\d.]+/',
+                'Valor atualizado pelas parcelas conciliadas nas faturas',
+                $notes,
+            );
+            $updates['notes'] = is_string($replaced) ? $replaced : $notes;
+        }
+
+        $transaction->update($updates);
+    }
+
+    private function syncInvoice(CreditCardInvoice $invoice): void
+    {
+        $amount = (string) $invoice->installments()
+            ->where('status', '!=', TransactionInstallmentStatus::Cancelled->value)
+            ->sum('amount');
+
+        $invoice->update([
+            'calculated_amount' => $this->centsToMoney($this->moneyToCents($amount)),
+        ]);
+    }
+
+    private function centsToMoney(int $cents): string
+    {
+        $sign = $cents < 0 ? '-' : '';
+        $cents = abs($cents);
+
+        return sprintf('%s%d.%02d', $sign, intdiv($cents, 100), $cents % 100);
     }
 
     private function moneyToCents(string $amount): int

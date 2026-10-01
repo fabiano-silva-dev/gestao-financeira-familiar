@@ -25,6 +25,7 @@ final class CardStatementMaterializationService
     public function __construct(
         private readonly CardStatementReconciliationSuggestionService $suggestionService,
         private readonly CardStatementReconciliationService $reconciliationService,
+        private readonly CardInstallmentPlanService $installmentPlanService,
         private readonly ExpenseCategoryMatcher $categoryMatcher,
         private readonly ClassificationRuleMatcher $ruleMatcher,
     ) {}
@@ -88,6 +89,16 @@ final class CardStatementMaterializationService
         }
 
         if ($this->hasRelevantCandidate($candidates)) {
+            return;
+        }
+
+        if ($this->installmentPlanService->linkExisting(
+            $workspace,
+            $card,
+            $invoice,
+            $entry,
+            $user,
+        )) {
             return;
         }
 

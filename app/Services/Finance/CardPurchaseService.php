@@ -246,19 +246,17 @@ class CardPurchaseService
         }
 
         $purchaseDate = CarbonImmutable::parse($transaction->transaction_date);
-        $amounts = $this->splitAmount((string) $transaction->amount, $installmentCount);
         $firstClosingMonth = $this->firstClosingMonth($card, $purchaseDate);
-        $expectedStatus = $transaction->status === FinancialTransactionStatus::Cancelled
-            ? TransactionInstallmentStatus::Cancelled
-            : TransactionInstallmentStatus::Open;
+        $installmentCents = 0;
 
-        foreach ($amounts as $index => $amount) {
+        for ($index = 0; $index < $installmentCount; $index++) {
             $installment = $installments->values()->get($index);
 
             if (! $installment instanceof TransactionInstallment) {
                 return false;
             }
 
+            $installmentCents += $this->moneyToCents((string) $installment->amount);
             [, $dueDate] = $this->cycleDates(
                 $card,
                 $firstClosingMonth->addMonths($index),
@@ -268,6 +266,9 @@ class CardPurchaseService
                 ->startOfMonth()
                 ->addMonths($index)
                 ->toDateString();
+            $statusMatches = $transaction->status === FinancialTransactionStatus::Cancelled
+                ? $installment->status === TransactionInstallmentStatus::Cancelled
+                : $installment->status !== TransactionInstallmentStatus::Cancelled;
 
             if (
                 $invoice === null
@@ -275,16 +276,15 @@ class CardPurchaseService
                 || $invoice->reference_month->toDateString() !== $dueDate->startOfMonth()->toDateString()
                 || $installment->installment_number !== $index + 1
                 || $installment->total_installments !== $installmentCount
-                || $installment->amount !== $amount
                 || $installment->competence_month->toDateString() !== $competenceMonth
                 || $installment->due_date->toDateString() !== $dueDate->toDateString()
-                || $installment->status !== $expectedStatus
+                || ! $statusMatches
             ) {
                 return false;
             }
         }
 
-        return true;
+        return $installmentCents === $this->moneyToCents((string) $transaction->amount);
     }
 
     private function throwReconciliationValidation(): never

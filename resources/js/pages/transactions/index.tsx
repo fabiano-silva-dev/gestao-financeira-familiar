@@ -112,6 +112,26 @@ function amountClass(entry: FinancialEntry) {
     return entry.type === 'expense' ? 'text-destructive' : 'text-positive';
 }
 
+function listedAmount(entry: FinancialEntry): string {
+    if (entry.type === 'expense' && entry.period_amount != null) {
+        return entry.period_amount;
+    }
+
+    return entry.type === 'expense' ? entry.net_amount : entry.amount;
+}
+
+function listedDescription(entry: FinancialEntry): string {
+    if (entry.period_note == null) {
+        return entry.description;
+    }
+
+    const withoutInstallment = entry.description
+        .replace(/\s*[-–—]?\s*parcela\s+\d+\s*(?:de|\/)\s*\d+\s*$/iu, '')
+        .trim();
+
+    return withoutInstallment === '' ? entry.description : withoutInstallment;
+}
+
 function amountPrefix(entry: FinancialEntry) {
     if (entry.type === 'transfer') {
         return '';
@@ -228,9 +248,7 @@ export default function TransactionsIndex() {
             return total;
         }
 
-        const amount = moneyToCents(
-            entry.type === 'expense' ? entry.net_amount : entry.amount,
-        );
+        const amount = moneyToCents(listedAmount(entry));
 
         return total + (entry.type === 'expense' ? -amount : amount);
     }, 0);
@@ -450,8 +468,19 @@ export default function TransactionsIndex() {
                                                         />
                                                     </div>
                                                     <div className="min-w-0">
-                                                        <p className="truncate font-medium">
-                                                            {entry.description}
+                                                        <p className="flex min-w-0 items-baseline gap-2">
+                                                            <span className="truncate font-medium">
+                                                                {listedDescription(
+                                                                    entry,
+                                                                )}
+                                                            </span>
+                                                            {entry.period_note && (
+                                                                <span className="text-muted-foreground shrink-0 text-xs font-normal">
+                                                                    {
+                                                                        entry.period_note
+                                                                    }
+                                                                </span>
+                                                            )}
                                                         </p>
                                                         <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
                                                             <Badge
@@ -506,11 +535,7 @@ export default function TransactionsIndex() {
                                                 >
                                                     {amountPrefix(entry)}
                                                     {currency.format(
-                                                        Number(
-                                                            entry.type === 'expense'
-                                                                ? entry.net_amount
-                                                                : entry.amount,
-                                                        ),
+                                                        Number(listedAmount(entry)),
                                                     )}
                                                     {entry.type === 'expense' &&
                                                         entry.refund_status !== 'none' && (
