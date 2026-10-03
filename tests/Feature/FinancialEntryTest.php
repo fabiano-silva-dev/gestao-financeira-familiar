@@ -1250,6 +1250,82 @@ class FinancialEntryTest extends TestCase
         );
     }
 
+
+    public function test_user_can_delete_unreconciled_entry_and_its_cash_movement(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create([
+            'opening_balance' => '1000.00',
+        ]);
+        $entry = $this->createEntry(
+            $workspace,
+            $account,
+            FinancialTransactionType::Expense,
+            ['amount' => '125.00'],
+        );
+
+        $this->assertDatabaseCount('account_movements', 1);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->delete(route('transactions.destroy', $entry), [
+                '_return_account' => $account->id,
+                '_return_period' => '2026-09',
+            ])
+            ->assertRedirect(route('accounts.show', [
+                'account' => $account->id,
+                'period' => '2026-09',
+            ]))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseMissing('financial_transactions', ['id' => $entry->id]);
+        $this->assertDatabaseCount('account_movements', 0);
+    }
+
+    public function test_reconciled_entry_must_be_unreconciled_before_deletion(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $entry = $this->createEntry(
+            $workspace,
+            $account,
+            FinancialTransactionType::Expense,
+        );
+        $entry->accountMovements()->sole()->update(['is_reconciled' => true]);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->from(route('transactions.edit', $entry))
+            ->delete(route('transactions.destroy', $entry))
+            ->assertRedirect(route('transactions.edit', $entry))
+            ->assertSessionHasErrors('entry');
+
+        $this->assertDatabaseHas('financial_transactions', ['id' => $entry->id]);
+        $this->assertDatabaseHas('account_movements', [
+            'financial_transaction_id' => $entry->id,
+        ]);
+    }
+
+    public function test_entry_from_another_workspace_cannot_be_deleted(): void
+    {
+        [$user, $currentWorkspace] = $this->userAndWorkspace();
+        $otherWorkspace = Workspace::factory()->create();
+        $user->workspaces()->attach($otherWorkspace, ['role' => 'member']);
+        $otherAccount = FinancialAccount::factory()->for($otherWorkspace)->create();
+        $otherEntry = $this->createEntry(
+            $otherWorkspace,
+            $otherAccount,
+            FinancialTransactionType::Expense,
+        );
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $currentWorkspace->id])
+            ->delete(route('transactions.destroy', $otherEntry))
+            ->assertNotFound();
+
+        $this->assertDatabaseHas('financial_transactions', ['id' => $otherEntry->id]);
+    }
+
     /**
      * @param  array<string, mixed>  $overrides
      */

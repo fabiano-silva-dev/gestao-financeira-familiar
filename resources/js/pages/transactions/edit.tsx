@@ -88,10 +88,8 @@ export default function TransactionsEdit({
     const [mergingPlan, setMergingPlan] = useState(false);
     const [mergeError, setMergeError] = useState<string | null>(null);
     const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-    const [deletingOccurrence, setDeletingOccurrence] = useState(false);
+    const [deletingEntry, setDeletingEntry] = useState(false);
     const [deleteError, setDeleteError] = useState<string | null>(null);
-    const canDeleteOccurrence =
-        !isTransfer && entry.financial_recurrence_id !== null;
 
     function mergePlan() {
         setMergingPlan(true);
@@ -107,23 +105,20 @@ export default function TransactionsEdit({
         });
     }
 
-    function deleteOccurrence() {
-        setDeletingOccurrence(true);
+    function deleteEntry() {
+        setDeletingEntry(true);
         setDeleteError(null);
-        router.delete(
-            FinancialTransactionController.destroyRecurrenceOccurrence.url(
-                entry.id,
-            ),
-            {
-                onError: (errors) => {
-                    setDeleteError(
-                        errors.entry ??
-                            'Não foi possível excluir esta ocorrência.',
-                    );
-                },
-                onFinish: () => setDeletingOccurrence(false),
+        router.delete(`/lancamentos/${entry.id}`, {
+            onError: (errors) => {
+                setDeleteError(
+                    errors.entry ??
+                        errors.reconciliation ??
+                        Object.values(errors)[0] ??
+                        'Não foi possível excluir este lançamento.',
+                );
             },
-        );
+            onFinish: () => setDeletingEntry(false),
+        });
     }
 
     return (
@@ -142,19 +137,17 @@ export default function TransactionsEdit({
                                 : 'Atualize o lançamento e seu impacto financeiro.'}
                         </p>
                     </div>
-                    {canDeleteOccurrence && (
-                        <Button
-                            type="button"
-                            variant="destructive"
-                            onClick={() => {
-                                setDeleteError(null);
-                                setConfirmDeleteOpen(true);
-                            }}
-                        >
-                            <Trash2 />
-                            Excluir esta ocorrência
-                        </Button>
-                    )}
+                    <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={() => {
+                            setDeleteError(null);
+                            setConfirmDeleteOpen(true);
+                        }}
+                    >
+                        <Trash2 />
+                        Excluir lançamento
+                    </Button>
                 </div>
 
                 <Card className="max-w-3xl">
@@ -516,21 +509,24 @@ export default function TransactionsEdit({
             <Dialog
                 open={confirmDeleteOpen}
                 onOpenChange={(open) => {
-                    if (!deletingOccurrence) {
+                    if (!deletingEntry) {
                         setConfirmDeleteOpen(open);
                     }
                 }}
             >
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>Excluir esta ocorrência?</DialogTitle>
+                        <DialogTitle>
+                            {entry.financial_recurrence_id !== null
+                                ? 'Excluir esta ocorrência?'
+                                : 'Excluir lançamento?'}
+                        </DialogTitle>
                         <DialogDescription>
-                            Somente este lançamento será removido. A recorrência
-                            continua e as outras datas permanecem. Esta data não
-                            será gerada de novo.
-                            {entry.is_settled
-                                ? ' O pagamento ou recebimento desta data também sai do saldo da conta.'
-                                : ''}
+                            {entry.financial_recurrence_id !== null
+                                ? 'Somente esta ocorrência será removida. A recorrência continua, as outras datas permanecem e esta data não será gerada novamente.'
+                                : 'O lançamento e seus movimentos de conta serão removidos. Se houver conciliação bancária, reembolso, fatura ou linha importada de cartão vinculada, a exclusão será bloqueada.'}
+                            {' '}
+                            {entry.description} · R$ {Number(entry.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.
                         </DialogDescription>
                     </DialogHeader>
                     <InputError message={deleteError ?? undefined} />
@@ -538,7 +534,7 @@ export default function TransactionsEdit({
                         <Button
                             type="button"
                             variant="outline"
-                            disabled={deletingOccurrence}
+                            disabled={deletingEntry}
                             onClick={() => setConfirmDeleteOpen(false)}
                         >
                             Cancelar
@@ -546,13 +542,11 @@ export default function TransactionsEdit({
                         <Button
                             type="button"
                             variant="destructive"
-                            disabled={deletingOccurrence}
-                            data-test="confirm-delete-recurrence-occurrence"
-                            onClick={deleteOccurrence}
+                            disabled={deletingEntry}
+                            data-test="confirm-delete-entry"
+                            onClick={deleteEntry}
                         >
-                            {deletingOccurrence
-                                ? 'Excluindo...'
-                                : 'Excluir ocorrência'}
+                            {deletingEntry ? 'Excluindo...' : 'Excluir lançamento'}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

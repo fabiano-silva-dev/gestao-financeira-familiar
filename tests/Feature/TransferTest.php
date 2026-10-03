@@ -263,6 +263,27 @@ class TransferTest extends TestCase
         );
     }
 
+
+    public function test_deleting_transfer_removes_both_account_movements(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        [$source, $destination] = $this->accountPair($workspace);
+        $transfer = $this->createTransfer($workspace, $source, $destination);
+
+        $this->assertCount(2, $transfer->accountMovements);
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->delete(route('transactions.destroy', $transfer))
+            ->assertRedirect(route('transactions.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseMissing('financial_transactions', ['id' => $transfer->id]);
+        $this->assertDatabaseMissing('account_movements', [
+            'financial_transaction_id' => $transfer->id,
+        ]);
+    }
+
     /**
      * @param  array<string, mixed>  $overrides
      */

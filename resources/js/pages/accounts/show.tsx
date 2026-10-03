@@ -11,6 +11,7 @@ import {
     Plus,
     ReceiptText,
     RotateCcw,
+    Trash2,
 } from 'lucide-react';
 import { MonthSelector } from '@/components/dashboard/month-selector';
 import { ListingEmpty } from '@/components/listing/listing-empty';
@@ -27,6 +28,14 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import {
     Select,
     SelectContent,
@@ -175,6 +184,10 @@ export default function AccountShow() {
     );
     const [quickEntryProcessing, setQuickEntryProcessing] = useState(false);
     const [quickEntryErrors, setQuickEntryErrors] = useState<Record<string, string>>({});
+    const [deleteMovement, setDeleteMovement] =
+        useState<FinancialAccountMovementOverview | null>(null);
+    const [deletingMovement, setDeletingMovement] = useState(false);
+    const [deleteMovementError, setDeleteMovementError] = useState<string | null>(null);
 
     const toggleQuickEntry = () => {
         setQuickEntryOpen((open) => {
@@ -247,6 +260,32 @@ export default function AccountShow() {
             },
             options,
         );
+    };
+
+    const deleteSelectedMovement = () => {
+        if (deleteMovement?.transaction_id == null) {
+            return;
+        }
+
+        setDeletingMovement(true);
+        setDeleteMovementError(null);
+        router.delete(`/lancamentos/${deleteMovement.transaction_id}`, {
+            data: {
+                _return_account: account.id,
+                _return_period: period,
+            },
+            preserveScroll: true,
+            onError: (errors) => {
+                setDeleteMovementError(
+                    errors.entry ??
+                        errors.reconciliation ??
+                        Object.values(errors)[0] ??
+                        'Não foi possível excluir este lançamento.',
+                );
+            },
+            onSuccess: () => setDeleteMovement(null),
+            onFinish: () => setDeletingMovement(false),
+        });
     };
 
     const togglePeriodClosure = () => {
@@ -669,7 +708,10 @@ export default function AccountShow() {
                                         const href = movementHref(movement);
                                         const isInflow =
                                             Number(movement.amount) >= 0;
-                                        const rowClassName = `hover:bg-muted/40 focus-visible:ring-ring group grid grid-cols-1 gap-2 px-4 py-3 transition-colors focus-visible:ring-2 focus-visible:outline-none md:items-center md:gap-3 ${rowGridClass}`;
+                                        const canDeleteMovement =
+                                            movement.transaction_id !== null &&
+                                            movement.transaction_type !== null;
+                                        const rowClassName = `hover:bg-muted/40 group grid grid-cols-1 gap-2 px-4 py-3 transition-colors md:items-center md:gap-3 ${rowGridClass}`;
 
                                         const content = (
                                             <>
@@ -681,9 +723,7 @@ export default function AccountShow() {
                                                 <div className="min-w-0">
                                                     <div className="flex flex-wrap items-center gap-2">
                                                         <p className="truncate font-medium">
-                                                            {
-                                                                movement.description
-                                                            }
+                                                            {movement.description}
                                                         </p>
                                                         {movement.is_reconciled && (
                                                             <Badge variant="secondary">
@@ -718,33 +758,57 @@ export default function AccountShow() {
                                                         Number(movement.amount),
                                                     )}
                                                 </p>
-                                                {href ? (
-                                                    <ArrowRight className="text-muted-foreground hidden size-4 shrink-0 transition-transform group-hover:translate-x-0.5 md:block" />
-                                                ) : (
-                                                    <span className="hidden md:block" />
-                                                )}
                                             </>
                                         );
 
-                                        if (href === null) {
-                                            return (
-                                                <div
-                                                    key={movement.id}
-                                                    className={rowClassName}
-                                                >
-                                                    {content}
-                                                </div>
-                                            );
-                                        }
-
                                         return (
-                                            <Link
+                                            <div
                                                 key={movement.id}
-                                                href={href}
                                                 className={rowClassName}
                                             >
-                                                {content}
-                                            </Link>
+                                                {href ? (
+                                                    <Link
+                                                        href={href}
+                                                        className="contents"
+                                                    >
+                                                        {content}
+                                                    </Link>
+                                                ) : (
+                                                    content
+                                                )}
+                                                <div className="flex items-center justify-end gap-1">
+                                                    {href && (
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            asChild
+                                                        >
+                                                            <Link
+                                                                href={href}
+                                                                aria-label="Abrir lançamento"
+                                                            >
+                                                                <ArrowRight className="size-4" />
+                                                            </Link>
+                                                        </Button>
+                                                    )}
+                                                    {canDeleteMovement && (
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="text-destructive hover:text-destructive"
+                                                            aria-label="Excluir lançamento"
+                                                            onClick={() => {
+                                                                setDeleteMovementError(null);
+                                                                setDeleteMovement(movement);
+                                                            }}
+                                                        >
+                                                            <Trash2 className="size-4" />
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            </div>
                                         );
                                     })}
                                 </div>
@@ -753,6 +817,63 @@ export default function AccountShow() {
                     </CardContent>
                 </Card>
             </div>
+
+            <Dialog
+                open={deleteMovement !== null}
+                onOpenChange={(open) => {
+                    if (!open && !deletingMovement) {
+                        setDeleteMovement(null);
+                        setDeleteMovementError(null);
+                    }
+                }}
+            >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Excluir lançamento?</DialogTitle>
+                        <DialogDescription>
+                            {deleteMovement?.is_reconciled
+                                ? 'Este lançamento está conciliado. Desfaça a conciliação bancária antes de excluí-lo.'
+                                : deleteMovement?.transaction_type === 'transfer'
+                                  ? 'A transferência será removida das duas contas. Esta ação não cria receita nem despesa.'
+                                  : 'O lançamento e seu efeito no saldo da conta serão removidos.'}
+                            {deleteMovement && (
+                                <>
+                                    {' '}
+                                    {deleteMovement.description} · {currency.format(
+                                        Math.abs(Number(deleteMovement.amount)),
+                                    )}.
+                                </>
+                            )}
+                        </DialogDescription>
+                    </DialogHeader>
+                    {deleteMovementError && (
+                        <p className="text-destructive text-sm">
+                            {deleteMovementError}
+                        </p>
+                    )}
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={deletingMovement}
+                            onClick={() => setDeleteMovement(null)}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="destructive"
+                            disabled={
+                                deletingMovement ||
+                                deleteMovement?.is_reconciled === true
+                            }
+                            onClick={deleteSelectedMovement}
+                        >
+                            {deletingMovement ? 'Excluindo...' : 'Excluir lançamento'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </>
     );
 }

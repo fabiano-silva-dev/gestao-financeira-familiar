@@ -206,6 +206,56 @@ class FinancialEntryService
         });
     }
 
+    public function delete(FinancialTransaction $entry): void
+    {
+        if ($entry->financial_recurrence_id !== null) {
+            throw ValidationException::withMessages([
+                'entry' => 'Este lançamento pertence a uma recorrência e deve ser excluído como ocorrência.',
+            ]);
+        }
+
+        if ($entry->refunds()->exists()) {
+            throw ValidationException::withMessages([
+                'entry' => 'Este lançamento possui reembolso vinculado. Remova o reembolso antes de excluir o lançamento.',
+            ]);
+        }
+
+        $hasReconciledMovement = $entry->accountMovements()
+            ->where(function ($query): void {
+                $query->where('is_reconciled', true)
+                    ->orWhereHas('bankStatementEntry');
+            })
+            ->exists();
+
+        if ($hasReconciledMovement) {
+            throw ValidationException::withMessages([
+                'entry' => 'Desfaça a conciliação bancária antes de excluir este lançamento.',
+            ]);
+        }
+
+        $hasCardLink = $entry->installments()
+            ->where(function ($query): void {
+                $query->whereNotNull('credit_card_invoice_id')
+                    ->orWhereHas('cardStatementEntry');
+            })
+            ->exists();
+
+        if ($hasCardLink) {
+            throw ValidationException::withMessages([
+                'entry' => 'Este lançamento está vinculado a uma fatura ou linha importada de cartão e não pode ser excluído diretamente.',
+            ]);
+        }
+
+        DB::transaction(function () use ($entry): void {
+            $entry->accountMovements()
+                ->get()
+                ->each(fn (AccountMovement $movement) => $movement->delete());
+
+            $entry->installments()->delete();
+            $entry->delete();
+        });
+    }
+
     public function deleteRecurrenceOccurrence(FinancialTransaction $entry): void
     {
         if (

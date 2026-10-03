@@ -395,6 +395,29 @@ class FinancialTransactionController extends Controller
         return to_route('transactions.index');
     }
 
+    public function destroy(Request $request, int $entry): RedirectResponse
+    {
+        $workspace = $this->workspace();
+        $financialEntry = $this->findEntry($entry);
+        $isRecurrenceOccurrence = $financialEntry->financial_recurrence_id !== null;
+
+        if ($isRecurrenceOccurrence) {
+            $this->entryService->deleteRecurrenceOccurrence($financialEntry);
+        } else {
+            $this->entryService->delete($financialEntry);
+        }
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => $isRecurrenceOccurrence
+                ? 'Ocorrência excluída com sucesso.'
+                : 'Lançamento excluído com sucesso.',
+        ]);
+
+        return $this->accountReturn($request, $workspace)
+            ?? to_route('transactions.index');
+    }
+
     public function mergeInstallmentPlan(int $entry): RedirectResponse
     {
         $financialEntry = $this->findEntry($entry);
