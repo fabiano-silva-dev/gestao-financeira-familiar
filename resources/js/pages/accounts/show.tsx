@@ -1,6 +1,8 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
+import { type FormEvent, useState } from 'react';
 import {
     ArrowDownLeft,
+    ArrowLeftRight,
     ArrowRight,
     ArrowUpRight,
     CheckCircle2,
@@ -16,6 +18,8 @@ import { ListingToolbar } from '@/components/listing/listing-toolbar';
 import { SortableColumn } from '@/components/listing/sortable-column';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
     DropdownMenu,
@@ -23,6 +27,13 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { edit, index, show } from '@/routes/accounts';
 import { show as showInvoice } from '@/routes/credit-card-invoices';
 import { sortListing } from '@/lib/listing';
@@ -47,7 +58,14 @@ type Props = {
     filters: ListingQueryState;
     hasRecords: boolean;
     typeOptions: ListingFilterOption[];
+    quickEntryAccountOptions: Array<{
+        id: number;
+        name: string;
+    }>;
 };
+
+type QuickEntryType = 'expense' | 'income' | 'transfer';
+type QuickTransferDirection = 'out' | 'in';
 
 const currency = new Intl.NumberFormat('pt-BR', {
     style: 'currency',
@@ -76,6 +94,15 @@ function formatDate(value: string) {
 
 function formatMonth(value: string) {
     return monthYear.format(new Date(`${value}T00:00:00Z`));
+}
+
+function localToday() {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
 }
 
 function movementHref(movement: FinancialAccountMovementOverview) {
@@ -122,6 +149,7 @@ export default function AccountShow() {
         filters,
         hasRecords,
         typeOptions,
+        quickEntryAccountOptions,
     } = usePage<Props>().props;
     const listUrl = show.url(account.id);
     const periodLabel = formatMonth(currentPeriod);
@@ -131,6 +159,95 @@ export default function AccountShow() {
         period,
     }).toString();
     const periodIsClosed = periodClosure !== null;
+    const today = localToday();
+    const defaultQuickEntryDate = today.slice(0, 7) === period
+        ? today
+        : currentPeriod;
+    const [quickEntryOpen, setQuickEntryOpen] = useState(false);
+    const [quickEntryType, setQuickEntryType] = useState<QuickEntryType>('expense');
+    const [quickEntryDate, setQuickEntryDate] = useState(defaultQuickEntryDate);
+    const [quickEntryDescription, setQuickEntryDescription] = useState('');
+    const [quickEntryAmount, setQuickEntryAmount] = useState('');
+    const [quickTransferDirection, setQuickTransferDirection] =
+        useState<QuickTransferDirection>('out');
+    const [quickTransferAccountId, setQuickTransferAccountId] = useState(
+        quickEntryAccountOptions[0] ? String(quickEntryAccountOptions[0].id) : '',
+    );
+    const [quickEntryProcessing, setQuickEntryProcessing] = useState(false);
+    const [quickEntryErrors, setQuickEntryErrors] = useState<Record<string, string>>({});
+
+    const toggleQuickEntry = () => {
+        setQuickEntryOpen((open) => {
+            if (!open) {
+                setQuickEntryDate(defaultQuickEntryDate);
+                setQuickEntryErrors({});
+            }
+
+            return !open;
+        });
+    };
+
+    const submitQuickEntry = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        setQuickEntryErrors({});
+
+        const common = {
+            transaction_date: quickEntryDate,
+            description: quickEntryDescription.trim(),
+            amount: quickEntryAmount,
+            status: 'confirmed',
+            _return_account: account.id,
+            _return_period: period,
+        };
+        const options = {
+            preserveScroll: true,
+            preserveState: true,
+            onStart: () => setQuickEntryProcessing(true),
+            onError: (errors: Record<string, string>) => setQuickEntryErrors(errors),
+            onSuccess: () => {
+                setQuickEntryDescription('');
+                setQuickEntryAmount('');
+            },
+            onFinish: () => setQuickEntryProcessing(false),
+        };
+
+        if (quickEntryType === 'transfer') {
+            if (quickTransferAccountId === '') {
+                setQuickEntryErrors({
+                    destination_account_id: 'Selecione a outra conta da transferência.',
+                });
+                return;
+            }
+
+            const counterpartyId = Number(quickTransferAccountId);
+
+            router.post(
+                '/transferencias',
+                {
+                    ...common,
+                    source_account_id:
+                        quickTransferDirection === 'out' ? account.id : counterpartyId,
+                    destination_account_id:
+                        quickTransferDirection === 'out' ? counterpartyId : account.id,
+                },
+                options,
+            );
+
+            return;
+        }
+
+        router.post(
+            '/lancamentos',
+            {
+                ...common,
+                type: quickEntryType,
+                financial_account_id: account.id,
+                payment_method: 'other',
+                installment_count: 1,
+            },
+            options,
+        );
+    };
 
     const togglePeriodClosure = () => {
         if (periodIsClosed) {
@@ -200,9 +317,16 @@ export default function AccountShow() {
                             url={listUrl}
                             query={filters}
                         />
+                        <Button
+                            type="button"
+                            onClick={toggleQuickEntry}
+                        >
+                            <Plus />
+                            Lançamento rápido
+                        </Button>
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button>
+                                <Button variant="outline">
                                     <Plus />
                                     Novo lançamento
                                 </Button>
@@ -337,6 +461,149 @@ export default function AccountShow() {
                     </CardHeader>
 
                     <CardContent className="space-y-4">
+                        {quickEntryOpen && (
+                            <form
+                                onSubmit={submitQuickEntry}
+                                className="bg-muted/20 space-y-4 rounded-lg border p-4"
+                            >
+                                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                    <div>
+                                        <p className="font-medium">Lançamento rápido</p>
+                                        <p className="text-muted-foreground text-xs">
+                                            Registre um movimento efetivo sem sair do extrato.
+                                        </p>
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setQuickEntryOpen(false)}
+                                    >
+                                        Fechar
+                                    </Button>
+                                </div>
+
+                                {Object.keys(quickEntryErrors).length > 0 && (
+                                    <div className="text-destructive rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
+                                        {Object.values(quickEntryErrors)[0]}
+                                    </div>
+                                )}
+
+                                <div className="grid gap-3 md:grid-cols-[10rem_12rem_minmax(14rem,1fr)_11rem_auto] md:items-end">
+                                    <div className="space-y-1.5">
+                                        <Label htmlFor="quick-entry-date">Data</Label>
+                                        <Input
+                                            id="quick-entry-date"
+                                            type="date"
+                                            value={quickEntryDate}
+                                            onChange={(event) => setQuickEntryDate(event.target.value)}
+                                            required
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label>Tipo</Label>
+                                        <Select
+                                            value={quickEntryType}
+                                            onValueChange={(value) =>
+                                                setQuickEntryType(value as QuickEntryType)
+                                            }
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="expense">Despesa</SelectItem>
+                                                <SelectItem value="income">Receita</SelectItem>
+                                                <SelectItem value="transfer">Transferência</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label htmlFor="quick-entry-description">Histórico</Label>
+                                        <Input
+                                            id="quick-entry-description"
+                                            value={quickEntryDescription}
+                                            onChange={(event) => setQuickEntryDescription(event.target.value)}
+                                            maxLength={160}
+                                            placeholder="Descrição do lançamento"
+                                            required
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label htmlFor="quick-entry-amount">Valor</Label>
+                                        <Input
+                                            id="quick-entry-amount"
+                                            type="number"
+                                            min="0.01"
+                                            step="0.01"
+                                            value={quickEntryAmount}
+                                            onChange={(event) => setQuickEntryAmount(event.target.value)}
+                                            placeholder="0,00"
+                                            required
+                                        />
+                                    </div>
+                                    <Button type="submit" disabled={quickEntryProcessing}>
+                                        {quickEntryProcessing ? 'Salvando…' : 'Confirmar'}
+                                    </Button>
+                                </div>
+
+                                {quickEntryType === 'transfer' && (
+                                    <div className="grid gap-3 border-t pt-4 md:grid-cols-[12rem_minmax(14rem,24rem)]">
+                                        <div className="space-y-1.5">
+                                            <Label>Movimento nesta conta</Label>
+                                            <Select
+                                                value={quickTransferDirection}
+                                                onValueChange={(value) =>
+                                                    setQuickTransferDirection(
+                                                        value as QuickTransferDirection,
+                                                    )
+                                                }
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="out">Saída desta conta</SelectItem>
+                                                    <SelectItem value="in">Entrada nesta conta</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label>Outra conta</Label>
+                                            {quickEntryAccountOptions.length > 0 ? (
+                                                <Select
+                                                    value={quickTransferAccountId}
+                                                    onValueChange={setQuickTransferAccountId}
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Selecione a conta" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {quickEntryAccountOptions.map((option) => (
+                                                            <SelectItem
+                                                                key={option.id}
+                                                                value={String(option.id)}
+                                                            >
+                                                                {option.name}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            ) : (
+                                                <div className="text-muted-foreground flex h-9 items-center rounded-md border px-3 text-sm">
+                                                    Nenhuma outra conta ativa disponível.
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="text-muted-foreground flex items-end gap-2 text-xs md:col-span-2">
+                                            <ArrowLeftRight className="size-4" />
+                                            A transferência movimenta as duas contas e não cria receita ou despesa.
+                                        </div>
+                                    </div>
+                                )}
+                            </form>
+                        )}
+
                         {hasRecords && (
                             <ListingToolbar
                                 url={listUrl}

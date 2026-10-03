@@ -184,6 +184,17 @@ class FinancialAccountController extends Controller
             ],
             'hasRecords' => (clone $movementQuery)->exists(),
             'typeOptions' => AccountMovementType::options(),
+            'quickEntryAccountOptions' => $workspace->financialAccounts()
+                ->where('id', '!=', $financialAccount->id)
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get(['id', 'name'])
+                ->map(fn (FinancialAccount $account): array => [
+                    'id' => $account->id,
+                    'name' => $account->name,
+                ])
+                ->values()
+                ->all(),
         ]);
     }
 
