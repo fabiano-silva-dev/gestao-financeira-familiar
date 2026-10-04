@@ -210,3 +210,30 @@ Regras:
 - recebimentos previstos do próximo mês vêm dos compromissos financeiros já conhecidos e não de estimativas artificiais;
 - totais de contas e cartões permitem detalhamento e navegação para a tela da conta/cartão correspondente;
 - todas as consultas permanecem isoladas pelo workspace ativo.
+
+
+---
+
+## 39. Rateio de Despesas
+
+Rateio é um fato financeiro próprio. Ele não deve ser classificado como receita nem confundido com reembolso.
+
+Exemplo: uma despesa de R$ 40,00 da quadra de vôlei é paga integralmente por um membro da família, mas R$ 30,00 pertencem a três colegas. O sistema deve preservar a despesa bruta de R$ 40,00, os recebimentos bancários de R$ 30,00 e apresentar R$ 10,00 como despesa líquida da família.
+
+Regras:
+
+- recebimento de rateio não é receita;
+- o pagamento original permanece com o valor integral, preservando o fluxo bancário real;
+- o rateio pertence à despesa original e possui um valor esperado de terceiros;
+- cada PIX ou outro recebimento confirmado acumula no mesmo rateio;
+- o rateio fica fechado quando os recebimentos confirmados atingem o valor esperado;
+- a despesa gerencial líquida é o valor original menos reembolsos confirmados e menos recebimentos de rateio;
+- reembolsos e rateios nunca podem reduzir a despesa líquida abaixo de zero;
+- a importação de um crédito bancário não cria rateio automaticamente: o usuário identifica explicitamente o crédito como rateio e seleciona a despesa de origem;
+- depois que um rateio existe, a conciliação pode priorizar essa mesma despesa enquanto houver valor esperado pendente;
+- em compras de cartão, o rateio reduz a despesa gerencial da família, mas não altera o valor da compra, da parcela ou da fatura;
+- todos os registros e vínculos permanecem isolados pelo workspace ativo.
+
+Fluxo inicial:
+
+**Entrada bancária → Rateio → selecionar despesa original → informar/confirmar valor esperado de terceiros → vincular recebimento → atualizar valor recebido/pendente → fechar ao atingir o esperado.**

@@ -180,6 +180,12 @@ class FinancialEntryService
             ]);
         }
 
+        if ($entry->expenseShare()->exists()) {
+            throw ValidationException::withMessages([
+                'settlement' => 'Remova os recebimentos do rateio antes de reabrir este lançamento.',
+            ]);
+        }
+
         return DB::transaction(function () use ($entry): FinancialTransaction {
             $workspace = $entry->workspace()->firstOrFail();
             $entry->load('accountMovements.bankStatementEntry');
@@ -217,6 +223,12 @@ class FinancialEntryService
         if ($entry->refunds()->exists()) {
             throw ValidationException::withMessages([
                 'entry' => 'Este lançamento possui reembolso vinculado. Remova o reembolso antes de excluir o lançamento.',
+            ]);
+        }
+
+        if ($entry->expenseShare()->exists()) {
+            throw ValidationException::withMessages([
+                'entry' => 'Este lançamento possui rateio vinculado. Desfaça os recebimentos do rateio antes de excluir o lançamento.',
             ]);
         }
 
@@ -270,6 +282,12 @@ class FinancialEntryService
         if ($entry->refunds()->exists()) {
             throw ValidationException::withMessages([
                 'entry' => 'Remova os reembolsos antes de excluir este lançamento.',
+            ]);
+        }
+
+        if ($entry->expenseShare()->exists()) {
+            throw ValidationException::withMessages([
+                'entry' => 'Desfaça os recebimentos do rateio antes de excluir este lançamento.',
             ]);
         }
 

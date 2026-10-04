@@ -115,6 +115,22 @@ class Workspace extends Model
     }
 
     /**
+     * @return HasMany<ExpenseShare, $this>
+     */
+    public function expenseShares(): HasMany
+    {
+        return $this->hasMany(ExpenseShare::class);
+    }
+
+    /**
+     * @return HasMany<ExpenseShareReceipt, $this>
+     */
+    public function expenseShareReceipts(): HasMany
+    {
+        return $this->hasMany(ExpenseShareReceipt::class);
+    }
+
+    /**
      * @return HasMany<AccountMovement, $this>
      */
     public function accountMovements(): HasMany

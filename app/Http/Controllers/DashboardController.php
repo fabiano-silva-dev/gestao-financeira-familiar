@@ -14,6 +14,7 @@ use App\Models\TransactionInstallment;
 use App\Models\Workspace;
 use App\Services\Finance\CreditCardInvoiceService;
 use App\Services\Finance\ExpenseRefundService;
+use App\Services\Finance\ExpenseShareService;
 use App\Services\Finance\FinancialRecurrenceService;
 use App\Support\Workspaces\CurrentWorkspace;
 use Carbon\CarbonImmutable;
@@ -27,6 +28,7 @@ class DashboardController extends Controller
         private readonly CurrentWorkspace $currentWorkspace,
         private readonly FinancialRecurrenceService $recurrenceService,
         private readonly ExpenseRefundService $refundService,
+        private readonly ExpenseShareService $shareService,
         private readonly CreditCardInvoiceService $invoiceService,
     ) {}
 
@@ -53,7 +55,8 @@ class DashboardController extends Controller
                             ),
                         )
                         ->orWhereNotNull('credit_card_invoice_payment_id')
-                        ->orWhereNotNull('expense_refund_id');
+                        ->orWhereNotNull('expense_refund_id')
+                        ->orWhereNotNull('expense_share_receipt_id');
                 })
                 ->pluck('amount')
                 ->all(),
@@ -138,7 +141,10 @@ class DashboardController extends Controller
                 $start->toDateString(),
                 $end->toDateString(),
             ])
-            ->with('refunds:id,financial_transaction_id,amount,status')
+            ->with([
+                'refunds:id,financial_transaction_id,amount,status',
+                'expenseShare.receipts:id,expense_share_id,amount',
+            ])
             ->get(['id', 'type', 'amount'])
             ->each(function (FinancialTransaction $entry) use (&$totals): void {
                 if ($entry->type === FinancialTransactionType::Income) {
@@ -146,7 +152,7 @@ class DashboardController extends Controller
                 }
 
                 if ($entry->type === FinancialTransactionType::Expense) {
-                    $totals['expense'] += $this->refundService->netAmountCents($entry);
+                    $totals['expense'] += $this->shareService->netAmountCents($entry);
                 }
             });
 
@@ -166,8 +172,10 @@ class DashboardController extends Controller
                 $gross = $this->moneyToCents((string) $installment->amount);
                 $refund = $this->refundService
                     ->allocatedRefundCentsForInstallment($installment);
+                $shared = $this->shareService
+                    ->allocatedReceiptCentsForInstallment($installment);
 
-                return max(0, $gross - $refund);
+                return max(0, $gross - $refund - $shared);
             });
 
         return $totals;
@@ -194,7 +202,10 @@ class DashboardController extends Controller
                 FinancialTransactionType::Income->value,
                 FinancialTransactionType::Expense->value,
             ])
-            ->with('refunds:id,financial_transaction_id,amount,status')
+            ->with([
+                'refunds:id,financial_transaction_id,amount,status',
+                'expenseShare.receipts:id,expense_share_id,amount',
+            ])
             ->get(['id', 'type', 'amount'])
             ->each(function (FinancialTransaction $entry) use (&$totals): void {
                 if ($entry->type === FinancialTransactionType::Income) {
@@ -202,7 +213,7 @@ class DashboardController extends Controller
                 }
 
                 if ($entry->type === FinancialTransactionType::Expense) {
-                    $totals['expense'] += $this->refundService->netAmountCents($entry);
+                    $totals['expense'] += $this->shareService->netAmountCents($entry);
                 }
             });
 
@@ -269,6 +280,7 @@ class DashboardController extends Controller
                 AccountMovementType::ExpensePayment->value,
                 AccountMovementType::CardPayment->value,
                 AccountMovementType::Refund->value,
+                AccountMovementType::SharedExpenseReceipt->value,
             ])
             ->whereBetween('occurred_on', [
                 $firstMonth->toDateString(),
@@ -287,7 +299,10 @@ class DashboardController extends Controller
 
                 if ($movement->type === AccountMovementType::IncomeReceipt) {
                     $month['income'] += $amount;
-                } elseif ($movement->type === AccountMovementType::Refund) {
+                } elseif (in_array($movement->type, [
+                    AccountMovementType::Refund,
+                    AccountMovementType::SharedExpenseReceipt,
+                ], true)) {
                     $month['expenses'] -= $amount;
                 } else {
                     $month['expenses'] += $amount;
@@ -421,13 +436,14 @@ class DashboardController extends Controller
                 'category:id,name,parent_id',
                 'category.parent:id,name',
                 'refunds:id,financial_transaction_id,amount,status',
+                'expenseShare.receipts:id,expense_share_id,amount',
             ])
             ->get(['id', 'category_id', 'amount'])
             ->each(function (FinancialTransaction $entry) use (&$totals): void {
                 $this->addCategoryTotal(
                     $totals,
                     $entry->category,
-                    $this->money($this->refundService->netAmountCents($entry)),
+                    $this->money($this->shareService->netAmountCents($entry)),
                 );
             });
 
@@ -444,6 +460,7 @@ class DashboardController extends Controller
             ->with([
                 'transaction:id,category_id,amount',
                 'transaction.refunds:id,financial_transaction_id,amount,status',
+                'transaction.expenseShare.receipts:id,expense_share_id,amount',
                 'transaction.category:id,name,parent_id',
                 'transaction.category.parent:id,name',
             ])
@@ -452,10 +469,12 @@ class DashboardController extends Controller
                 $gross = $this->moneyToCents((string) $installment->amount);
                 $refund = $this->refundService
                     ->allocatedRefundCentsForInstallment($installment);
+                $shared = $this->shareService
+                    ->allocatedReceiptCentsForInstallment($installment);
                 $this->addCategoryTotal(
                     $totals,
                     $installment->transaction->category,
-                    $this->money(max(0, $gross - $refund)),
+                    $this->money(max(0, $gross - $refund - $shared)),
                 );
             });
 

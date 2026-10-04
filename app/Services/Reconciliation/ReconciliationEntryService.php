@@ -26,6 +26,7 @@ use App\Services\Finance\ClassificationRuleMatcher;
 use App\Services\Finance\CreditCardInvoiceService;
 use App\Services\Finance\ExpenseCategoryMatcher;
 use App\Services\Finance\ExpenseRefundService;
+use App\Services\Finance\ExpenseShareService;
 use App\Services\Finance\FinancialEntryService;
 use App\Services\Finance\TransferService;
 use Carbon\CarbonImmutable;
@@ -47,6 +48,7 @@ final class ReconciliationEntryService
         private readonly ClassificationRuleMatcher $ruleMatcher,
         private readonly CreditCardInvoiceService $invoiceService,
         private readonly ExpenseRefundService $refundService,
+        private readonly ExpenseShareService $shareService,
     ) {}
 
     public function ignoreBankEntry(
@@ -410,6 +412,56 @@ final class ReconciliationEntryService
                 $user,
             );
             $this->refundService->markLinked($refund, $user);
+
+            return $entry->refresh();
+        });
+    }
+
+    public function reconcileExpenseShare(
+        Workspace $workspace,
+        BankStatementEntry $entry,
+        FinancialTransaction $transaction,
+        User $user,
+        ?string $expectedSharedAmount,
+    ): BankStatementEntry {
+        $this->assertSameWorkspace($workspace, $entry->workspace_id);
+        $this->assertSameWorkspace($workspace, $transaction->workspace_id);
+        $this->guardPendingBankEntry($entry);
+
+        if ($this->interpreter->moneyToCents($entry->amount) <= 0) {
+            throw ValidationException::withMessages([
+                'financial_transaction_id' => 'Somente entradas bancárias podem ser vinculadas como rateio.',
+            ]);
+        }
+
+        return DB::transaction(function () use (
+            $workspace,
+            $entry,
+            $transaction,
+            $user,
+            $expectedSharedAmount,
+        ): BankStatementEntry {
+            $receipt = $this->shareService->registerReceipt(
+                $workspace,
+                $transaction,
+                $user,
+                [
+                    'amount' => $this->interpreter->unsignedAmount($entry->amount),
+                    'received_on' => $entry->occurred_on->toDateString(),
+                    'financial_account_id' => $entry->financial_account_id,
+                    'expected_shared_amount' => $expectedSharedAmount,
+                    'notes' => 'Rateio conciliado com movimento bancário importado: '.$entry->description,
+                ],
+            );
+            $movement = $receipt->movement()->firstOrFail();
+
+            $this->bankReconciliation->reconcile(
+                $workspace,
+                $entry->refresh(),
+                $movement,
+                $user,
+            );
+            $this->shareService->markLinked($receipt, $user);
 
             return $entry->refresh();
         });

@@ -80,6 +80,13 @@ final class BankReconciliationService
                 ]);
             }
 
+            if ($lockedMovement->expense_share_receipt_id !== null) {
+                $lockedMovement->shareReceipt()->update([
+                    'linked_by' => $user->id,
+                    'linked_at' => now(),
+                ]);
+            }
+
             return $lockedEntry->refresh();
         });
     }
@@ -139,6 +146,13 @@ final class BankReconciliationService
                 ]);
             }
 
+            if ($movement->expense_share_receipt_id !== null) {
+                $movement->shareReceipt()->update([
+                    'linked_by' => null,
+                    'linked_at' => null,
+                ]);
+            }
+
             return $lockedEntry->refresh();
         });
     }
@@ -151,6 +165,7 @@ final class BankReconciliationService
             ! $transaction instanceof FinancialTransaction
             || $transaction->origin !== FinancialTransactionOrigin::Ofx
             || $transaction->refunds()->exists()
+            || $transaction->expenseShare()->exists()
             || $transaction->installments()->exists()
         ) {
             return false;

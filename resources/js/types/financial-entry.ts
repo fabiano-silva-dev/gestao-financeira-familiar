@@ -40,6 +40,20 @@ export type ExpenseRefundItem = {
     movement_import_filename: string | null;
 };
 
+export type ExpenseShareReceiptItem = {
+    id: number;
+    amount: string;
+    received_on: string;
+    account_name: string | null;
+    origin_label: string;
+    notes: string | null;
+    created_by_name: string | null;
+    linked_by_name: string | null;
+    linked_at: string | null;
+    movement_reconciled: boolean;
+    movement_import_filename: string | null;
+};
+
 export type FinancialEntry = {
     id: number;
     type: FinancialEntryType;
@@ -57,6 +71,12 @@ export type FinancialEntry = {
     refund_status: 'none' | 'partial' | 'refunded';
     refund_status_label: string;
     refunds: ExpenseRefundItem[];
+    expected_shared_amount: string;
+    shared_amount: string;
+    remaining_shared_amount: string;
+    share_status: 'none' | 'open' | 'partial' | 'closed';
+    share_status_label: string;
+    expense_share_receipts: ExpenseShareReceiptItem[];
     financial_account_id: number | null;
     financial_account_name: string | null;
     credit_card_id: number | null;

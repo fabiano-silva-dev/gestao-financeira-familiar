@@ -378,6 +378,12 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     )
         ->whereNumber('entry')
         ->name('reconciliation.refund-candidates');
+    Route::get(
+        'conciliacao/{entry}/candidatos-rateio',
+        [BankReconciliationController::class, 'expenseShareCandidates'],
+    )
+        ->whereNumber('entry')
+        ->name('reconciliation.expense-share-candidates');
     Route::post('conciliacao/{entry}', [BankReconciliationController::class, 'store'])
         ->whereNumber('entry')
         ->name('reconciliation.store');
@@ -411,6 +417,9 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::post('conciliacao/{entry}/reembolso', [BankReconciliationController::class, 'refund'])
         ->whereNumber('entry')
         ->name('reconciliation.refund');
+    Route::post('conciliacao/{entry}/rateio', [BankReconciliationController::class, 'expenseShare'])
+        ->whereNumber('entry')
+        ->name('reconciliation.expense-share');
 
     Route::post('workspaces/{workspace}/activate', ActiveWorkspaceController::class)
         ->name('workspaces.activate');

@@ -26,6 +26,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Finance\CardInstallmentPlanService;
 use App\Services\Finance\ExpenseRefundService;
+use App\Services\Finance\ExpenseShareService;
 use App\Services\Finance\FinancialEntryService;
 use App\Services\Finance\TransferService;
 use App\Services\Imports\CardStatementImportService;
@@ -46,6 +47,7 @@ class FinancialTransactionController extends Controller
         private readonly FinancialEntryService $entryService,
         private readonly TransferService $transferService,
         private readonly ExpenseRefundService $refundService,
+        private readonly ExpenseShareService $shareService,
         private readonly CardInstallmentPlanService $installmentPlanService,
         private readonly OfxImportService $ofxImports,
         private readonly CardStatementImportService $cardImports,
@@ -83,6 +85,10 @@ class FinancialTransactionController extends Controller
                 'refunds.movement.bankStatementEntry.financialImport:id,source_filename',
                 'refunds.creator:id,name',
                 'refunds.linker:id,name',
+                'expenseShare.receipts.account:id,name',
+                'expenseShare.receipts.movement.bankStatementEntry.financialImport:id,source_filename',
+                'expenseShare.receipts.creator:id,name',
+                'expenseShare.receipts.linker:id,name',
                 'recurrence' => fn ($query) => $query->withTrashed()->select('id', 'deleted_at'),
                 'installments' => fn ($query) => $query
                     ->where('status', '!=', TransactionInstallmentStatus::Cancelled->value)
@@ -643,6 +649,10 @@ class FinancialTransactionController extends Controller
                 'refunds.movement.bankStatementEntry.financialImport',
                 'refunds.creator:id,name',
                 'refunds.linker:id,name',
+                'expenseShare.receipts.account:id,name',
+                'expenseShare.receipts.movement.bankStatementEntry.financialImport',
+                'expenseShare.receipts.creator:id,name',
+                'expenseShare.receipts.linker:id,name',
                 'recurrence' => fn ($query) => $query->withTrashed()->select('id', 'deleted_at'),
             ])
             ->withCount('installments')
@@ -749,6 +759,16 @@ class FinancialTransactionController extends Controller
                 'refund_status' => 'none',
                 'refund_status_label' => 'Sem reembolso',
             ];
+        $shareSummary = $entry->type === FinancialTransactionType::Expense
+            ? $this->shareService->summary($entry)
+            : [
+                'expected_shared_amount' => '0.00',
+                'shared_amount' => '0.00',
+                'remaining_shared_amount' => '0.00',
+                'share_status' => 'none',
+                'share_status_label' => 'Sem rateio',
+                'net_amount' => $entry->amount,
+            ];
         $installmentCount = max(
             1,
             (int) ($entry->getAttribute('installments_count') ?? 0),
@@ -790,6 +810,7 @@ class FinancialTransactionController extends Controller
             'description' => $entry->description,
             'amount' => $displayAmount,
             ...$refundSummary,
+            ...$shareSummary,
             'refunds' => $entry->relationLoaded('refunds')
                 ? $entry->refunds
                     ->sortByDesc('refunded_on')
@@ -815,6 +836,27 @@ class FinancialTransactionController extends Controller
                         'linked_at' => $refund->linked_at?->toIso8601String(),
                         'movement_reconciled' => (bool) $refund->movement?->is_reconciled,
                         'movement_import_filename' => $refund->movement?->bankStatementEntry?->financialImport?->source_filename,
+                    ])
+                    ->all()
+                : [],
+            'expense_share_receipts' => $entry->expenseShare?->relationLoaded('receipts')
+                ? $entry->expenseShare->receipts
+                    ->sortByDesc('received_on')
+                    ->values()
+                    ->map(fn ($receipt): array => [
+                        'id' => $receipt->id,
+                        'amount' => $receipt->amount,
+                        'received_on' => $receipt->received_on->toDateString(),
+                        'account_name' => $receipt->account?->name,
+                        'origin_label' => $receipt->origin === 'bank_reconciliation'
+                            ? 'Conciliação bancária'
+                            : 'Manual',
+                        'notes' => $receipt->notes,
+                        'created_by_name' => $receipt->creator?->name,
+                        'linked_by_name' => $receipt->linker?->name,
+                        'linked_at' => $receipt->linked_at?->toIso8601String(),
+                        'movement_reconciled' => (bool) $receipt->movement?->is_reconciled,
+                        'movement_import_filename' => $receipt->movement?->bankStatementEntry?->financialImport?->source_filename,
                     ])
                     ->all()
                 : [],
@@ -1080,19 +1122,19 @@ class FinancialTransactionController extends Controller
         foreach ($inMonth as $installment) {
             $gross = $this->moneyToCents((string) $installment->amount);
             $refund = 0;
+            $installment->setRelation('transaction', $entry);
 
             if ($hasRefund) {
-                $installment->setRelation('transaction', $entry);
                 $refund = $this->refundService
                     ->allocatedRefundCentsForInstallment($installment);
             }
 
-            $cents += max(0, $gross - $refund);
+            $shared = $this->shareService
+                ->allocatedReceiptCentsForInstallment($installment);
+            $cents += max(0, $gross - $refund - $shared);
         }
 
-        $net = $hasRefund
-            ? $this->refundService->netAmountCents($entry)
-            : $this->moneyToCents((string) $entry->amount);
+        $net = $this->shareService->netAmountCents($entry);
         $note = null;
 
         if ($cents !== $net) {

@@ -97,6 +97,7 @@ function candidatePlace(candidate: ReconciliationCandidate): string | null {
         Boolean(
             candidate.is_invoice_payment ||
             candidate.is_refund ||
+            (candidate.is_expense_share && Boolean(candidate.card_name)) ||
             candidate.type === 'installment',
         ),
         candidate.card_name,
@@ -212,6 +213,12 @@ export function ReconciliationRow({
         ReconciliationCandidate[]
     >([]);
     const [refundLoading, setRefundLoading] = useState(false);
+    const [shareMode, setShareMode] = useState(false);
+    const [shareCandidates, setShareCandidates] = useState<
+        ReconciliationCandidate[]
+    >([]);
+    const [shareLoading, setShareLoading] = useState(false);
+    const [expectedSharedAmount, setExpectedSharedAmount] = useState('');
     const [recurrenceCandidates, setRecurrenceCandidates] = useState<
         ReconciliationRecurringCandidate[]
     >([]);
@@ -221,9 +228,11 @@ export function ReconciliationRow({
     const [recurrenceTransactionId, setRecurrenceTransactionId] = useState<
         number | null
     >(null);
-    const availableCandidates = refundMode
-        ? refundCandidates
-        : entry.candidates;
+    const availableCandidates = shareMode
+        ? shareCandidates
+        : refundMode
+          ? refundCandidates
+          : entry.candidates;
     const selectedCandidate = availableCandidates.find(
         (candidate) => candidateMatchId(entry, candidate) === matchId,
     );
@@ -310,6 +319,10 @@ export function ReconciliationRow({
         setRefundMode(false);
         setRefundCandidates([]);
         setRefundLoading(false);
+        setShareMode(false);
+        setShareCandidates([]);
+        setShareLoading(false);
+        setExpectedSharedAmount('');
         setRecurrenceCandidates([]);
         setRecurrenceLoading(false);
         setRecurrenceLoaded(false);
@@ -438,6 +451,7 @@ export function ReconciliationRow({
             : null;
     const showInvoicePayment =
         !refundMode &&
+        !shareMode &&
         (
             manualCardPaymentMode
             || (
@@ -446,6 +460,10 @@ export function ReconciliationRow({
             )
         );
     const showRefund = refundMode || Boolean(selectedCandidate?.is_refund);
+    const showExpenseShare =
+        shareMode ||
+        Boolean(selectedCandidate?.is_expense_share) ||
+        (entry.is_expense_share && !suggestionDismissed);
     const canRegisterPendingCardPayment =
         entry.kind === 'statement' &&
         showInvoicePayment &&
@@ -461,6 +479,7 @@ export function ReconciliationRow({
         isTransferLine ||
         showInvoicePayment ||
         showRefund ||
+        showExpenseShare ||
         (entry.is_likely_refund && !suggestionDismissed);
     const selectedHasCategory =
         leafCategoryId !== null ||
@@ -471,8 +490,10 @@ export function ReconciliationRow({
         (suggestionDismissed || !entry.has_suggestion) &&
         (suggestionDismissed || !entry.is_likely_invoice_payment) &&
         (suggestionDismissed || !entry.is_likely_refund) &&
+        (suggestionDismissed || !entry.is_expense_share) &&
         !entry.is_likely_transfer &&
         !showRefund &&
+        !showExpenseShare &&
         !manualCardPaymentMode &&
         (!needsCategory || leafCategoryId !== null);
 
@@ -588,7 +609,12 @@ export function ReconciliationRow({
     };
 
     const askCreateRuleIfNeeded = () => {
-        if (entry.matcher_rule_id != null || showInvoicePayment) {
+        if (
+            entry.matcher_rule_id != null ||
+            showInvoicePayment ||
+            showRefund ||
+            showExpenseShare
+        ) {
             return;
         }
 
@@ -606,6 +632,13 @@ export function ReconciliationRow({
         !entry.is_invoice_payment &&
         ((entry.kind === 'statement' && Number(entry.amount) > 0) ||
             (entry.kind === 'invoice' && Number(entry.amount) < 0));
+
+    const canMarkExpenseShare =
+        !entry.is_reconciled &&
+        !entry.is_ignored &&
+        !entry.is_invoice_payment &&
+        entry.kind === 'statement' &&
+        Number(entry.amount) > 0;
 
     const beginRefund = async () => {
         if (!canMarkRefund) {
@@ -691,9 +724,93 @@ export function ReconciliationRow({
         );
     };
 
+    const beginExpenseShare = async () => {
+        if (!canMarkExpenseShare) {
+            return;
+        }
+
+        setActionError(null);
+        setShareMode(true);
+        setRefundMode(false);
+        setShareCandidates([]);
+        setShareLoading(true);
+        setExpectedSharedAmount('');
+        setSuggestionDismissed(true);
+        setMatchId('');
+
+        try {
+            const response = await fetch(
+                `/conciliacao/${entry.id}/candidatos-rateio`,
+                {
+                    headers: {
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                },
+            );
+
+            if (!response.ok) {
+                throw new Error('Falha ao buscar despesas para o rateio.');
+            }
+
+            const payload = (await response.json()) as {
+                candidates?: ReconciliationCandidate[];
+            };
+            const candidates = Array.isArray(payload.candidates)
+                ? payload.candidates
+                : [];
+
+            setShareCandidates(candidates);
+
+            const nextSuggestion = candidates.find(
+                (candidate) => candidate.is_suggestion,
+            );
+
+            if (nextSuggestion) {
+                setMatchId(candidateMatchId(entry, nextSuggestion));
+                setExpectedSharedAmount(
+                    nextSuggestion.expected_shared_amount ?? '',
+                );
+            }
+
+            if (candidates.length === 0) {
+                toast.info(
+                    'Nenhuma despesa compatível foi encontrada para este rateio.',
+                );
+            }
+        } catch {
+            setShareMode(false);
+            setShareCandidates([]);
+            setSuggestionDismissed(false);
+            setActionError(
+                'Não foi possível buscar as despesas candidatas ao rateio.',
+            );
+        } finally {
+            setShareLoading(false);
+        }
+    };
+
+    const cancelExpenseShare = () => {
+        const nextSuggestion = entry.candidates.find(
+            (candidate) => candidate.is_suggestion,
+        );
+
+        setShareMode(false);
+        setShareCandidates([]);
+        setShareLoading(false);
+        setExpectedSharedAmount('');
+        setSuggestionDismissed(false);
+        setActionError(null);
+        setMatchId(
+            nextSuggestion ? candidateMatchId(entry, nextSuggestion) : '',
+        );
+    };
+
     const reportActionError = (errors: Record<string, string | string[]>) => {
         const value =
             errors.entry ??
+            errors.expected_shared_amount ??
+            errors.financial_transaction_id ??
             errors.counterpart_account_id ??
             errors.category_id ??
             Object.values(errors)[0];
@@ -806,6 +923,24 @@ export function ReconciliationRow({
         }
 
         if (entry.kind === 'statement') {
+            if (matchId.startsWith('share:')) {
+                router.post(
+                    listingUrl(`/conciliacao/${entry.id}/rateio`, query),
+                    {
+                        financial_transaction_id: Number(
+                            matchId.slice('share:'.length),
+                        ),
+                        expected_shared_amount:
+                            expectedSharedAmount === ''
+                                ? null
+                                : expectedSharedAmount,
+                    },
+                    options,
+                );
+
+                return;
+            }
+
             if (matchId.startsWith('refund:')) {
                 router.post(
                     listingUrl(
@@ -1128,6 +1263,9 @@ export function ReconciliationRow({
                     {(entry.is_likely_refund || refundMode) && (
                         <Badge variant="outline">Reembolso</Badge>
                     )}
+                    {(entry.is_expense_share || shareMode) && (
+                        <Badge variant="outline">Rateio</Badge>
+                    )}
                     {entry.is_likely_transfer && (
                         <Badge variant="outline">Transferência</Badge>
                     )}
@@ -1149,6 +1287,7 @@ export function ReconciliationRow({
                     entry.matcher_category_name ||
                     entry.suggestion_description) &&
                     !refundMode &&
+                    !shareMode &&
                     !suggestionDismissed &&
                     !entry.is_reconciled && (
                         <p className="text-primary flex items-start gap-1.5 text-xs">
@@ -1159,6 +1298,7 @@ export function ReconciliationRow({
                                     : 'Sugestão de classificação'}
                                 {!showInvoicePayment &&
                                 !showRefund &&
+                                !showExpenseShare &&
                                 entry.matcher_category_name
                                     ? ` · ${entry.matcher_category_name}${
                                           entry.matcher_subcategory_name
@@ -1261,7 +1401,7 @@ export function ReconciliationRow({
                 ) : null}
 
                 <div className="grid min-w-0 gap-2 sm:grid-cols-2">
-                    {!showInvoicePayment && !showRefund && (
+                    {!showInvoicePayment && !showRefund && !showExpenseShare && (
                         <label className="grid min-w-0 gap-1">
                             <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
                                 Empresa
@@ -1288,13 +1428,16 @@ export function ReconciliationRow({
                                 ? 'Fatura correspondente'
                                 : refundMode
                                   ? 'Despesa original do reembolso'
-                                  : 'Lançamento relacionado'}
+                                  : shareMode
+                                    ? 'Despesa original do rateio'
+                                    : 'Lançamento relacionado'}
                         </span>
                         <Select
                             value={matchId === '' ? 'none' : matchId}
                             disabled={
                                 entry.is_reconciled ||
                                 refundLoading ||
+                                shareLoading ||
                                 availableCandidates.length === 0
                             }
                             onValueChange={(value) => {
@@ -1307,12 +1450,23 @@ export function ReconciliationRow({
                                 matchOverrideEntryId.current = entry.id;
                                 setSuggestionDismissed(false);
                                 setMatchId(value);
+
+                                if (shareMode) {
+                                    const candidate = availableCandidates.find(
+                                        (item) =>
+                                            candidateMatchId(entry, item) ===
+                                            value,
+                                    );
+                                    setExpectedSharedAmount(
+                                        candidate?.expected_shared_amount ?? '',
+                                    );
+                                }
                             }}
                         >
                             <SelectTrigger size="sm" className="w-full">
                                 <SelectValue
                                     placeholder={
-                                        refundLoading
+                                        refundLoading || shareLoading
                                             ? 'Buscando despesas...'
                                             : 'Selecionar'
                                     }
@@ -1348,7 +1502,50 @@ export function ReconciliationRow({
                             </SelectContent>
                         </Select>
                     </label>
-                    {entry.kind === 'statement' &&
+                    {shareMode && (
+                        <div className="grid min-w-0 gap-1 sm:col-span-2">
+                            <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
+                                Valor total esperado de terceiros
+                            </span>
+                            <Input
+                                type="number"
+                                min="0.01"
+                                step="0.01"
+                                value={expectedSharedAmount}
+                                onChange={(event) =>
+                                    setExpectedSharedAmount(event.target.value)
+                                }
+                                placeholder="Ex.: 30,00"
+                                className="h-8"
+                            />
+                            {selectedCandidate?.expected_shared_amount && (
+                                <p className="text-muted-foreground text-xs">
+                                    Já recebido{' '}
+                                    {currency.format(
+                                        Number(
+                                            selectedCandidate.received_shared_amount ??
+                                                0,
+                                        ),
+                                    )}
+                                    {' de '}
+                                    {currency.format(
+                                        Number(
+                                            selectedCandidate.expected_shared_amount,
+                                        ),
+                                    )}
+                                    {selectedCandidate.remaining_shared_amount
+                                        ? ` · falta ${currency.format(
+                                              Number(
+                                                  selectedCandidate.remaining_shared_amount,
+                                              ),
+                                          )}`
+                                        : ''}
+                                </p>
+                            )}
+                        </div>
+                    )}
+                    {!shareMode &&
+                        entry.kind === 'statement' &&
                         !entry.is_reconciled &&
                         !entry.is_ignored && (
                             <div className="grid min-w-0 gap-1 sm:col-span-2">
@@ -1499,7 +1696,10 @@ export function ReconciliationRow({
                         </label>
                         </>
                     )}
-                    {!showInvoicePayment && !showRefund && !isTransferLine && (
+                    {!showInvoicePayment &&
+                        !showRefund &&
+                        !showExpenseShare &&
+                        !isTransferLine && (
                         <>
                             <label className="grid min-w-0 gap-1">
                                 <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
@@ -1644,7 +1844,8 @@ export function ReconciliationRow({
                         </Button>
                         {entry.matcher_rule_id == null &&
                             !entry.is_likely_invoice_payment &&
-                            !entry.is_likely_refund && (
+                            !entry.is_likely_refund &&
+                            !entry.is_expense_share && (
                             <Button variant="outline" size="sm" asChild>
                                 <Link
                                     href={`${createRule.url()}${classificationRuleCreateQuery(rulePrompt())}`}
@@ -1662,12 +1863,19 @@ export function ReconciliationRow({
                             size="sm"
                             disabled={
                                 matchId === '' ||
+                                (showExpenseShare &&
+                                    expectedSharedAmount === '' &&
+                                    !selectedCandidate?.expected_shared_amount) ||
                                 (needsCategory && !selectedHasCategory)
                             }
                             onClick={conciliate}
                         >
                             <Link2 />
-                            {showRefund ? 'Vincular como reembolso' : 'Conciliar'}
+                            {showRefund
+                                ? 'Vincular como reembolso'
+                                : showExpenseShare
+                                  ? 'Vincular como rateio'
+                                  : 'Conciliar'}
                         </Button>
                         {!showTransfer &&
                             !(
@@ -1685,15 +1893,30 @@ export function ReconciliationRow({
                                 Criar lançamento
                             </Button>
                         )}
-                        {canMarkRefund && !showRefund && (
+                        {canMarkRefund &&
+                            !showRefund &&
+                            !showExpenseShare && (
                                 <Button
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    disabled={refundLoading}
+                                    disabled={refundLoading || shareLoading}
                                     onClick={beginRefund}
                                 >
                                     Reembolso
+                                </Button>
+                            )}
+                        {canMarkExpenseShare &&
+                            !showRefund &&
+                            !showExpenseShare && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={refundLoading || shareLoading}
+                                    onClick={beginExpenseShare}
+                                >
+                                    Rateio
                                 </Button>
                             )}
                         {refundMode && (
@@ -1705,6 +1928,17 @@ export function ReconciliationRow({
                                 onClick={cancelRefund}
                             >
                                 Cancelar reembolso
+                            </Button>
+                        )}
+                        {shareMode && (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                disabled={shareLoading}
+                                onClick={cancelExpenseShare}
+                            >
+                                Cancelar rateio
                             </Button>
                         )}
                         {!showTransfer &&
@@ -1725,7 +1959,8 @@ export function ReconciliationRow({
                             outflow &&
                             !entry.is_reconciled &&
                             !showInvoicePayment &&
-                            !showRefund && (
+                            !showRefund &&
+                            !showExpenseShare && (
                                 <Button
                                     type="button"
                                     variant="outline"

@@ -20,8 +20,12 @@ export type ReconciliationCandidate = {
     invoice_payment_id?: number | null;
     transaction_id?: number | null;
     is_refund?: boolean;
+    is_expense_share?: boolean;
     is_planned?: boolean;
     remaining_refundable_amount?: string | null;
+    expected_shared_amount?: string | null;
+    received_shared_amount?: string | null;
+    remaining_shared_amount?: string | null;
     occurred_on: string;
     description: string;
     amount: string;
@@ -142,6 +146,7 @@ export type ReconciliationPendingEntry = {
     is_likely_transfer: boolean;
     is_likely_invoice_payment: boolean;
     is_likely_refund: boolean;
+    is_expense_share: boolean;
     is_uncategorized: boolean;
     is_possible_duplicate: boolean;
     is_reconciled: boolean;
@@ -190,6 +195,7 @@ export type ReconciliationFilters = {
         | 'transfer'
         | 'invoice_payment'
         | 'refund'
+        | 'expense_share'
         | 'card_purchase';
     q?: string;
     sort?: string;

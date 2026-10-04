@@ -129,6 +129,7 @@ const typeOptions: Array<[ReconciliationFilters['entry_type'], string]> = [
     ['transfer', 'Transferência'],
     ['invoice_payment', 'Pagamento de fatura'],
     ['refund', 'Reembolso'],
+    ['expense_share', 'Rateio'],
 ];
 
 function entryKey(entry: ReconciliationPendingEntry): string {
@@ -146,7 +147,8 @@ function canCreateFromSuggestion(entry: ReconciliationPendingEntry): boolean {
         entry.matcher_action_type === 'transfer' ||
         entry.is_invoice_payment ||
         entry.is_likely_invoice_payment ||
-        entry.is_likely_refund
+        entry.is_likely_refund ||
+        entry.is_expense_share
     ) {
         return false;
     }
@@ -196,6 +198,12 @@ function entryCategoryOrLink(entry: ReconciliationPendingEntry): string {
             : 'Reembolso';
     }
 
+    if (entry.is_expense_share) {
+        return entry.related_description
+            ? `Rateio: ${entry.related_description}`
+            : 'Rateio de despesa';
+    }
+
     return categoryParts(entry).join(' › ') || 'Sem categoria';
 }
 
@@ -206,6 +214,10 @@ function entryTypeLabel(entry: ReconciliationPendingEntry): string {
 
     if (entry.is_likely_refund) {
         return 'Reembolso';
+    }
+
+    if (entry.is_expense_share) {
+        return 'Rateio';
     }
 
     if (entry.related_is_transfer || entry.is_likely_transfer) {

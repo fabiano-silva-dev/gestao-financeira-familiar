@@ -206,10 +206,17 @@ final class ExpenseRefundService
             ->pluck('amount')
             ->all();
 
+        $shared = $transaction->expenseShare === null
+            ? 0
+            : $this->sumMoney(
+                $transaction->expenseShare->receipts()->pluck('amount')->all(),
+            );
+
         return max(
             0,
             $this->moneyToCents((string) $transaction->amount)
-                - $this->sumMoney($reserved),
+                - $this->sumMoney($reserved)
+                - $shared,
         );
     }
 

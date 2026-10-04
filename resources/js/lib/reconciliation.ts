@@ -42,6 +42,10 @@ export function candidateMatchId(
             return `refund:${candidate.transaction_id}`;
         }
 
+        if (candidate.is_expense_share && candidate.transaction_id) {
+            return `share:${candidate.transaction_id}`;
+        }
+
         return '';
     }
 

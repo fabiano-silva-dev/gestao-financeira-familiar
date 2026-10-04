@@ -224,14 +224,21 @@ export default function TransactionsEdit({
                     <Card className="max-w-3xl">
                         <CardHeader>
                             <CardTitle className="flex items-center justify-between gap-3">
-                                <span>Reembolsos</span>
-                                <Badge variant="outline">
-                                    {entry.refund_status_label}
-                                </Badge>
+                                <span>Reembolsos e rateios</span>
+                                <div className="flex flex-wrap gap-2">
+                                    <Badge variant="outline">
+                                        {entry.refund_status_label}
+                                    </Badge>
+                                    {entry.share_status !== 'none' && (
+                                        <Badge variant="outline">
+                                            {entry.share_status_label}
+                                        </Badge>
+                                    )}
+                                </div>
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-6">
-                            <div className="grid gap-3 sm:grid-cols-3">
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                                 <div className="rounded-lg border p-3">
                                     <p className="text-muted-foreground text-xs">
                                         Valor original
@@ -247,6 +254,19 @@ export default function TransactionsEdit({
                                     <p className="font-semibold tabular-nums">
                                         R$ {Number(entry.refunded_amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                     </p>
+                                </div>
+                                <div className="rounded-lg border p-3">
+                                    <p className="text-muted-foreground text-xs">
+                                        Rateio recebido
+                                    </p>
+                                    <p className="font-semibold tabular-nums">
+                                        R$ {Number(entry.shared_amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </p>
+                                    {entry.share_status !== 'none' && (
+                                        <p className="text-muted-foreground mt-1 text-[11px]">
+                                            de R$ {Number(entry.expected_shared_amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} esperados
+                                        </p>
+                                    )}
                                 </div>
                                 <div className="rounded-lg border p-3">
                                     <p className="text-muted-foreground text-xs">
@@ -293,6 +313,56 @@ export default function TransactionsEdit({
                                             {refund.notes && (
                                                 <p className="text-muted-foreground mt-1 text-xs">
                                                     {refund.notes}
+                                                </p>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {entry.expense_share_receipts.length > 0 && (
+                                <div className="space-y-2 border-t pt-5">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <h3 className="font-medium">
+                                            Recebimentos do rateio
+                                        </h3>
+                                        <span className="text-muted-foreground text-xs">
+                                            Falta R$ {Number(entry.remaining_shared_amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                    {entry.expense_share_receipts.map((receipt) => (
+                                        <div
+                                            key={receipt.id}
+                                            className="rounded-lg border p-3 text-sm"
+                                        >
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <div>
+                                                    <p className="font-medium">
+                                                        R$ {Number(receipt.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                        {' · '}
+                                                        {receipt.account_name ?? 'Conta financeira'}
+                                                    </p>
+                                                    <p className="text-muted-foreground text-xs">
+                                                        {receipt.received_on}
+                                                        {' · '}
+                                                        {receipt.origin_label}
+                                                        {receipt.movement_reconciled
+                                                            ? ' · movimento conciliado'
+                                                            : ''}
+                                                    </p>
+                                                </div>
+                                                <Badge variant="secondary">
+                                                    Rateio
+                                                </Badge>
+                                            </div>
+                                            {receipt.movement_import_filename && (
+                                                <p className="text-muted-foreground mt-1 text-xs">
+                                                    Arquivo: {receipt.movement_import_filename}
+                                                </p>
+                                            )}
+                                            {receipt.notes && (
+                                                <p className="text-muted-foreground mt-1 text-xs">
+                                                    {receipt.notes}
                                                 </p>
                                             )}
                                         </div>

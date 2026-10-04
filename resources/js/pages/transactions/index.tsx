@@ -501,6 +501,12 @@ export default function TransactionsIndex() {
                                                                     {entry.refund_status_label}
                                                                 </Badge>
                                                             )}
+                                                            {entry.share_status !==
+                                                                'none' && (
+                                                                <Badge variant="outline">
+                                                                    {entry.share_status_label}
+                                                                </Badge>
+                                                            )}
                                                             {entry.financial_recurrence_id !==
                                                                 null && (
                                                                 <Badge variant="outline">
@@ -538,7 +544,8 @@ export default function TransactionsIndex() {
                                                         Number(listedAmount(entry)),
                                                     )}
                                                     {entry.type === 'expense' &&
-                                                        entry.refund_status !== 'none' && (
+                                                        (entry.refund_status !== 'none' ||
+                                                            entry.share_status !== 'none') && (
                                                             <span className="text-muted-foreground block text-[11px] font-normal">
                                                                 original{' '}
                                                                 {currency.format(

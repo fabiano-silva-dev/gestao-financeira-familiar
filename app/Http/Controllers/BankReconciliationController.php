@@ -15,6 +15,7 @@ use App\Http\Requests\RememberReconciliationTransferRequest;
 use App\Http\Requests\StoreBankReconciliationRequest;
 use App\Http\Requests\StoreReconciliationCardPaymentRequest;
 use App\Http\Requests\StoreReconciliationInvoicePaymentRequest;
+use App\Http\Requests\StoreReconciliationExpenseShareRequest;
 use App\Http\Requests\StoreReconciliationRefundRequest;
 use App\Http\Requests\StoreReconciliationTransferRequest;
 use App\Models\AccountMovement;
@@ -37,6 +38,7 @@ use App\Services\Reconciliation\BankReconciliationService;
 use App\Services\Reconciliation\BankReconciliationSuggestionService;
 use App\Services\Reconciliation\CardStatementReconciliationSuggestionService;
 use App\Services\Reconciliation\ExpenseRefundSuggestionService;
+use App\Services\Reconciliation\ExpenseShareSuggestionService;
 use App\Services\Reconciliation\ImportedMovementInterpreter;
 use App\Services\Reconciliation\ImportReconciliationReprocessor;
 use App\Services\Reconciliation\InvoicePaymentSuggestionService;
@@ -64,6 +66,7 @@ class BankReconciliationController extends Controller
         private readonly ImportReconciliationReprocessor $importReprocessor,
         private readonly ImportedMovementInterpreter $interpreter,
         private readonly ExpenseRefundSuggestionService $refundSuggestionService,
+        private readonly ExpenseShareSuggestionService $shareSuggestionService,
         private readonly ExpenseCategoryMatcher $categoryMatcher,
         private readonly ClassificationRuleMatcher $ruleMatcher,
         private readonly OfxImportService $ofxImports,
@@ -579,6 +582,22 @@ class BankReconciliationController extends Controller
         ]);
     }
 
+    public function expenseShareCandidates(int $entry): JsonResponse
+    {
+        $workspace = $this->workspace();
+        $statementEntry = $this->findEntry($workspace, $entry);
+
+        abort_if($statementEntry->is_reconciled || $statementEntry->is_ignored, 422);
+        abort_if($this->interpreter->moneyToCents($statementEntry->amount) <= 0, 422);
+
+        return response()->json([
+            'candidates' => $this->shareSuggestionService->candidates(
+                $workspace,
+                $statementEntry,
+            ),
+        ]);
+    }
+
     public function refundCandidates(int $entry): JsonResponse
     {
         $workspace = $this->workspace();
@@ -616,6 +635,33 @@ class BankReconciliationController extends Controller
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => 'Entrada vinculada como reembolso sem criar receita.',
+        ]);
+
+        return to_route('reconciliation.index', $this->filterQuery($request));
+    }
+
+    public function expenseShare(
+        StoreReconciliationExpenseShareRequest $request,
+        int $entry,
+    ): RedirectResponse {
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $workspace = $this->workspace();
+        $statementEntry = $this->findEntry($workspace, $entry);
+        $transaction = $workspace->financialTransactions()
+            ->findOrFail($request->integer('financial_transaction_id'));
+
+        $this->entryActions->reconcileExpenseShare(
+            $workspace,
+            $statementEntry,
+            $transaction,
+            $user,
+            $request->validated('expected_shared_amount'),
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Entrada vinculada ao rateio da despesa sem criar receita.',
         ]);
 
         return to_route('reconciliation.index', $this->filterQuery($request));
@@ -910,6 +956,7 @@ class BankReconciliationController extends Controller
                 'transfer',
                 'invoice_payment',
                 'refund',
+                'expense_share',
                 'card_purchase',
             ], true) ? $entryType : 'all',
             'view' => in_array($view, [
@@ -1846,6 +1893,11 @@ class BankReconciliationController extends Controller
                 fn (array $candidate): bool => (bool) ($candidate['is_refund'] ?? false)
                     && (bool) ($candidate['is_suggestion'] ?? false),
             );
+        $isExpenseShare = ($entry['related_type'] ?? null) === AccountMovementType::SharedExpenseReceipt->value
+            || collect($candidates)->contains(
+                fn (array $candidate): bool => (bool) ($candidate['is_expense_share'] ?? false)
+                    && (bool) ($candidate['is_suggestion'] ?? false),
+            );
 
         $manualTransfer = ($entry['manual_action_type'] ?? null) === FinancialTransactionType::Transfer->value;
 
@@ -1853,7 +1905,8 @@ class BankReconciliationController extends Controller
             $isTransfer = true;
             $isInvoicePayment = false;
             $isRefund = false;
-        } elseif ($isInvoicePayment || $isRefund) {
+            $isExpenseShare = false;
+        } elseif ($isInvoicePayment || $isRefund || $isExpenseShare) {
             $isTransfer = false;
         }
 
@@ -1866,7 +1919,8 @@ class BankReconciliationController extends Controller
             'is_likely_transfer' => $isTransfer,
             'is_likely_invoice_payment' => $isInvoicePayment,
             'is_likely_refund' => $isRefund,
-            'is_uncategorized' => ! $hasCategory && ! $isTransfer && ! $isInvoicePayment && ! $isRefund,
+            'is_expense_share' => $isExpenseShare,
+            'is_uncategorized' => ! $hasCategory && ! $isTransfer && ! $isInvoicePayment && ! $isRefund && ! $isExpenseShare,
             'is_possible_duplicate' => false,
             'suggestion_confidence' => is_array($best) ? ($best['confidence'] ?? null) : null,
             'suggestion_confidence_label' => is_array($best) ? ($best['confidence_label'] ?? null) : null,
@@ -2074,6 +2128,10 @@ class BankReconciliationController extends Controller
             return 'refund';
         }
 
+        if ($entry['is_expense_share'] ?? false) {
+            return 'expense_share';
+        }
+
         if ($entry['related_is_transfer'] || $entry['is_likely_transfer']) {
             return 'transfer';
         }
@@ -2091,6 +2149,7 @@ class BankReconciliationController extends Controller
         return match ($this->entryType($entry)) {
             'invoice_payment' => 'Pagamento de fatura',
             'refund' => 'Reembolso',
+            'expense_share' => 'Rateio',
             'transfer' => 'Transferência',
             'card_purchase' => 'Compra no cartão',
             'income' => 'Receita',
