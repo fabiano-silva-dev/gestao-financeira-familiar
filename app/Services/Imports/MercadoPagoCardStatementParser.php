@@ -17,6 +17,8 @@ final class MercadoPagoCardStatementParser
     {
         try {
             $text = $this->textExtractor->extract($contents);
+        } catch (PdfPasswordException $exception) {
+            throw $exception;
         } catch (BankStatementParseException $exception) {
             throw new CardStatementParseException(
                 'Não foi possível ler o texto do PDF da fatura.',

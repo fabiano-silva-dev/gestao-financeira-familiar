@@ -31,6 +31,7 @@ final class CardStatementImportService
         private readonly FinancialImportProcessor $processor,
         private readonly CardStatementAiEnrichmentService $aiEnrichmentService,
         private readonly CreditCardInvoiceService $invoiceService,
+        private readonly PdfDocumentAccess $pdfAccess,
     ) {}
 
     public function import(
@@ -108,7 +109,11 @@ final class CardStatementImportService
         $financialImport->save();
 
         try {
-            $statement = $this->parser->parse($contents, $extension, $amountSign, $pdfLayout);
+            $statement = $this->pdfAccess->open(
+                $workspace,
+                null,
+                fn () => $this->parser->parse($contents, $extension, $amountSign, $pdfLayout),
+            );
 
             DB::transaction(function () use (
                 $financialImport,
@@ -127,6 +132,7 @@ final class CardStatementImportService
                 $invoice = $this->resolveInvoice($card, $referenceMonth);
                 $imported = 0;
                 $duplicates = 0;
+                $coveredEntryIds = [];
                 $occurrences = [];
                 $statementCents = 0;
                 $firstRow = $statement->rows[0] ?? throw new CardStatementParseException(
@@ -181,6 +187,8 @@ final class CardStatementImportService
                         );
                     }
 
+                    $coveredEntryIds[] = $entry->id;
+
                     if ($entry->wasRecentlyCreated) {
                         $imported++;
                     } else {
@@ -213,6 +221,7 @@ final class CardStatementImportService
                         'statement_amount' => $statementAmount,
                         'statement_amount_applied' => $statementApplied,
                         'credit_card_invoice_id' => $invoice->id,
+                        'covered_card_entry_ids' => $coveredEntryIds,
                     ],
                     'error_message' => null,
                     'imported_at' => now(),
@@ -224,6 +233,10 @@ final class CardStatementImportService
             throw ValidationException::withMessages([
                 'file' => $exception->getMessage(),
             ]);
+        } catch (PdfPasswordException $exception) {
+            $this->markAsFailed($financialImport, $exception->getMessage());
+
+            throw $exception;
         } catch (Throwable $exception) {
             $this->markAsFailed(
                 $financialImport,
@@ -368,6 +381,116 @@ final class CardStatementImportService
         $base = $month->startOfMonth();
 
         return $base->addDays(min($day, $base->daysInMonth) - 1);
+    }
+
+    /**
+     * Linhas do arquivo, inclusive as que já existiam em uma importação anterior.
+     *
+     * @return list<int>
+     */
+    public function coveredCardEntryIds(FinancialImport $import): array
+    {
+        $stored = $import->metadata['covered_card_entry_ids'] ?? null;
+
+        if (is_array($stored)) {
+            return $this->integerIds($stored);
+        }
+
+        $ids = $this->matchStoredCardEntries($import);
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $metadata = $import->metadata ?? [];
+        $metadata['covered_card_entry_ids'] = $ids;
+        $import->update(['metadata' => $metadata]);
+
+        return $ids;
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function matchStoredCardEntries(FinancialImport $import): array
+    {
+        $referenceMonth = $import->metadata['reference_month'] ?? null;
+        $amountSign = $import->metadata['amount_sign'] ?? null;
+
+        if (
+            $import->credit_card_id === null
+            || ! is_string($referenceMonth)
+            || ! is_string($amountSign)
+            || ! is_string($import->stored_path)
+            || $import->stored_path === ''
+            || ! Storage::disk('local')->exists($import->stored_path)
+        ) {
+            return [];
+        }
+
+        $contents = Storage::disk('local')->get($import->stored_path);
+
+        if (! is_string($contents) || $contents === '') {
+            return [];
+        }
+
+        $extension = strtolower(pathinfo($import->stored_path, PATHINFO_EXTENSION));
+        $layout = $import->metadata['pdf_layout'] ?? null;
+        $pdfLayout = is_string($layout) ? $layout : null;
+
+        try {
+            $statement = $this->pdfAccess->open(
+                $import->workspace,
+                null,
+                fn () => $this->parser->parse($contents, $extension, $amountSign, $pdfLayout),
+            );
+        } catch (CardStatementParseException) {
+            return [];
+        }
+
+        $occurrences = [];
+        $keys = [];
+
+        foreach ($statement->rows as $row) {
+            $signature = $this->entrySignature($row);
+            $occurrences[$signature] = ($occurrences[$signature] ?? 0) + 1;
+            $keys[] = $this->entryDeduplicationKey(
+                $row,
+                $referenceMonth,
+                $occurrences[$signature],
+            );
+        }
+
+        if ($keys === []) {
+            return [];
+        }
+
+        return $this->integerIds(
+            CardStatementEntry::query()
+                ->where('workspace_id', $import->workspace_id)
+                ->where('credit_card_id', $import->credit_card_id)
+                ->whereIn('deduplication_key', $keys)
+                ->orderBy('id')
+                ->pluck('id')
+                ->all(),
+        );
+    }
+
+    /**
+     * @param  array<mixed>  $ids
+     * @return list<int>
+     */
+    private function integerIds(array $ids): array
+    {
+        $normalized = [];
+
+        foreach ($ids as $id) {
+            if (is_numeric($id)) {
+                $normalized[] = (int) $id;
+            }
+        }
+
+        return array_values(array_unique($normalized));
     }
 
     private function entrySignature(CardStatementRow $row): string

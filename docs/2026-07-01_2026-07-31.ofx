@@ -1,0 +1,161 @@
+OFXHEADER:100
+DATA:OFXSGML
+VERSION:100
+SECURITY:NONE
+ENCODING:UTF-8
+CHARSET:NONE
+COMPRESSION:NONE
+OLDFILEUID:NONE
+NEWFILEUID:NONE
+<OFX>
+  <SIGNONMSGSRSV1>
+    <SONRS>
+      <STATUS>
+        <CODE>0</CODE>
+        <SEVERITY>INFO</SEVERITY>
+      </STATUS>
+      <DTSERVER>20261004101432[-3:BRT]</DTSERVER>
+      <LANGUAGE>POR</LANGUAGE>
+      <FI>
+        <ORG>PagSeguro Internet S/A</ORG>
+        <FID>290</FID>
+      </FI>
+    </SONRS>
+  </SIGNONMSGSRSV1>
+  <BANKMSGSRSV1>
+    <STMTTRNRS>
+      <STATUS>
+        <CODE>0</CODE>
+        <SEVERITY>INFO</SEVERITY>
+      </STATUS>
+      <STMTRS>
+        <CURDEF>BRL</CURDEF>
+        <BANKACCTFROM>
+          <BANKID>290</BANKID>
+          <ACCTID>6022347-6</ACCTID>
+          <ACCTTYPE>CHECKING</ACCTTYPE>
+        </BANKACCTFROM>
+        <BANKTRANLIST>
+          <DTSTART>20260701000000[-3:BRT]</DTSTART>
+          <DTEND>20260731000000[-3:BRT]</DTEND>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260703093403[-3:BRT]</DTPOSTED>
+            <TRNAMT>264.00</TRNAMT>
+            <FITID>dee4803d-7936-47d1-a70a-a4dd2a772e85</FITID>
+            <MEMO>Pix recebido - Vera Lucia Bastos Soares</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260704124259[-3:BRT]</DTPOSTED>
+            <TRNAMT>503.00</TRNAMT>
+            <FITID>99a99353-2f2f-4e96-be59-5280bc21c3ac</FITID>
+            <MEMO>Pix recebido - Roberta De Carvalho Rossatto</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260707204759[-3:BRT]</DTPOSTED>
+            <TRNAMT>167.00</TRNAMT>
+            <FITID>f895b679-50b0-433b-95a6-b7b5bd5608ee</FITID>
+            <MEMO>Pix recebido - Vera Lucia Bastos Soares</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260707135454[-3:BRT]</DTPOSTED>
+            <TRNAMT>-767.00</TRNAMT>
+            <FITID>cceeec56-29ad-4b9c-bb8b-62e6b93c5821</FITID>
+            <MEMO>Pix enviado - Fabiano Carvalho Da Silva</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260708205451[-3:BRT]</DTPOSTED>
+            <TRNAMT>264.00</TRNAMT>
+            <FITID>66a3dd5e-c7fb-4f2c-8043-f95a736beb1a</FITID>
+            <MEMO>Pix recebido - Mateus Zambarda Tombesi</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260710160522[-3:BRT]</DTPOSTED>
+            <TRNAMT>-431.00</TRNAMT>
+            <FITID>065a2910-48d2-43a1-8462-90f6f0378cd1</FITID>
+            <MEMO>Pix enviado - Fabiano Carvalho Da Silva</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260720151601[-3:BRT]</DTPOSTED>
+            <TRNAMT>1000.00</TRNAMT>
+            <FITID>f26d998c-612c-46b2-b8a1-812032278264</FITID>
+            <MEMO>Pix recebido - Sandra Aparecida Souza De Avila 48455032049</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260723082947[-3:BRT]</DTPOSTED>
+            <TRNAMT>-1000.00</TRNAMT>
+            <FITID>f036ebab-d23c-43f8-8de4-8d024e98b883</FITID>
+            <MEMO>Pix enviado - Fabiano Carvalho Da Silva</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260730215618[-3:BRT]</DTPOSTED>
+            <TRNAMT>16.67</TRNAMT>
+            <FITID>ff08c217-c496-4373-85bd-c2d0baaacbe3</FITID>
+            <MEMO>Pix recebido - Cleci Wilges Teichmann Gais</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260731204609[-3:BRT]</DTPOSTED>
+            <TRNAMT>-150.00</TRNAMT>
+            <FITID>0c3d4a41-5346-4e8e-9387-ed6586e10c4f</FITID>
+            <MEMO>Pix enviado - 57.801.398 Deise Raquel Maas Diehl</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260731204445[-3:BRT]</DTPOSTED>
+            <TRNAMT>43.19</TRNAMT>
+            <FITID>eb916173-0e9a-4a8f-972a-99832cea4a68</FITID>
+            <MEMO>Pix recebido - Fabiano Carvalho Da Silva</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260731204321[-3:BRT]</DTPOSTED>
+            <TRNAMT>52.72</TRNAMT>
+            <FITID>941a5196-1894-4850-ac69-59ff73f637bb</FITID>
+            <MEMO>Pix recebido - Fabiano Carvalho Da Silva</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260731204154[-3:BRT]</DTPOSTED>
+            <TRNAMT>11.23</TRNAMT>
+            <FITID>3ca7489b-2259-487c-967a-437dac59a1a8</FITID>
+            <MEMO>Pix recebido - Lidiane Ribeiro Ferro Da Silva</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260731181811[-3:BRT]</DTPOSTED>
+            <TRNAMT>4.76</TRNAMT>
+            <FITID>382e14a7-d786-4b97-91cf-338c8858525b</FITID>
+            <MEMO>Pix recebido - Marselli Senandes De Moura</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260731145432[-3:BRT]</DTPOSTED>
+            <TRNAMT>4.76</TRNAMT>
+            <FITID>af65c4c0-f0f2-4e4c-8bc8-22646bb53029</FITID>
+            <MEMO>Pix recebido - Cleci Wilges Teichmann Gais</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260731080223[-3:BRT]</DTPOSTED>
+            <TRNAMT>16.67</TRNAMT>
+            <FITID>37112270-468c-410c-9fa3-7bb58c84dbcc</FITID>
+            <MEMO>Pix recebido - Marselli Senandes De Moura</MEMO>
+          </STMTTRN>
+        </BANKTRANLIST>
+        <LEDGERBAL>
+          <BALAMT>R$ 0,00</BALAMT>
+          <DTASOF>31/07/2026</DTASOF>
+        </LEDGERBAL>
+      </STMTRS>
+    </STMTTRNRS>
+  </BANKMSGSRSV1>
+</OFX>

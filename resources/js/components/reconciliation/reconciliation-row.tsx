@@ -36,6 +36,7 @@ import {
 import { cn } from '@/lib/utils';
 import { create as createRule } from '@/routes/classification-rules';
 import { index as reconciliationIndex } from '@/routes/reconciliation';
+import { edit as editTransaction } from '@/routes/transactions';
 import type {
     ClassificationRulePrompt,
     ListingQueryState,
@@ -371,6 +372,11 @@ export function ReconciliationRow({
     ]);
 
     const Icon = outflow ? ArrowDownCircle : ArrowUpCircle;
+    const purchaseId =
+        entry.kind === 'invoice'
+            ? (selectedCandidate?.related_transaction_id ??
+              entry.related_transaction_id)
+            : null;
     const leafCategoryId =
         selectedSubId !== ''
             ? Number(selectedSubId)
@@ -594,13 +600,15 @@ export function ReconciliationRow({
         onSuccess: askCreateRuleIfNeeded,
     });
 
+    const canMarkRefund =
+        !entry.is_reconciled &&
+        !entry.is_ignored &&
+        !entry.is_invoice_payment &&
+        ((entry.kind === 'statement' && Number(entry.amount) > 0) ||
+            (entry.kind === 'invoice' && Number(entry.amount) < 0));
+
     const beginRefund = async () => {
-        if (
-            entry.kind !== 'statement' ||
-            Number(entry.amount) <= 0 ||
-            entry.is_reconciled ||
-            entry.is_ignored
-        ) {
+        if (!canMarkRefund) {
             return;
         }
 
@@ -613,7 +621,14 @@ export function ReconciliationRow({
 
         try {
             const response = await fetch(
-                `/conciliacao/${entry.id}/candidatos-reembolso`,
+                entry.kind === 'invoice'
+                    ? CardStatementReconciliationController.refundCandidates.url(
+                          {
+                              invoice: entry.invoice_id ?? 0,
+                              entry: entry.id,
+                          },
+                      )
+                    : `/conciliacao/${entry.id}/candidatos-reembolso`,
                 {
                     headers: {
                         Accept: 'application/json',
@@ -769,6 +784,26 @@ export function ReconciliationRow({
             ...completeOptions(),
             onError: reportActionError,
         };
+
+        if (matchId.startsWith('refund:') && entry.kind === 'invoice') {
+            router.post(
+                listingUrl(
+                    CardStatementReconciliationController.refund.url({
+                        invoice: entry.invoice_id ?? 0,
+                        entry: entry.id,
+                    }),
+                    query,
+                ),
+                {
+                    financial_transaction_id: Number(
+                        matchId.slice('refund:'.length),
+                    ),
+                },
+                options,
+            );
+
+            return;
+        }
 
         if (entry.kind === 'statement') {
             if (matchId.startsWith('refund:')) {
@@ -1579,6 +1614,13 @@ export function ReconciliationRow({
             </div>
 
             <div className="flex flex-col gap-2 lg:min-w-52">
+                {purchaseId !== null && (
+                    <Button variant="outline" size="sm" asChild>
+                        <Link href={editTransaction(purchaseId)}>
+                            Abrir compra
+                        </Link>
+                    </Button>
+                )}
                 {entry.is_ignored ? (
                     <Button
                         type="button"
@@ -1627,7 +1669,11 @@ export function ReconciliationRow({
                             <Link2 />
                             {showRefund ? 'Vincular como reembolso' : 'Conciliar'}
                         </Button>
-                        {!showTransfer && (
+                        {!showTransfer &&
+                            !(
+                                entry.kind === 'invoice' &&
+                                Number(entry.amount) < 0
+                            ) && (
                             <Button
                                 type="button"
                                 variant="outline"
@@ -1639,9 +1685,7 @@ export function ReconciliationRow({
                                 Criar lançamento
                             </Button>
                         )}
-                        {entry.kind === 'statement' &&
-                            Number(entry.amount) > 0 &&
-                            !showRefund && (
+                        {canMarkRefund && !showRefund && (
                                 <Button
                                     type="button"
                                     variant="outline"

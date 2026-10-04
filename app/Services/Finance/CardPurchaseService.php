@@ -407,6 +407,8 @@ class CardPurchaseService
             && $invoice->status === CreditCardInvoiceStatus::Open
             && ! $invoice->installments()->exists()
             && ! $invoice->payments()->exists()
+            && ! $invoice->statementEntries()->exists()
+            && ! $invoice->refunds()->exists()
         ) {
             $invoice->delete();
 

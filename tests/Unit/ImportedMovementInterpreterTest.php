@@ -20,6 +20,12 @@ class ImportedMovementInterpreterTest extends TestCase
         ));
         $this->assertFalse($interpreter->isLikelyTransfer('TED Folha'));
         $this->assertFalse($interpreter->isLikelyTransfer('DOC fornecedor'));
+        $this->assertFalse($interpreter->isLikelyTransfer(
+            'Transferência enviada pelo Pix - RECEITA FEDERAL - 00.394.460/0058-87 - ITAÚ UNIBANCO S.A. (0341) Agência: 332 Conta: 81010-0',
+        ));
+        $this->assertFalse($interpreter->isLikelyTransfer(
+            'Pagamento de guia DARF - Receita Federal',
+        ));
     }
 
     public function test_explicit_own_account_transfer_language_is_detected(): void

@@ -45,6 +45,10 @@ export function candidateMatchId(
         return '';
     }
 
+    if (candidate.is_refund && candidate.transaction_id) {
+        return `refund:${candidate.transaction_id}`;
+    }
+
     if (candidate.recurrence_transaction_id) {
         return `recurrence:${candidate.recurrence_transaction_id}`;
     }

@@ -46,6 +46,11 @@ import type {
     PaymentMethodOption,
 } from '@/types';
 
+type CategoryOption = {
+    id: number;
+    label: string;
+};
+
 type Props = {
     invoice: CreditCardInvoice;
     accountOptions: FinancialEntryReferenceOption[];
@@ -54,6 +59,7 @@ type Props = {
     defaultPaymentMethod: string;
     unlinkedPayments: CreditCardInvoice['payments'];
     defaultPaymentDate: string;
+    categoryOptions: CategoryOption[];
 };
 
 const currency = new Intl.NumberFormat('pt-BR', {
@@ -140,6 +146,7 @@ export default function CreditCardInvoiceShow() {
         defaultPaymentMethod,
         defaultPaymentDate,
         unlinkedPayments = [],
+        categoryOptions = [],
     } = props;
     const highlightedLine = new URLSearchParams(
         pageUrl.includes('?') ? pageUrl.slice(pageUrl.indexOf('?')) : '',
@@ -151,6 +158,31 @@ export default function CreditCardInvoiceShow() {
     const installments = invoice.installments ?? [];
     const statementEntries = invoice.statement_entries ?? [];
     const payments = invoice.payments ?? [];
+    const installmentsTotal = currency.format(
+        Number(
+            centsToMoney(
+                installments.reduce(
+                    (total, installment) =>
+                        total + moneyToCents(installment.amount),
+                    0,
+                ),
+            ),
+        ),
+    );
+    const statementLinesTotal = currency.format(
+        Number(
+            centsToMoney(
+                statementEntries.reduce(
+                    (total, entry) =>
+                        entry.is_payment
+                            ? total
+                            : total + moneyToCents(entry.amount),
+                    0,
+                ),
+            ),
+        ),
+    );
+    const [addingPurchase, setAddingPurchase] = useState(false);
     const [editingPayment, setEditingPayment] =
         useState<CreditCardInvoicePayment | null>(null);
     const [deletingPayment, setDeletingPayment] =
@@ -291,6 +323,40 @@ export default function CreditCardInvoiceShow() {
                         </div>
                     )}
 
+                {invoice.can_reopen && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Fatura fechada</CardTitle>
+                        </CardHeader>
+                        <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-muted-foreground text-sm">
+                                Reabrir devolve a fatura para lançar compras.
+                                As compras e o valor informado pela operadora
+                                permanecem.
+                            </p>
+                            <Form
+                                {...CreditCardInvoiceController.reopen.form(
+                                    invoice.id,
+                                )}
+                                options={{ preserveScroll: true }}
+                            >
+                                {({ processing, errors }) => (
+                                    <div className="grid gap-2">
+                                        <Button
+                                            variant="outline"
+                                            disabled={processing}
+                                        >
+                                            <RotateCcw />
+                                            Reabrir fatura
+                                        </Button>
+                                        <InputError message={errors.invoice} />
+                                    </div>
+                                )}
+                            </Form>
+                        </CardContent>
+                    </Card>
+                )}
+
                 {invoice.can_close && (
                     <Card>
                         <CardHeader>
@@ -339,8 +405,24 @@ export default function CreditCardInvoiceShow() {
                 )}
 
                 <Card>
-                    <CardHeader>
+                    <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
                         <CardTitle>Compras e parcelas</CardTitle>
+                        <div className="flex items-center gap-3">
+                            {invoice.can_close && (
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setAddingPurchase(true)}
+                                >
+                                    <Plus />
+                                    Nova compra
+                                </Button>
+                            )}
+                            <p className="text-base font-semibold tabular-nums">
+                                {installmentsTotal}
+                            </p>
+                        </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
                         {installments.length === 0 ? (
@@ -394,11 +476,14 @@ export default function CreditCardInvoiceShow() {
 
                 {statementEntries.length > 0 && (
                     <Card>
-                        <CardHeader>
+                        <CardHeader className="flex-row items-center justify-between gap-3">
                             <CardTitle className="flex items-center gap-2">
                                 <FileSpreadsheet className="size-5" />
                                 Linhas da fatura
                             </CardTitle>
+                            <p className="text-base font-semibold tabular-nums">
+                                {statementLinesTotal}
+                            </p>
                         </CardHeader>
                         <CardContent className="space-y-3">
                             {statementEntries.map((entry) => {
@@ -418,11 +503,16 @@ export default function CreditCardInvoiceShow() {
                                                 : ''
                                         }`}
                                     >
-                                        {entry.linked_installment ? (
+                                        {(entry.linked_installment
+                                            ?.transaction_id ??
+                                            entry.linked_refund
+                                                ?.transaction_id) != null ? (
                                             <Link
                                                 href={editTransaction(
-                                                    entry.linked_installment
-                                                        .transaction_id,
+                                                    (entry.linked_installment
+                                                        ?.transaction_id ??
+                                                        entry.linked_refund
+                                                            ?.transaction_id) as number,
                                                 )}
                                                 className="hover:bg-muted/40 focus-visible:ring-ring -mx-1 flex flex-col gap-2 rounded-md px-1 py-1 transition-colors focus-visible:ring-2 focus-visible:outline-none sm:flex-row sm:items-start sm:justify-between"
                                             >
@@ -448,6 +538,68 @@ export default function CreditCardInvoiceShow() {
                                                         ? `${entry.linked_payment.account_name} · ${formatDate(entry.linked_payment.paid_on)} · ${entry.linked_payment.is_bank_reconciled ? 'extrato conciliado' : 'aguardando confirmação no extrato'}`
                                                         : 'Aguardando vínculo manual por ambiguidade.'}
                                                 </p>
+                                            </div>
+                                        ) : entry.linked_refund ? (
+                                            <div className="bg-positive/5 border-positive/20 mt-4 flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
+                                                <Link
+                                                    href={editTransaction(
+                                                        entry.linked_refund
+                                                            .transaction_id,
+                                                    )}
+                                                    className="hover:bg-positive/10 focus-visible:ring-ring min-w-0 flex-1 rounded-md transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                                                >
+                                                    <p className="text-sm font-medium">
+                                                        Reembolso de{' '}
+                                                        {
+                                                            entry.linked_refund
+                                                                .description
+                                                        }
+                                                    </p>
+                                                    <p className="text-muted-foreground mt-1 text-xs">
+                                                        Estorno em{' '}
+                                                        {formatDate(
+                                                            entry.linked_refund
+                                                                .refunded_on,
+                                                        )}
+                                                    </p>
+                                                    {entry.reconciled_at && (
+                                                        <p className="text-muted-foreground mt-1 text-xs">
+                                                            Conciliada em{' '}
+                                                            {dateTime.format(
+                                                                new Date(
+                                                                    entry.reconciled_at,
+                                                                ),
+                                                            )}
+                                                            {entry.reconciled_by_name
+                                                                ? ` por ${entry.reconciled_by_name}`
+                                                                : ''}
+                                                        </p>
+                                                    )}
+                                                </Link>
+                                                <Form
+                                                    {...CardStatementReconciliationController.destroy.form(
+                                                        {
+                                                            invoice: invoice.id,
+                                                            entry: entry.id,
+                                                        },
+                                                    )}
+                                                    options={{
+                                                        preserveScroll: true,
+                                                    }}
+                                                >
+                                                    {({ processing }) => (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            disabled={
+                                                                processing
+                                                            }
+                                                        >
+                                                            <RotateCcw />
+                                                            Desfazer
+                                                        </Button>
+                                                    )}
+                                                </Form>
                                             </div>
                                         ) : entry.linked_installment ? (
                                             <div className="bg-positive/5 border-positive/20 mt-4 flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1075,6 +1227,14 @@ export default function CreditCardInvoiceShow() {
                     </Card>
                 )}
 
+                {addingPurchase && (
+                    <InvoicePurchaseDialog
+                        invoice={invoice}
+                        categoryOptions={categoryOptions}
+                        onClose={() => setAddingPurchase(false)}
+                    />
+                )}
+
                 {editingPayment && (
                     <InvoicePaymentEditDialog
                         key={editingPayment.id}
@@ -1095,6 +1255,184 @@ export default function CreditCardInvoiceShow() {
                 )}
             </div>
         </>
+    );
+}
+
+function InvoicePurchaseDialog({
+    invoice,
+    categoryOptions,
+    onClose,
+}: {
+    invoice: CreditCardInvoice;
+    categoryOptions: CategoryOption[];
+    onClose: () => void;
+}) {
+    const [categoryId, setCategoryId] = useState('');
+
+    return (
+        <Dialog open onOpenChange={(open) => !open && onClose()}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Nova compra nesta fatura</DialogTitle>
+                    <DialogDescription>
+                        A compra entra nesta fatura. O valor informado pela
+                        operadora continua o mesmo.
+                    </DialogDescription>
+                </DialogHeader>
+                <Form
+                    {...CreditCardInvoiceController.storePurchase.form(
+                        invoice.id,
+                    )}
+                    options={{ preserveScroll: true }}
+                    onSuccess={onClose}
+                    className="grid gap-4"
+                >
+                    {({ processing, errors }) => (
+                        <>
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="purchased_on">
+                                        Data da compra
+                                    </Label>
+                                    <Input
+                                        id="purchased_on"
+                                        name="purchased_on"
+                                        type="date"
+                                        defaultValue={invoice.closing_date}
+                                        required
+                                    />
+                                    <InputError message={errors.purchased_on} />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="purchase_amount">
+                                        Valor
+                                    </Label>
+                                    <Input
+                                        id="purchase_amount"
+                                        name="amount"
+                                        type="number"
+                                        inputMode="decimal"
+                                        step="0.01"
+                                        min="0.01"
+                                        placeholder="0,00"
+                                        required
+                                    />
+                                    <InputError message={errors.amount} />
+                                </div>
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="purchase_description">
+                                    Descrição
+                                </Label>
+                                <Input
+                                    id="purchase_description"
+                                    name="description"
+                                    maxLength={255}
+                                    required
+                                />
+                                <InputError message={errors.description} />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="purchase_category_id">
+                                    Categoria
+                                </Label>
+                                <input
+                                    type="hidden"
+                                    name="category_id"
+                                    value={categoryId}
+                                />
+                                <Select
+                                    value={
+                                        categoryId === ''
+                                            ? 'automatic'
+                                            : categoryId
+                                    }
+                                    onValueChange={(value) =>
+                                        setCategoryId(
+                                            value === 'automatic' ? '' : value,
+                                        )
+                                    }
+                                >
+                                    <SelectTrigger
+                                        id="purchase_category_id"
+                                        className="w-full"
+                                    >
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="automatic">
+                                            Automática / pendente
+                                        </SelectItem>
+                                        {categoryOptions.map((category) => (
+                                            <SelectItem
+                                                key={category.id}
+                                                value={String(category.id)}
+                                            >
+                                                {category.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-muted-foreground text-xs">
+                                    Sem categoria reconhecida, a compra fica
+                                    como linha pendente nesta fatura.
+                                </p>
+                                <InputError message={errors.category_id} />
+                            </div>
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="installment_number">
+                                        Parcela atual
+                                    </Label>
+                                    <Input
+                                        id="installment_number"
+                                        name="installment_number"
+                                        type="number"
+                                        min="1"
+                                        max="999"
+                                        defaultValue="1"
+                                        required
+                                    />
+                                    <InputError
+                                        message={errors.installment_number}
+                                    />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="total_installments">
+                                        Total de parcelas
+                                    </Label>
+                                    <Input
+                                        id="total_installments"
+                                        name="total_installments"
+                                        type="number"
+                                        min="1"
+                                        max="999"
+                                        defaultValue="1"
+                                        required
+                                    />
+                                    <InputError
+                                        message={errors.total_installments}
+                                    />
+                                </div>
+                            </div>
+                            <DialogFooter>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={onClose}
+                                >
+                                    Cancelar
+                                </Button>
+                                <Button disabled={processing}>
+                                    <Plus />
+                                    Lançar compra
+                                </Button>
+                            </DialogFooter>
+                        </>
+                    )}
+                </Form>
+            </DialogContent>
+        </Dialog>
     );
 }
 

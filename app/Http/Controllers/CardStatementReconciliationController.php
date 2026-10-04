@@ -4,13 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\ClassifyReconciliationEntryRequest;
 use App\Http\Requests\StoreCardStatementReconciliationRequest;
+use App\Http\Requests\StoreReconciliationRefundRequest;
 use App\Models\CardStatementEntry;
 use App\Models\CreditCardInvoice;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Reconciliation\CardStatementReconciliationService;
+use App\Services\Reconciliation\CardStatementRefundReconciliationService;
+use App\Services\Reconciliation\ExpenseRefundSuggestionService;
 use App\Services\Reconciliation\ReconciliationEntryService;
 use App\Support\Workspaces\CurrentWorkspace;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -20,7 +24,9 @@ class CardStatementReconciliationController extends Controller
     public function __construct(
         private readonly CurrentWorkspace $currentWorkspace,
         private readonly CardStatementReconciliationService $reconciliationService,
+        private readonly CardStatementRefundReconciliationService $refundReconciliation,
         private readonly ReconciliationEntryService $entryActions,
+        private readonly ExpenseRefundSuggestionService $refundSuggestions,
     ) {}
 
     public function store(
@@ -62,6 +68,49 @@ class CardStatementReconciliationController extends Controller
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => 'Linha da fatura conciliada sem criar uma nova despesa.',
+        ]);
+
+        return $this->redirectAfterCardReconciliation($invoice);
+    }
+
+    public function refundCandidates(int $invoice, int $entry): JsonResponse
+    {
+        $workspace = $this->workspace();
+        $statementEntry = $this->findEntry($this->findInvoice($workspace, $invoice), $entry);
+
+        abort_if($statementEntry->is_reconciled || $statementEntry->is_ignored || $statementEntry->is_payment, 422);
+
+        return response()->json([
+            'candidates' => $this->refundSuggestions->cardCandidates(
+                $workspace,
+                $statementEntry,
+            ),
+        ]);
+    }
+
+    public function refund(
+        StoreReconciliationRefundRequest $request,
+        int $invoice,
+        int $entry,
+    ): RedirectResponse {
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $workspace = $this->workspace();
+        $creditCardInvoice = $this->findInvoice($workspace, $invoice);
+        $transaction = $workspace->financialTransactions()
+            ->findOrFail($request->integer('financial_transaction_id'));
+
+        $this->refundReconciliation->reconcile(
+            $workspace,
+            $creditCardInvoice,
+            $this->findEntry($creditCardInvoice, $entry),
+            $transaction,
+            $user,
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Crédito vinculado como reembolso da compra, sem criar receita.',
         ]);
 
         return $this->redirectAfterCardReconciliation($invoice);

@@ -124,9 +124,15 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::get('faturas/{invoice}', [CreditCardInvoiceController::class, 'show'])
         ->whereNumber('invoice')
         ->name('credit-card-invoices.show');
+    Route::post('faturas/{invoice}/compras', [CreditCardInvoiceController::class, 'storePurchase'])
+        ->whereNumber('invoice')
+        ->name('credit-card-invoices.purchases.store');
     Route::patch('faturas/{invoice}/fechar', [CreditCardInvoiceController::class, 'close'])
         ->whereNumber('invoice')
         ->name('credit-card-invoices.close');
+    Route::patch('faturas/{invoice}/reabrir', [CreditCardInvoiceController::class, 'reopen'])
+        ->whereNumber('invoice')
+        ->name('credit-card-invoices.reopen');
     Route::post('faturas/{invoice}/pagamentos', [CreditCardInvoiceController::class, 'pay'])
         ->whereNumber('invoice')
         ->name('credit-card-invoices.pay');
@@ -193,6 +199,20 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->whereNumber('invoice')
         ->whereNumber('entry')
         ->name('credit-card-invoices.statement-entries.create');
+    Route::get(
+        'faturas/{invoice}/linhas/{entry}/candidatos-reembolso',
+        [CardStatementReconciliationController::class, 'refundCandidates'],
+    )
+        ->whereNumber('invoice')
+        ->whereNumber('entry')
+        ->name('credit-card-invoices.statement-entries.refund-candidates');
+    Route::post(
+        'faturas/{invoice}/linhas/{entry}/reembolso',
+        [CardStatementReconciliationController::class, 'refund'],
+    )
+        ->whereNumber('invoice')
+        ->whereNumber('entry')
+        ->name('credit-card-invoices.statement-entries.refund');
 
     Route::get('lancamentos', [FinancialTransactionController::class, 'index'])
         ->name('transactions.index');

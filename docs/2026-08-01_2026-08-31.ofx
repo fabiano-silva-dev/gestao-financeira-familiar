@@ -1,0 +1,168 @@
+OFXHEADER:100
+DATA:OFXSGML
+VERSION:100
+SECURITY:NONE
+ENCODING:UTF-8
+CHARSET:NONE
+COMPRESSION:NONE
+OLDFILEUID:NONE
+NEWFILEUID:NONE
+<OFX>
+  <SIGNONMSGSRSV1>
+    <SONRS>
+      <STATUS>
+        <CODE>0</CODE>
+        <SEVERITY>INFO</SEVERITY>
+      </STATUS>
+      <DTSERVER>20261004101503[-3:BRT]</DTSERVER>
+      <LANGUAGE>POR</LANGUAGE>
+      <FI>
+        <ORG>PagSeguro Internet S/A</ORG>
+        <FID>290</FID>
+      </FI>
+    </SONRS>
+  </SIGNONMSGSRSV1>
+  <BANKMSGSRSV1>
+    <STMTTRNRS>
+      <STATUS>
+        <CODE>0</CODE>
+        <SEVERITY>INFO</SEVERITY>
+      </STATUS>
+      <STMTRS>
+        <CURDEF>BRL</CURDEF>
+        <BANKACCTFROM>
+          <BANKID>290</BANKID>
+          <ACCTID>6022347-6</ACCTID>
+          <ACCTTYPE>CHECKING</ACCTTYPE>
+        </BANKACCTFROM>
+        <BANKTRANLIST>
+          <DTSTART>20260801000000[-3:BRT]</DTSTART>
+          <DTEND>20260831000000[-3:BRT]</DTEND>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260801200643[-3:BRT]</DTPOSTED>
+            <TRNAMT>-28.57</TRNAMT>
+            <FITID>461f5365-b557-4427-80d4-7ecc155bbfe8</FITID>
+            <MEMO>Pix enviado - Elenize Madri Machado</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260801123051[-3:BRT]</DTPOSTED>
+            <TRNAMT>21.43</TRNAMT>
+            <FITID>4d7e67e2-cdd0-4f81-bdf7-477dfb408f78</FITID>
+            <MEMO>Pix recebido - Renata Lied</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260801085005[-3:BRT]</DTPOSTED>
+            <TRNAMT>21.43</TRNAMT>
+            <FITID>59ee4a78-e96f-4e1e-b1b5-b7af67130216</FITID>
+            <MEMO>Pix recebido - Kelly De Fatima De Melo Strazzabosco</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260803125631[-3:BRT]</DTPOSTED>
+            <TRNAMT>-14.29</TRNAMT>
+            <FITID>f8f2844c-e3a2-47bb-a91d-45cae32fea49</FITID>
+            <MEMO>Pix enviado - Fabiano Carvalho Da Silva</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260810114306[-3:BRT]</DTPOSTED>
+            <TRNAMT>180.00</TRNAMT>
+            <FITID>e67e1b5c-f943-4a1d-8bc2-0aa4c98db1dc</FITID>
+            <MEMO>Pix recebido - Greyce Rocha Beltrame</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260811152938[-3:BRT]</DTPOSTED>
+            <TRNAMT>-180.00</TRNAMT>
+            <FITID>4b497b79-418e-4f98-80fb-ed3970eee918</FITID>
+            <MEMO>Pix enviado - Fabiano Carvalho Da Silva</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260816220057[-3:BRT]</DTPOSTED>
+            <TRNAMT>-20.00</TRNAMT>
+            <FITID>91b0e2e7-b635-4d9d-94a3-fc39257d8d1e</FITID>
+            <MEMO>Pix enviado - Rafael Kerch Da Silva</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260816220013[-3:BRT]</DTPOSTED>
+            <TRNAMT>20.00</TRNAMT>
+            <FITID>140fd73c-f71b-4b66-9d7a-9df7bfbe589f</FITID>
+            <MEMO>Pix recebido - Fabiano Carvalho Da Silva</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260818222202[-3:BRT]</DTPOSTED>
+            <TRNAMT>10.00</TRNAMT>
+            <FITID>629f5df7-976b-411a-b0ff-9b7957c63de5</FITID>
+            <MEMO>Pix recebido - Adriana Isabel Lottermann</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260818221631[-3:BRT]</DTPOSTED>
+            <TRNAMT>10.00</TRNAMT>
+            <FITID>80766b68-6ab0-4119-9dd8-8100b46846ed</FITID>
+            <MEMO>Pix recebido - Renata Lied</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260818211345[-3:BRT]</DTPOSTED>
+            <TRNAMT>10.00</TRNAMT>
+            <FITID>f5436d11-e0ea-41e5-bfd4-a8d28a4aba5b</FITID>
+            <MEMO>Pix recebido - Marselli Senandes De Moura</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260818210050[-3:BRT]</DTPOSTED>
+            <TRNAMT>10.00</TRNAMT>
+            <FITID>8df9f3db-7e71-4c88-a4a6-8887e369105a</FITID>
+            <MEMO>Pix recebido - Marisa Matiasso Domeneghini</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260821110410[-3:BRT]</DTPOSTED>
+            <TRNAMT>170.00</TRNAMT>
+            <FITID>fa903800-6b2b-424f-8001-7004cb13b923</FITID>
+            <MEMO>Pix recebido - Fabiano Miranda</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260821103844[-3:BRT]</DTPOSTED>
+            <TRNAMT>85.00</TRNAMT>
+            <FITID>953a5ff9-5c1d-4318-85c9-e793b8df8505</FITID>
+            <MEMO>Pix recebido - Jane Elenice Franco Dos Santos Ricc</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260822182048[-3:BRT]</DTPOSTED>
+            <TRNAMT>-15.00</TRNAMT>
+            <FITID>7d111b4d-70e2-403c-8263-e71d4aacb236</FITID>
+            <MEMO>Pix enviado - 57.801.398 Deise Raquel Maas Diehl</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260824191359[-3:BRT]</DTPOSTED>
+            <TRNAMT>-129.95</TRNAMT>
+            <FITID>c2722871-5185-40ec-8c8b-f72c92fb4fdc</FITID>
+            <MEMO>Pix enviado - Robson Daniel Dos Santos Da Rosa</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260828140228[-3:BRT]</DTPOSTED>
+            <TRNAMT>85.00</TRNAMT>
+            <FITID>d9eaee84-fac2-409a-8ac2-a840cd02439a</FITID>
+            <MEMO>Pix recebido - Elenize Madri Machado</MEMO>
+          </STMTTRN>
+        </BANKTRANLIST>
+        <LEDGERBAL>
+          <BALAMT>R$ 235,05</BALAMT>
+          <DTASOF>28/08/2026</DTASOF>
+        </LEDGERBAL>
+      </STMTRS>
+    </STMTTRNRS>
+  </BANKMSGSRSV1>
+</OFX>

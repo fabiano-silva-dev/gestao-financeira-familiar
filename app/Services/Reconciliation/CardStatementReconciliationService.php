@@ -2,12 +2,14 @@
 
 namespace App\Services\Reconciliation;
 
+use App\Enums\ExpenseRefundOrigin;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
 use App\Enums\TransactionInstallmentStatus;
 use App\Models\CardStatementEntry;
 use App\Models\CreditCardInvoice;
+use App\Models\ExpenseRefund;
 use App\Models\FinancialTransaction;
 use App\Models\TransactionInstallment;
 use App\Models\User;
@@ -221,13 +223,29 @@ final class CardStatementReconciliationService
                 ->whereKey($entry->id)
                 ->lockForUpdate()
                 ->firstOrFail();
+            $refund = $lockedEntry->expense_refund_id === null
+                ? null
+                : ExpenseRefund::query()
+                    ->where('workspace_id', $workspace->id)
+                    ->whereKey($lockedEntry->expense_refund_id)
+                    ->lockForUpdate()
+                    ->first();
 
             $lockedEntry->update([
                 'transaction_installment_id' => null,
+                'expense_refund_id' => null,
                 'reconciled_by' => null,
                 'reconciled_at' => null,
                 'is_reconciled' => false,
             ]);
+
+            if (
+                $refund instanceof ExpenseRefund
+                && $refund->origin === ExpenseRefundOrigin::CardStatement
+                && $refund->movement()->doesntExist()
+            ) {
+                $refund->delete();
+            }
 
             return $lockedEntry->refresh();
         });

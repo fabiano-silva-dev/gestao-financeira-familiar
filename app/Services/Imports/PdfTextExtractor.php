@@ -6,6 +6,10 @@ use Illuminate\Support\Facades\Process;
 
 final class PdfTextExtractor
 {
+    public function __construct(
+        private readonly ?PdfReadContext $passwords = null,
+    ) {}
+
     public function extract(string $contents): string
     {
         if (trim($contents) === '') {
@@ -41,18 +45,48 @@ final class PdfTextExtractor
 
     private function extractWithPdftotext(string $path): string
     {
-        $process = Process::timeout(30)->run([
-            'pdftotext',
-            '-layout',
-            $path,
-            '-',
-        ]);
+        $context = $this->passwords;
+        $attempts = $context?->attempts() ?? [null];
+        $protected = false;
 
-        if (! $process->successful()) {
+        foreach ($attempts as $password) {
+            $command = ['pdftotext', '-layout'];
+
+            if (is_string($password) && $password !== '') {
+                $command[] = '-upw';
+                $command[] = $password;
+            }
+
+            $command[] = $path;
+            $command[] = '-';
+
+            $process = Process::timeout(30)->run($command);
+
+            if ($process->successful()) {
+                if (is_string($password) && $password !== '') {
+                    $context?->remember($password);
+                }
+
+                return trim(str_replace("\f", "\n", $process->output()));
+            }
+
+            if (str_contains($process->errorOutput(), 'Incorrect password')) {
+                $protected = true;
+
+                continue;
+            }
+
             return '';
         }
 
-        return trim(str_replace("\f", "\n", $process->output()));
+        if ($protected) {
+            throw new PdfPasswordException(
+                $context?->failureMessage()
+                    ?? 'Este PDF está protegido por senha. Informe a senha do arquivo.',
+            );
+        }
+
+        return '';
     }
 
     private function extractStringLiterals(string $contents): string

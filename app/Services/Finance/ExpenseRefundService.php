@@ -315,21 +315,34 @@ final class ExpenseRefundService
 
     private function statementCreditCents(CreditCardInvoice $invoice): int
     {
-        return $invoice->statementEntries()
+        return $this->sumStatementCreditCents($invoice, false);
+    }
+
+    private function invoiceRefundableCents(CreditCardInvoice $invoice): int
+    {
+        return $this->moneyToCents($this->invoiceService->totalAmount($invoice))
+            + $this->sumStatementCreditCents($invoice, true);
+    }
+
+    private function sumStatementCreditCents(
+        CreditCardInvoice $invoice,
+        bool $onlyUnlinked,
+    ): int {
+        $query = $invoice->statementEntries()
             ->where('amount', '<', 0)
+            ->where('is_payment', false);
+
+        if ($onlyUnlinked) {
+            $query->whereNull('expense_refund_id');
+        }
+
+        return $query
             ->pluck('amount')
             ->reduce(
                 fn (int $total, mixed $amount): int =>
                     $total + abs($this->moneyToCents((string) $amount)),
                 0,
             );
-    }
-
-    private function invoiceRefundableCents(CreditCardInvoice $invoice): int
-    {
-        return $this->moneyToCents(
-            $this->invoiceService->totalAmount($invoice),
-        );
     }
 
     /** @param array<int, mixed> $values */

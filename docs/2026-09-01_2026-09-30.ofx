@@ -1,0 +1,525 @@
+OFXHEADER:100
+DATA:OFXSGML
+VERSION:100
+SECURITY:NONE
+ENCODING:UTF-8
+CHARSET:NONE
+COMPRESSION:NONE
+OLDFILEUID:NONE
+NEWFILEUID:NONE
+<OFX>
+  <SIGNONMSGSRSV1>
+    <SONRS>
+      <STATUS>
+        <CODE>0</CODE>
+        <SEVERITY>INFO</SEVERITY>
+      </STATUS>
+      <DTSERVER>20261004101528[-3:BRT]</DTSERVER>
+      <LANGUAGE>POR</LANGUAGE>
+      <FI>
+        <ORG>PagSeguro Internet S/A</ORG>
+        <FID>290</FID>
+      </FI>
+    </SONRS>
+  </SIGNONMSGSRSV1>
+  <BANKMSGSRSV1>
+    <STMTTRNRS>
+      <STATUS>
+        <CODE>0</CODE>
+        <SEVERITY>INFO</SEVERITY>
+      </STATUS>
+      <STMTRS>
+        <CURDEF>BRL</CURDEF>
+        <BANKACCTFROM>
+          <BANKID>290</BANKID>
+          <ACCTID>6022347-6</ACCTID>
+          <ACCTTYPE>CHECKING</ACCTTYPE>
+        </BANKACCTFROM>
+        <BANKTRANLIST>
+          <DTSTART>20260901000000[-3:BRT]</DTSTART>
+          <DTEND>20260930000000[-3:BRT]</DTEND>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260901112917[-3:BRT]</DTPOSTED>
+            <TRNAMT>-28.55</TRNAMT>
+            <FITID>c5c0073e-1a16-479d-b4a8-f4fc13c2b097</FITID>
+            <MEMO>QR Code Pix enviado - Onr</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260903085607[-3:BRT]</DTPOSTED>
+            <TRNAMT>-12.00</TRNAMT>
+            <FITID>ccc246b5-d7db-4fd0-a8f1-1ffd1933ef44</FITID>
+            <MEMO>QR Code Pix enviado - Pagar Me Pagamentos</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260904185002[-3:BRT]</DTPOSTED>
+            <TRNAMT>-15.40</TRNAMT>
+            <FITID>d168bd18-e6b8-4d98-869b-313588a81306</FITID>
+            <MEMO>QR Code Pix enviado - Dear Coffee</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260907183804[-3:BRT]</DTPOSTED>
+            <TRNAMT>16.67</TRNAMT>
+            <FITID>ca7b585b-b0b0-4e53-bd7b-3f63812e01ac</FITID>
+            <MEMO>Pix recebido - Kelly De Fatima De Melo Strazzabosco</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260907130413[-3:BRT]</DTPOSTED>
+            <TRNAMT>16.67</TRNAMT>
+            <FITID>9e77e230-713b-48fe-9650-385319927ffe</FITID>
+            <MEMO>Pix recebido - Perla Paula Faria De Souza</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260907122024[-3:BRT]</DTPOSTED>
+            <TRNAMT>16.67</TRNAMT>
+            <FITID>97458fe3-298b-44a3-96a3-165c137e74ff</FITID>
+            <MEMO>Pix recebido - Renata Lied</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260907120225[-3:BRT]</DTPOSTED>
+            <TRNAMT>16.67</TRNAMT>
+            <FITID>70ab0c04-e31d-4dd1-9d55-fc55f788693e</FITID>
+            <MEMO>Pix recebido - Marselli Senandes De Moura</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260907115941[-3:BRT]</DTPOSTED>
+            <TRNAMT>-100.00</TRNAMT>
+            <FITID>5e982319-e429-4bc9-835a-299bf610b044</FITID>
+            <MEMO>Pix enviado - 57.801.398 Deise Raquel Maas Diehl</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908191421[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.74</TRNAMT>
+            <FITID>2aceb3d9-afc8-48d8-aa7c-1bc0661e2ce8</FITID>
+            <MEMO>Pix recebido - Valdomiro Da Silva</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908135605[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.74</TRNAMT>
+            <FITID>b6cd08b7-a304-40ae-a43a-69240fc785a0</FITID>
+            <MEMO>Pix recebido - Luciane Diniz Rive</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908133856[-3:BRT]</DTPOSTED>
+            <TRNAMT>3.00</TRNAMT>
+            <FITID>678c4a8e-c55b-4ae0-a878-642919500b8c</FITID>
+            <MEMO>Pix recebido - Sara Moreno Cyrino Carvalho</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260908133222[-3:BRT]</DTPOSTED>
+            <TRNAMT>-43.20</TRNAMT>
+            <FITID>ef7cc311-4459-4ac1-9586-63a9bdbec04b</FITID>
+            <MEMO>Pix enviado - Xerox Iop</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908131614[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.75</TRNAMT>
+            <FITID>cafd65b3-3d2c-4a36-b207-bba8674e9890</FITID>
+            <MEMO>Pix recebido - Itaiane Francielle Martins Dos Santos</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908124411[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.74</TRNAMT>
+            <FITID>33e2d5b3-14bf-48ee-b84c-e21612d25d48</FITID>
+            <MEMO>Pix recebido - Cristieli De Araujo Vargas</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908124354[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.75</TRNAMT>
+            <FITID>c96fe183-c1d8-467c-9874-b9acbbb0faa7</FITID>
+            <MEMO>Pix recebido - Alessandra Farias Canabarro</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908124259[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.74</TRNAMT>
+            <FITID>7a2fc934-619b-4419-a5dd-b30e0eb25267</FITID>
+            <MEMO>Pix recebido - Gabriela Santos Da Silva De Bitencourt</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908123312[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.75</TRNAMT>
+            <FITID>4f7c3061-cbad-4b1c-8a3d-6604012fd789</FITID>
+            <MEMO>Pix recebido - Carla Ceccatto</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908123104[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.75</TRNAMT>
+            <FITID>f9cd3773-2641-40a6-9f02-409f040d95ec</FITID>
+            <MEMO>Pix recebido - Thais Bicca Da Rosa Vieira</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908122147[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.75</TRNAMT>
+            <FITID>df137f6a-41e8-466b-a010-24b6767fe940</FITID>
+            <MEMO>Pix recebido - Mercedes Loreni De Almeida</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908120825[-3:BRT]</DTPOSTED>
+            <TRNAMT>25.75</TRNAMT>
+            <FITID>550ec866-b4eb-453c-a184-fd8d244e4532</FITID>
+            <MEMO>Pix recebido - Juliana Binotto Rossato</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908120601[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.75</TRNAMT>
+            <FITID>f4ecff9f-4e74-4fc6-8a4f-21a537e7df16</FITID>
+            <MEMO>Pix recebido - Patrícia Cristina Do Nascimento Luz</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908120523[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.74</TRNAMT>
+            <FITID>cf026d2a-b24b-4678-8472-d01babad3990</FITID>
+            <MEMO>Pix recebido - Luciana Lopes Barbosa</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908115842[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.74</TRNAMT>
+            <FITID>304d5675-37e5-4749-91cc-bd2c4bc1cd8a</FITID>
+            <MEMO>Pix recebido - Juliana Rohde De Azevedo</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908115756[-3:BRT]</DTPOSTED>
+            <TRNAMT>3.00</TRNAMT>
+            <FITID>41dd918d-7810-4532-ac4a-064f67a586af</FITID>
+            <MEMO>Pix recebido - Giuliana Bigolin Martini</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908115641[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.74</TRNAMT>
+            <FITID>14e90005-c7be-4622-86ca-0bee17cb8d99</FITID>
+            <MEMO>Pix recebido - Mariane Santos Oppermann</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908115628[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.75</TRNAMT>
+            <FITID>6b7f1dd3-7190-4ea8-bf51-a9b6cfd75439</FITID>
+            <MEMO>Pix recebido - Roana Ferraz Querubim Costa</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908115531[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.74</TRNAMT>
+            <FITID>ecb9cf97-6a55-46dc-923c-99c80815fcb5</FITID>
+            <MEMO>Pix recebido - Fernanda Gall Centa</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908115504[-3:BRT]</DTPOSTED>
+            <TRNAMT>16.00</TRNAMT>
+            <FITID>d0cee643-7328-494f-b46a-03d4c7176c52</FITID>
+            <MEMO>Pix recebido - Gabrielle Flores Brandao</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908115322[-3:BRT]</DTPOSTED>
+            <TRNAMT>3.00</TRNAMT>
+            <FITID>19af2328-9f4d-46bc-a767-cd44a55c97f5</FITID>
+            <MEMO>Pix recebido - Giuliana Bigolin Martini</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908115136[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.74</TRNAMT>
+            <FITID>ccc7b0c8-17b3-40ce-86fc-f52cbe70f978</FITID>
+            <MEMO>Pix recebido - Camila Carvalho De Amorim</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908115019[-3:BRT]</DTPOSTED>
+            <TRNAMT>3.00</TRNAMT>
+            <FITID>336d323b-7ae8-4bc0-bd15-feb949a4d62f</FITID>
+            <MEMO>Pix recebido - Noélli Ferreira Dos Santos</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908114807[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.74</TRNAMT>
+            <FITID>5e7ead87-9cea-4313-9649-a25eed510f10</FITID>
+            <MEMO>Pix recebido - Andressa Dos Santos Silva</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908114610[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.75</TRNAMT>
+            <FITID>5a822669-3c26-4571-81e8-ff588e76b686</FITID>
+            <MEMO>Pix recebido - Fabiana Do Nascimento Amaral</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260908114547[-3:BRT]</DTPOSTED>
+            <TRNAMT>2.74</TRNAMT>
+            <FITID>623b9795-e61b-443b-8384-ca5d9f54cc6a</FITID>
+            <MEMO>Pix recebido - Nathiele Souza Da Silva</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260909220411[-3:BRT]</DTPOSTED>
+            <TRNAMT>-74.00</TRNAMT>
+            <FITID>5c811745-f552-49e2-9cb5-168def6a5e59</FITID>
+            <MEMO>Pix enviado - Fabiano Carvalho Da Silva</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260909220027[-3:BRT]</DTPOSTED>
+            <TRNAMT>-39.59</TRNAMT>
+            <FITID>a2413438-6350-44f0-9447-72ac45358dd6</FITID>
+            <MEMO>QR Code Pix enviado - Pix Marketplace</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260909084940[-3:BRT]</DTPOSTED>
+            <TRNAMT>3.00</TRNAMT>
+            <FITID>65c162a0-5c49-4048-9ad5-918dd8ccdfb2</FITID>
+            <MEMO>Pix recebido - 62082130 Mirian Ferraz Pasturiza</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260912184958[-3:BRT]</DTPOSTED>
+            <TRNAMT>10.00</TRNAMT>
+            <FITID>431846ea-e03b-43f3-8b8c-b124fbcbf1a6</FITID>
+            <MEMO>Pix recebido - Adriana Isabel Lottermann</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260912175510[-3:BRT]</DTPOSTED>
+            <TRNAMT>-100.00</TRNAMT>
+            <FITID>0c5f3307-9101-4675-8ea5-9328508168f3</FITID>
+            <MEMO>Pix enviado - 57.801.398 Deise Raquel Maas Diehl</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260912172636[-3:BRT]</DTPOSTED>
+            <TRNAMT>10.00</TRNAMT>
+            <FITID>dd4434c7-d9b4-45a7-a573-f9e6fb57c91f</FITID>
+            <MEMO>Pix recebido - Suelen Pizato Fortes</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260912172544[-3:BRT]</DTPOSTED>
+            <TRNAMT>10.00</TRNAMT>
+            <FITID>0b8c396d-3716-4eb1-b857-2da9ddf931f2</FITID>
+            <MEMO>Pix recebido - Marisa Matiasso Domeneghini</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260912172534[-3:BRT]</DTPOSTED>
+            <TRNAMT>10.00</TRNAMT>
+            <FITID>dffe314b-b5fb-4eac-a58b-ae2860e1afd0</FITID>
+            <MEMO>Pix recebido - Vanessa Vargas Zago</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260912172048[-3:BRT]</DTPOSTED>
+            <TRNAMT>10.00</TRNAMT>
+            <FITID>1c18f541-ea6d-40d4-af9c-ce380f79ca9c</FITID>
+            <MEMO>Pix recebido - Perla Paula Faria De Souza</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260912171800[-3:BRT]</DTPOSTED>
+            <TRNAMT>10.00</TRNAMT>
+            <FITID>a001c768-417f-4d30-b6a7-1bbf5c140efa</FITID>
+            <MEMO>Pix recebido - Jane Elenice Franco Dos Santos Ricc</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260912171746[-3:BRT]</DTPOSTED>
+            <TRNAMT>10.00</TRNAMT>
+            <FITID>191fefbf-0d75-4cf5-a212-bc0879dc1275</FITID>
+            <MEMO>Pix recebido - Marselli Senandes De Moura</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260914122410[-3:BRT]</DTPOSTED>
+            <TRNAMT>10.00</TRNAMT>
+            <FITID>fbdc20f1-737a-48da-8531-5e5b1a644b5f</FITID>
+            <MEMO>Pix recebido - Kelly De Fatima De Melo Strazzabosco</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260916121206[-3:BRT]</DTPOSTED>
+            <TRNAMT>-16.80</TRNAMT>
+            <FITID>04d18f2d-222e-49ea-8c71-7498d0cc9061</FITID>
+            <MEMO>QR Code Pix enviado - Dear Santa</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260918174633[-3:BRT]</DTPOSTED>
+            <TRNAMT>-14.50</TRNAMT>
+            <FITID>f340188e-cfdb-437e-b7d7-8afca504dcb7</FITID>
+            <MEMO>Pix enviado - Carlos Eduardo Dias Dos Santos</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260918062005[-3:BRT]</DTPOSTED>
+            <TRNAMT>0.33</TRNAMT>
+            <FITID>fe4446ba-300f-0d76-bdaf-503059f6d18e</FITID>
+            <MEMO>Rendimento da conta - Rendimento líquido sobre dinheiro em conta</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260919093715[-3:BRT]</DTPOSTED>
+            <TRNAMT>-3.50</TRNAMT>
+            <FITID>161ea31d-898a-44a5-9963-77f28a0afb0a</FITID>
+            <MEMO>Pix enviado - Carlos Eduardo Dias Dos Santos</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260921061945[-3:BRT]</DTPOSTED>
+            <TRNAMT>0.17</TRNAMT>
+            <FITID>a3570ebf-b95d-005d-9a8d-f12b398c7c86</FITID>
+            <MEMO>Rendimento da conta - Rendimento líquido sobre dinheiro em conta</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260922182439[-3:BRT]</DTPOSTED>
+            <TRNAMT>40.91</TRNAMT>
+            <FITID>9b03ab14-ebfd-483d-8e1d-720f6816cee6</FITID>
+            <MEMO>Pix recebido - Marselli Senandes De Moura</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260922165338[-3:BRT]</DTPOSTED>
+            <TRNAMT>40.91</TRNAMT>
+            <FITID>75fd27e4-63cf-4039-9f41-fd3a52670ff1</FITID>
+            <MEMO>Pix recebido - Suelen Pizato Fortes</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260923172418[-3:BRT]</DTPOSTED>
+            <TRNAMT>40.91</TRNAMT>
+            <FITID>7b7abcf0-7f53-4e30-945d-364379bf68c1</FITID>
+            <MEMO>Pix recebido - Perla Paula Faria De Souza</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260923154016[-3:BRT]</DTPOSTED>
+            <TRNAMT>41.00</TRNAMT>
+            <FITID>3b134105-ba8b-4f86-9cce-07bda403421e</FITID>
+            <MEMO>Pix recebido - Adriana Isabel Lottermann</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260923113606[-3:BRT]</DTPOSTED>
+            <TRNAMT>40.91</TRNAMT>
+            <FITID>73fb3e49-1b24-4514-b578-87dea45b316f</FITID>
+            <MEMO>Pix recebido - Joseane Ines Anschau</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260923101106[-3:BRT]</DTPOSTED>
+            <TRNAMT>40.91</TRNAMT>
+            <FITID>075b6ffc-4298-4070-94fa-943d982a2086</FITID>
+            <MEMO>Pix recebido - Marisa Matiasso Domeneghini</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260923082801[-3:BRT]</DTPOSTED>
+            <TRNAMT>40.91</TRNAMT>
+            <FITID>70ab06ad-0c6e-4f4f-afa5-2d00cac9a587</FITID>
+            <MEMO>Pix recebido - Renata Lied</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260924144840[-3:BRT]</DTPOSTED>
+            <TRNAMT>29.17</TRNAMT>
+            <FITID>1df9fcc9-5554-4072-ab5e-3fececbbd8e7</FITID>
+            <MEMO>Pix recebido - Nicole Cristina Lottermann</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260924142757[-3:BRT]</DTPOSTED>
+            <TRNAMT>29.17</TRNAMT>
+            <FITID>55501de1-3edf-498a-9d54-05384dbf65d4</FITID>
+            <MEMO>Pix recebido - Marselli Senandes De Moura</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260924100704[-3:BRT]</DTPOSTED>
+            <TRNAMT>30.00</TRNAMT>
+            <FITID>f037ad57-a474-4d5e-8019-a5247d1c5787</FITID>
+            <MEMO>Pix recebido - Ricardo Magno Rasche Dorneles</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260924094438[-3:BRT]</DTPOSTED>
+            <TRNAMT>29.17</TRNAMT>
+            <FITID>2c4e5e7d-c07d-44c6-bf31-b99067fa2798</FITID>
+            <MEMO>Pix recebido - Marisa Matiasso Domeneghini</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260924093158[-3:BRT]</DTPOSTED>
+            <TRNAMT>29.17</TRNAMT>
+            <FITID>e6ec718a-9fcf-4361-9b87-e0bc38adaccc</FITID>
+            <MEMO>Pix recebido - Suelen Pizato Fortes</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260925161430[-3:BRT]</DTPOSTED>
+            <TRNAMT>70.14</TRNAMT>
+            <FITID>8959f3d5-7f94-4813-ae30-ffa9010d96f6</FITID>
+            <MEMO>Pix recebido - Vanessa Vargas Zago</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260925143603[-3:BRT]</DTPOSTED>
+            <TRNAMT>29.17</TRNAMT>
+            <FITID>c6993c97-145b-4489-b21e-dab0d32d7ae2</FITID>
+            <MEMO>Pix recebido - Julia Teichmann Gais</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OUT</TRNTYPE>
+            <DTPOSTED>20260925095832[-3:BRT]</DTPOSTED>
+            <TRNAMT>-320.00</TRNAMT>
+            <FITID>c64b17d9-65fe-4afd-b144-34f1d8d41dc5</FITID>
+            <MEMO>Pix enviado - Keilla Veronica Altamiranda Alves</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260929100439[-3:BRT]</DTPOSTED>
+            <TRNAMT>40.91</TRNAMT>
+            <FITID>2c8faaf6-39eb-4d2e-8baa-aa41714ecb9f</FITID>
+            <MEMO>Pix recebido - Jane Elenice Franco Dos Santos Ricc</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>IN</TRNTYPE>
+            <DTPOSTED>20260930115005[-3:BRT]</DTPOSTED>
+            <TRNAMT>29.17</TRNAMT>
+            <FITID>8365444a-52eb-40e6-8cd6-aebfc10b325e</FITID>
+            <MEMO>Pix recebido - Sheila De Araujo Mello</MEMO>
+          </STMTTRN>
+        </BANKTRANLIST>
+        <LEDGERBAL>
+          <BALAMT>R$ 326,11</BALAMT>
+          <DTASOF>30/09/2026</DTASOF>
+        </LEDGERBAL>
+      </STMTRS>
+    </STMTTRNRS>
+  </BANKMSGSRSV1>
+</OFX>

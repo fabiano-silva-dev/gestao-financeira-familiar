@@ -62,6 +62,14 @@ export type CreditCardInvoiceLinkedInstallment = {
     total_installments: number;
 };
 
+export type CreditCardInvoiceLinkedRefund = {
+    id: number;
+    transaction_id: number;
+    description: string;
+    amount: string;
+    refunded_on: string;
+};
+
 export type CreditCardInvoiceStatementEntry = {
     id: number;
     purchased_on: string;
@@ -76,6 +84,7 @@ export type CreditCardInvoiceStatementEntry = {
     reconciled_by_name: string | null;
     reconciled_at: string | null;
     linked_installment: CreditCardInvoiceLinkedInstallment | null;
+    linked_refund: CreditCardInvoiceLinkedRefund | null;
     candidates: CreditCardInvoiceStatementCandidate[];
 };
 
@@ -102,6 +111,7 @@ export type CreditCardInvoice = {
     reconciled_purchase_entries_count: number;
     ignored_purchase_entries_count: number;
     can_close: boolean;
+    can_reopen: boolean;
     can_pay: boolean;
     payment_instructions?: string | null;
     installments?: CreditCardInvoiceInstallment[];

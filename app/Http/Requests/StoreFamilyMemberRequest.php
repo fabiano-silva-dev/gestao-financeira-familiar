@@ -12,6 +12,19 @@ class StoreFamilyMemberRequest extends FormRequest
         return $this->user() !== null;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if (! $this->exists('cpf')) {
+            return;
+        }
+
+        $digits = preg_replace('/\D/', '', (string) $this->input('cpf')) ?? '';
+
+        $this->merge([
+            'cpf' => $digits === '' ? null : $digits,
+        ]);
+    }
+
     /**
      * @return array<string, ValidationRule|array<mixed>|string>
      */
@@ -19,6 +32,7 @@ class StoreFamilyMemberRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:120'],
+            'cpf' => ['nullable', 'digits:11'],
         ];
     }
 
@@ -29,6 +43,7 @@ class StoreFamilyMemberRequest extends FormRequest
     {
         return [
             'name' => 'nome',
+            'cpf' => 'CPF',
         ];
     }
 }

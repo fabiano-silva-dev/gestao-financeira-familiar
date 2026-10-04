@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Models\Workspace;
 use App\Policies\WorkspacePolicy;
+use App\Services\Imports\PdfReadContext;
 use App\Support\Workspaces\CurrentWorkspace;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Vite;
@@ -21,6 +22,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(CurrentWorkspace::class);
+        $this->app->scoped(PdfReadContext::class);
 
         $this->app->extend(Vite::class, function () {
             return new class extends Vite

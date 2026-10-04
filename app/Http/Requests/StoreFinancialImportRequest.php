@@ -32,6 +32,7 @@ class StoreFinancialImportRequest extends FormRequest
                 'file',
                 new FinancialImportFile,
             ],
+            'pdf_password' => ['nullable', 'string', 'max:64'],
         ];
     }
 
@@ -42,6 +43,7 @@ class StoreFinancialImportRequest extends FormRequest
             'files' => 'arquivos',
             'files.*' => 'arquivo',
             'file' => 'arquivo',
+            'pdf_password' => 'senha do PDF',
         ];
     }
 }

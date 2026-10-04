@@ -77,7 +77,7 @@ class FamilyMemberController extends Controller
     public function edit(int $member): Response
     {
         return Inertia::render('family-members/edit', [
-            'member' => $this->memberData($this->findMember($member)),
+            'member' => $this->memberData($this->findMember($member), true),
         ]);
     }
 
@@ -129,14 +129,20 @@ class FamilyMemberController extends Controller
     }
 
     /**
-     * @return array{id: int, name: string, is_active: bool}
+     * @return array{id: int, name: string, is_active: bool, cpf?: string|null}
      */
-    private function memberData(FamilyMember $member): array
+    private function memberData(FamilyMember $member, bool $withCpf = false): array
     {
-        return [
+        $data = [
             'id' => $member->id,
             'name' => $member->name,
             'is_active' => $member->is_active,
         ];
+
+        if ($withCpf) {
+            $data['cpf'] = $member->cpf;
+        }
+
+        return $data;
     }
 }

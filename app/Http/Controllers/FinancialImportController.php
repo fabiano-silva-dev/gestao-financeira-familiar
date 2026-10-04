@@ -210,7 +210,13 @@ class FinancialImportController extends Controller
                 continue;
             }
 
-            $outcome = $this->documentImportService->import($workspace, $user, $file);
+            $pdfPassword = $request->validated('pdf_password');
+            $outcome = $this->documentImportService->import(
+                $workspace,
+                $user,
+                $file,
+                is_string($pdfPassword) && $pdfPassword !== '' ? $pdfPassword : null,
+            );
 
             match ($outcome['status']) {
                 'processed' => $processed++,

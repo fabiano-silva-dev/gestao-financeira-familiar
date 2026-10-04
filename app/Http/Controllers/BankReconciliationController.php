@@ -31,6 +31,8 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Finance\ClassificationRuleMatcher;
 use App\Services\Finance\ExpenseCategoryMatcher;
+use App\Services\Imports\CardStatementImportService;
+use App\Services\Imports\OfxImportService;
 use App\Services\Reconciliation\BankReconciliationService;
 use App\Services\Reconciliation\BankReconciliationSuggestionService;
 use App\Services\Reconciliation\CardStatementReconciliationSuggestionService;
@@ -64,6 +66,8 @@ class BankReconciliationController extends Controller
         private readonly ExpenseRefundSuggestionService $refundSuggestionService,
         private readonly ExpenseCategoryMatcher $categoryMatcher,
         private readonly ClassificationRuleMatcher $ruleMatcher,
+        private readonly OfxImportService $ofxImports,
+        private readonly CardStatementImportService $cardImports,
     ) {}
 
     /** @var array<string, array<string, mixed>> */
@@ -971,6 +975,34 @@ class BankReconciliationController extends Controller
     }
 
     /**
+     * @return list<int>
+     */
+    private function coveredBankEntryIds(Workspace $workspace, int $importId): array
+    {
+        $import = $workspace->financialImports()->find($importId);
+
+        if (! $import instanceof FinancialImport || $import->type !== FinancialImportType::Ofx) {
+            return [];
+        }
+
+        return $this->ofxImports->coveredBankEntryIds($import);
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function coveredCardEntryIds(Workspace $workspace, int $importId): array
+    {
+        $import = $workspace->financialImports()->find($importId);
+
+        if (! $import instanceof FinancialImport || $import->type !== FinancialImportType::CardStatement) {
+            return [];
+        }
+
+        return $this->cardImports->coveredCardEntryIds($import);
+    }
+
+    /**
      * @param  array{
      *     kind: string,
      *     account: int|null,
@@ -995,7 +1027,16 @@ class BankReconciliationController extends Controller
         $query = $workspace->bankStatementEntries()
             ->when(
                 $filters['import'] !== null,
-                fn ($query) => $query->where('financial_import_id', $filters['import']),
+                function ($query) use ($workspace, $filters): void {
+                    $ids = $this->coveredBankEntryIds($workspace, $filters['import']);
+                    $query->where(function ($inner) use ($filters, $ids): void {
+                        $inner->where('financial_import_id', $filters['import']);
+
+                        if ($ids !== []) {
+                            $inner->orWhereIn('id', $ids);
+                        }
+                    });
+                },
             )
             ->when(
                 $filters['import'] === null && $filters['account'] !== null,
@@ -1060,7 +1101,16 @@ class BankReconciliationController extends Controller
             )
             ->when(
                 $filters['import'] !== null,
-                fn ($query) => $query->where('financial_import_id', $filters['import']),
+                function ($query) use ($workspace, $filters): void {
+                    $ids = $this->coveredCardEntryIds($workspace, $filters['import']);
+                    $query->where(function ($inner) use ($filters, $ids): void {
+                        $inner->where('financial_import_id', $filters['import']);
+
+                        if ($ids !== []) {
+                            $inner->orWhereIn('id', $ids);
+                        }
+                    });
+                },
             )
             ->when(
                 $filters['import'] === null
@@ -1080,6 +1130,10 @@ class BankReconciliationController extends Controller
             'transactionInstallment.transaction.category:id,name,parent_id',
             'transactionInstallment.transaction.category.parent:id,name',
             'transactionInstallment.transaction.creditCard:id,name,last_four',
+            'expenseRefund.originalTransaction:id,description,transaction_date,type,payee_name,category_id,competence_date,credit_card_id',
+            'expenseRefund.originalTransaction.category:id,name,parent_id',
+            'expenseRefund.originalTransaction.category.parent:id,name',
+            'expenseRefund.originalTransaction.creditCard:id,name,last_four',
             'reconciler:id,name',
         ]);
         $listing->applySearch($query, ['description']);
@@ -1202,8 +1256,16 @@ class BankReconciliationController extends Controller
     private function cardHistoryData(CardStatementEntry $entry): array
     {
         $installment = $entry->transactionInstallment;
-        $transaction = $installment?->transaction;
-        $related = $this->internalFromTransaction($transaction, null, $installment);
+        $refund = $entry->expenseRefund;
+        $transaction = $refund?->originalTransaction ?? $installment?->transaction;
+        $related = $this->internalFromTransaction($transaction, null, $refund === null ? $installment : null);
+
+        if ($refund !== null) {
+            $related['related_type'] = AccountMovementType::Refund->value;
+            $related['related_type_label'] = 'Reembolso';
+            $related['related_description'] = $transaction?->description;
+            $related['related_is_transfer'] = false;
+        }
         $matcher = $this->matcherSuggestion(
             $entry->description,
             CategoryType::Expense,

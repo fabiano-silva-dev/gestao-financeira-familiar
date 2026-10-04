@@ -77,6 +77,12 @@ class ExpenseRefund extends Model
         return $this->hasOne(AccountMovement::class, 'expense_refund_id');
     }
 
+    /** @return HasOne<CardStatementEntry, $this> */
+    public function cardStatementEntry(): HasOne
+    {
+        return $this->hasOne(CardStatementEntry::class, 'expense_refund_id');
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {

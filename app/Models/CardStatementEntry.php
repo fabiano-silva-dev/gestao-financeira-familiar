@@ -27,6 +27,7 @@ use Illuminate\Support\Carbon;
  * @property-read CreditCard $creditCard
  * @property-read CreditCardInvoice $invoice
  * @property-read TransactionInstallment|null $transactionInstallment
+ * @property-read ExpenseRefund|null $expenseRefund
  * @property-read Category|null $suggestedCategory
  * @property-read User|null $reconciler
  */
@@ -49,6 +50,7 @@ use Illuminate\Support\Carbon;
     'reconciled_by',
     'reconciled_at',
     'is_reconciled',
+    'expense_refund_id',
     'is_ignored',
     'ignored_by',
     'ignored_at',
@@ -93,6 +95,12 @@ class CardStatementEntry extends Model
     public function transactionInstallment(): BelongsTo
     {
         return $this->belongsTo(TransactionInstallment::class);
+    }
+
+    /** @return BelongsTo<ExpenseRefund, $this> */
+    public function expenseRefund(): BelongsTo
+    {
+        return $this->belongsTo(ExpenseRefund::class);
     }
 
     /** @return BelongsTo<CreditCardInvoicePayment, $this> */

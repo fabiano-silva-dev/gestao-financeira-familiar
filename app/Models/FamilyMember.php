@@ -4,11 +4,13 @@ namespace App\Models;
 
 use Database\Factories\FamilyMemberFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['name', 'is_active'])]
+#[Fillable(['name', 'cpf', 'is_active'])]
+#[Hidden(['cpf'])]
 class FamilyMember extends Model
 {
     /** @use HasFactory<FamilyMemberFactory> */
@@ -29,6 +31,7 @@ class FamilyMember extends Model
     {
         return [
             'is_active' => 'boolean',
+            'cpf' => 'encrypted',
         ];
     }
 }

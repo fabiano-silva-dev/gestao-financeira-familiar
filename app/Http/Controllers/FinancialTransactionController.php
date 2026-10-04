@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\ExpenseRefundOrigin;
 use App\Enums\ExpenseRefundStatus;
+use App\Enums\FinancialImportType;
 use App\Enums\FinancialTransactionOrigin;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
@@ -27,6 +28,8 @@ use App\Services\Finance\CardInstallmentPlanService;
 use App\Services\Finance\ExpenseRefundService;
 use App\Services\Finance\FinancialEntryService;
 use App\Services\Finance\TransferService;
+use App\Services\Imports\CardStatementImportService;
+use App\Services\Imports\OfxImportService;
 use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
 use Carbon\CarbonImmutable;
@@ -44,6 +47,8 @@ class FinancialTransactionController extends Controller
         private readonly TransferService $transferService,
         private readonly ExpenseRefundService $refundService,
         private readonly CardInstallmentPlanService $installmentPlanService,
+        private readonly OfxImportService $ofxImports,
+        private readonly CardStatementImportService $cardImports,
     ) {}
 
     public function index(Request $request): Response
@@ -158,18 +163,34 @@ class FinancialTransactionController extends Controller
                     'id' => $import->id,
                     'filename' => $import->source_filename,
                 ];
-                $query->where(function (Builder $inner) use ($importId): void {
+                $bankIds = $import->type === FinancialImportType::Ofx
+                    ? $this->ofxImports->coveredBankEntryIds($import)
+                    : [];
+                $cardIds = $import->type === FinancialImportType::CardStatement
+                    ? $this->cardImports->coveredCardEntryIds($import)
+                    : [];
+                $query->where(function (Builder $inner) use ($importId, $bankIds, $cardIds): void {
                     $inner->whereHas(
                         'accountMovements.bankStatementEntry',
                         fn (Builder $entries) => $entries->where(
-                            'financial_import_id',
-                            $importId,
+                            function (Builder $match) use ($importId, $bankIds): void {
+                                $match->where('financial_import_id', $importId);
+
+                                if ($bankIds !== []) {
+                                    $match->orWhereIn('bank_statement_entries.id', $bankIds);
+                                }
+                            },
                         ),
                     )->orWhereHas(
                         'installments.cardStatementEntry',
                         fn (Builder $entries) => $entries->where(
-                            'financial_import_id',
-                            $importId,
+                            function (Builder $match) use ($importId, $cardIds): void {
+                                $match->where('financial_import_id', $importId);
+
+                                if ($cardIds !== []) {
+                                    $match->orWhereIn('card_statement_entries.id', $cardIds);
+                                }
+                            },
                         ),
                     );
                 });

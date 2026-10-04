@@ -3,6 +3,7 @@
 namespace App\Services\Imports\Detection;
 
 use App\Services\Imports\BankStatementParseException;
+use App\Services\Imports\PdfPasswordException;
 use App\Services\Imports\PdfTextExtractor;
 use DateTimeImmutable;
 
@@ -26,6 +27,8 @@ final class PdfDocumentDetector implements FinancialDocumentDetector
     ): ?FinancialDocumentDetection {
         try {
             $text = $this->textExtractor->extract($contents);
+        } catch (PdfPasswordException $exception) {
+            throw $exception;
         } catch (BankStatementParseException) {
             return new FinancialDocumentDetection(
                 documentType: 'unknown',

@@ -66,6 +66,33 @@ class FamilyMemberTest extends TestCase
         $this->assertTrue($member->is_active);
     }
 
+    public function test_cpf_is_stored_encrypted_and_hidden_from_the_list(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->post(route('family-members.store'), [
+                'name' => 'Ana Silva',
+                'cpf' => '529.982.247-25',
+            ])
+            ->assertRedirect(route('family-members.index'))
+            ->assertSessionHasNoErrors();
+
+        $member = FamilyMember::query()->sole();
+
+        $this->assertSame('52998224725', $member->cpf);
+        $this->assertStringNotContainsString('52998224725', (string) $member->getRawOriginal('cpf'));
+
+        $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id])
+            ->get(route('family-members.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->missing('members.0.cpf')
+            );
+    }
+
     public function test_user_can_update_member_from_current_workspace(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();

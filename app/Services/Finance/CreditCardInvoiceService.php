@@ -15,6 +15,7 @@ use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class CreditCardInvoiceService
@@ -171,6 +172,77 @@ class CreditCardInvoiceService
         });
     }
 
+    /**
+     * @param  array<string, mixed>  $purchase
+     */
+    public function addPurchase(
+        CreditCardInvoice $invoice,
+        User $user,
+        array $purchase,
+    ): CardStatementEntry {
+        return DB::transaction(function () use ($invoice, $user, $purchase): CardStatementEntry {
+            $locked = CreditCardInvoice::query()
+                ->whereKey($invoice->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($locked->status !== CreditCardInvoiceStatus::Open) {
+                throw ValidationException::withMessages([
+                    'description' => 'Só é possível lançar compra em uma fatura aberta.',
+                ]);
+            }
+
+            $description = trim((string) $purchase['description']);
+
+            if ($this->isPaymentDescription($description)) {
+                throw ValidationException::withMessages([
+                    'description' => 'Pagamento de fatura não é uma nova compra.',
+                ]);
+            }
+
+            $card = $locked->creditCard()->firstOrFail();
+            $categoryId = $purchase['category_id'] ?? null;
+            $payeeName = isset($purchase['payee_name'])
+                ? trim((string) $purchase['payee_name'])
+                : '';
+            $entry = CardStatementEntry::query()->create([
+                'workspace_id' => $locked->workspace_id,
+                'financial_import_id' => null,
+                'credit_card_id' => $card->id,
+                'credit_card_invoice_id' => $locked->id,
+                'purchased_on' => $purchase['purchased_on'],
+                'description' => $description,
+                'amount' => (string) $purchase['amount'],
+                'installment_number' => (int) $purchase['installment_number'],
+                'total_installments' => (int) $purchase['total_installments'],
+                'external_id' => null,
+                'deduplication_key' => hash('sha256', implode('|', [
+                    'manual_invoice_purchase',
+                    (string) $locked->id,
+                    (string) Str::uuid(),
+                ])),
+                'raw_data' => ['source' => 'manual_invoice'],
+                'is_reconciled' => false,
+                'is_ignored' => false,
+                'suggested_payee_name' => $payeeName !== '' ? $payeeName : null,
+                'suggested_category_id' => $categoryId !== null && $categoryId !== ''
+                    ? (int) $categoryId
+                    : null,
+            ]);
+
+            $this->cardMaterialization->materialize(
+                $locked->workspace()->firstOrFail(),
+                $card,
+                $locked,
+                $entry,
+                $user,
+                requireClassification: true,
+            );
+
+            return $entry->refresh();
+        });
+    }
+
     public function close(CreditCardInvoice $invoice, ?string $statementAmount = null): CreditCardInvoice
     {
         if ($invoice->status === CreditCardInvoiceStatus::Paid) {
@@ -201,6 +273,34 @@ class CreditCardInvoiceService
         $this->syncInvoiceSettlement($invoice->refresh());
 
         return $invoice->refresh();
+    }
+
+    public function reopen(CreditCardInvoice $invoice): CreditCardInvoice
+    {
+        return DB::transaction(function () use ($invoice): CreditCardInvoice {
+            $locked = CreditCardInvoice::query()
+                ->whereKey($invoice->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($locked->status !== CreditCardInvoiceStatus::Closed) {
+                throw ValidationException::withMessages([
+                    'invoice' => 'Só uma fatura fechada, sem pagamento, pode ser reaberta.',
+                ]);
+            }
+
+            if ($locked->payments()->exists()) {
+                throw ValidationException::withMessages([
+                    'invoice' => 'Não é possível reabrir uma fatura que já possui pagamento.',
+                ]);
+            }
+
+            $locked->update([
+                'status' => CreditCardInvoiceStatus::Open,
+            ]);
+
+            return $locked->refresh();
+        });
     }
 
     /**
@@ -902,6 +1002,15 @@ class CreditCardInvoiceService
         $paid = $this->moneyToCents((string) $invoice->paid_amount);
 
         return max(0, $total - $paid);
+    }
+
+    private function isPaymentDescription(string $description): bool
+    {
+        $normalized = mb_strtolower($description);
+
+        return str_contains($normalized, 'pagamento recebido')
+            || str_contains($normalized, 'pagamento da fatura')
+            || str_contains($normalized, 'pagamento de fatura');
     }
 
     private function dateInMonth(

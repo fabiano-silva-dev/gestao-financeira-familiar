@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState, type ChangeEvent } from 'react';
 import InputError from '@/components/input-error';
+import PasswordInput from '@/components/password-input';
 import { ListingToolbar } from '@/components/listing/listing-toolbar';
 import { SortableColumn } from '@/components/listing/sortable-column';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -860,6 +861,9 @@ export default function ImportsIndex({
     const [destination, setDestination] =
         useState<UnifiedImportHistoryItem | null>(null);
     const canSubmit = fileNames.length > 0;
+    const hasPdf = fileNames.some((name) =>
+        name.toLowerCase().endsWith('.pdf'),
+    );
     const pendingImports = useMemo(
         () => imports.filter((item) => item.status === 'needs_confirmation'),
         [imports],
@@ -969,6 +973,30 @@ export default function ImportsIndex({
                                             <InputError message={errors.files} />
                                             <InputError message={errors['files.0']} />
                                         </div>
+
+                                        {(hasPdf || errors.pdf_password) && (
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="pdf_password">
+                                                    Senha do PDF
+                                                </Label>
+                                                <PasswordInput
+                                                    id="pdf_password"
+                                                    name="pdf_password"
+                                                    autoComplete="off"
+                                                    placeholder="Somente se o CPF cadastrado não abrir o arquivo"
+                                                />
+                                                <p className="text-muted-foreground text-xs">
+                                                    No Mercado Pago, a senha é
+                                                    os 5 primeiros dígitos do
+                                                    CPF da pessoa. Se o CPF
+                                                    estiver cadastrado, o
+                                                    arquivo abre sozinho.
+                                                </p>
+                                                <InputError
+                                                    message={errors.pdf_password}
+                                                />
+                                            </div>
+                                        )}
 
                                         <Button
                                             className="w-full sm:w-auto"

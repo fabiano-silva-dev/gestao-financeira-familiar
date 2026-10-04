@@ -12,6 +12,7 @@ use App\Enums\FinancialTransactionOrigin;
 use App\Enums\FinancialTransactionStatus;
 use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
+use App\Models\BankStatementEntry;
 use App\Models\Category;
 use App\Models\ClassificationRule;
 use App\Models\CreditCard;
@@ -580,6 +581,70 @@ class OfxImportTest extends TestCase
         $secondImport = FinancialImport::query()->latest('id')->firstOrFail();
         $this->assertSame(1, $secondImport->imported_records);
         $this->assertSame(1, $secondImport->duplicate_records);
+        $this->assertCount(2, $secondImport->metadata['covered_bank_entry_ids'] ?? []);
+
+        $reconciliation = route('reconciliation.index', [
+            'import' => $secondImport->id,
+            'kind' => 'statement',
+            'account' => $account->id,
+        ]);
+        $request->get($reconciliation)
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('entries', 2)
+                ->where('entries', function (iterable $entries): bool {
+                    $descriptions = collect($entries)->pluck('description')->all();
+
+                    return in_array('Salário', $descriptions, true)
+                        && in_array('Internet', $descriptions, true)
+                        && ! in_array('Energia elétrica', $descriptions, true);
+                }));
+
+        $metadata = $secondImport->metadata ?? [];
+        unset($metadata['covered_bank_entry_ids']);
+        $secondImport->update(['metadata' => $metadata]);
+
+        $request->get($reconciliation)
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('entries', 2));
+        $this->assertCount(2, $secondImport->refresh()->metadata['covered_bank_entry_ids'] ?? []);
+
+        $salary = BankStatementEntry::query()->where('external_id', 'fit-002')->firstOrFail();
+        $transaction = app(FinancialEntryService::class)->create(
+            $workspace,
+            [
+                'type' => FinancialTransactionType::Income->value,
+                'transaction_date' => '2026-09-20',
+                'competence_date' => '2026-09-20',
+                'description' => 'Salário',
+                'amount' => '2500.00',
+                'financial_account_id' => $account->id,
+                'credit_card_id' => null,
+                'category_id' => null,
+                'family_member_id' => null,
+                'payment_method' => PaymentMethod::Pix->value,
+                'payee_name' => null,
+                'payment_instructions' => null,
+                'due_date' => null,
+                'settled_on' => '2026-09-20',
+                'status' => FinancialTransactionStatus::Confirmed->value,
+                'notes' => null,
+            ],
+            FinancialTransactionOrigin::Manual,
+        );
+        $movement = $transaction->accountMovements()->firstOrFail();
+        $request->post(route('reconciliation.store', $salary), [
+            'account_movement_id' => $movement->id,
+        ])->assertSessionHasNoErrors();
+
+        $request->get(route('transactions.index', [
+            'import' => $secondImport->id,
+            'period' => '2026-09',
+        ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('entries', 1)
+                ->where('entries.0.description', 'Salário'));
     }
 
     public function test_movements_without_fitid_use_deterministic_fallback(): void

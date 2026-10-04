@@ -43,6 +43,24 @@ export default function FamilyMemberForm({
                         <InputError message={errors.name} />
                     </div>
 
+                    <div className="grid gap-2">
+                        <Label htmlFor="cpf">CPF</Label>
+                        <Input
+                            id="cpf"
+                            name="cpf"
+                            defaultValue={member?.cpf ?? ''}
+                            placeholder="000.000.000-00"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            maxLength={14}
+                        />
+                        <p className="text-muted-foreground text-xs">
+                            Opcional. Faturas em PDF do Mercado Pago usam os 5
+                            primeiros dígitos do CPF como senha.
+                        </p>
+                        <InputError message={errors.cpf} />
+                    </div>
+
                     <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                         <Button
                             variant="outline"

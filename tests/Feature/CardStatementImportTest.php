@@ -318,6 +318,23 @@ class CardStatementImportTest extends TestCase
         $secondImport = FinancialImport::query()->latest('id')->firstOrFail();
         $this->assertSame(1, $secondImport->imported_records);
         $this->assertSame(1, $secondImport->duplicate_records);
+        $this->assertCount(2, $secondImport->metadata['covered_card_entry_ids'] ?? []);
+
+        $request->get(route('reconciliation.index', [
+            'import' => $secondImport->id,
+            'kind' => 'invoice',
+            'card' => $card->id,
+        ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('entries', 2)
+                ->where('entries', function (iterable $entries): bool {
+                    $descriptions = collect($entries)->pluck('description')->all();
+
+                    return in_array('Vôlei Lidiane', $descriptions, true)
+                        && in_array('Handebol Luiza', $descriptions, true)
+                        && ! in_array('Estorno mensalidade', $descriptions, true);
+                }));
     }
 
     public function test_identical_rows_without_ids_are_preserved_by_occurrence(): void

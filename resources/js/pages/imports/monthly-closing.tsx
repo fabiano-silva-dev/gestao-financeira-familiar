@@ -1071,10 +1071,9 @@ export default function MonthlyClosing({
                     </div>
                 ) : (
                     <>
-                        <div className="hidden overflow-hidden rounded-lg border xl:block">
-                            <div className="max-h-[calc(100vh-330px)] min-h-72 overflow-auto">
-                                <table className="w-full table-fixed text-sm">
-                                    <thead className="bg-muted/90 sticky top-0 z-10 border-b backdrop-blur">
+                        <div className="hidden rounded-lg border xl:block">
+                            <table className="w-full table-fixed text-sm">
+                                <thead className="bg-muted/90 sticky top-16 z-10 border-b backdrop-blur group-has-data-[collapsible=icon]/sidebar-wrapper:top-14">
                                         <tr className="text-muted-foreground text-xs">
                                             <th className="w-[7%] px-2 py-2 text-left">
                                                 <SortHeader
@@ -1313,7 +1312,6 @@ export default function MonthlyClosing({
                                         })}
                                     </tbody>
                                 </table>
-                            </div>
                         </div>
 
                         <div className="space-y-2 xl:hidden">

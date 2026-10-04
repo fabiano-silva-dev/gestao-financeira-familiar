@@ -138,6 +138,7 @@ final class OfxImportService
 
                 $imported = 0;
                 $duplicates = 0;
+                $coveredEntryIds = [];
 
                 foreach ($statement->transactions as $transaction) {
                     $entry = BankStatementEntry::query()->firstOrCreate(
@@ -157,6 +158,7 @@ final class OfxImportService
                             'is_reconciled' => false,
                         ],
                     );
+                    $coveredEntryIds[] = $entry->id;
 
                     $entry->wasRecentlyCreated ? $imported++ : $duplicates++;
                 }
@@ -174,6 +176,7 @@ final class OfxImportService
                         'currency' => $statement->currency,
                         'source_format' => $extension,
                         'pdf_layout' => $pdfLayout,
+                        'covered_bank_entry_ids' => $coveredEntryIds,
                     ], static fn (mixed $value): bool => $value !== null),
                     'error_message' => null,
                     'imported_at' => now(),
@@ -232,6 +235,99 @@ final class OfxImportService
         throw ValidationException::withMessages([
             'file' => 'Este arquivo já foi importado. Envie um arquivo diferente.',
         ]);
+    }
+
+    /**
+     * Linhas do arquivo, inclusive as que já existiam em uma importação anterior.
+     *
+     * @return list<int>
+     */
+    public function coveredBankEntryIds(FinancialImport $import): array
+    {
+        $stored = $import->metadata['covered_bank_entry_ids'] ?? null;
+
+        if (is_array($stored)) {
+            return $this->integerIds($stored);
+        }
+
+        $ids = $this->matchStoredBankEntries($import);
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $metadata = $import->metadata ?? [];
+        $metadata['covered_bank_entry_ids'] = $ids;
+        $import->update(['metadata' => $metadata]);
+
+        return $ids;
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function matchStoredBankEntries(FinancialImport $import): array
+    {
+        if (
+            $import->financial_account_id === null
+            || ! is_string($import->stored_path)
+            || $import->stored_path === ''
+            || ! Storage::disk('local')->exists($import->stored_path)
+        ) {
+            return [];
+        }
+
+        $contents = Storage::disk('local')->get($import->stored_path);
+
+        if (! is_string($contents) || $contents === '') {
+            return [];
+        }
+
+        $extension = strtolower(pathinfo($import->stored_path, PATHINFO_EXTENSION));
+        $layout = $import->metadata['pdf_layout'] ?? null;
+        $pdfLayout = is_string($layout) ? $layout : null;
+
+        try {
+            $statement = $this->parser->parse($contents, $extension, $pdfLayout);
+        } catch (OfxParseException|BankStatementParseException) {
+            return [];
+        }
+
+        $keys = array_map(
+            fn (OfxTransaction $transaction): string => $this->entryDeduplicationKey($transaction),
+            $statement->transactions,
+        );
+
+        if ($keys === []) {
+            return [];
+        }
+
+        return $this->integerIds(
+            BankStatementEntry::query()
+                ->where('workspace_id', $import->workspace_id)
+                ->where('financial_account_id', $import->financial_account_id)
+                ->whereIn('deduplication_key', $keys)
+                ->orderBy('id')
+                ->pluck('id')
+                ->all(),
+        );
+    }
+
+    /**
+     * @param  array<mixed>  $ids
+     * @return list<int>
+     */
+    private function integerIds(array $ids): array
+    {
+        $normalized = [];
+
+        foreach ($ids as $id) {
+            if (is_numeric($id)) {
+                $normalized[] = (int) $id;
+            }
+        }
+
+        return array_values(array_unique($normalized));
     }
 
     private function entryDeduplicationKey(OfxTransaction $transaction): string

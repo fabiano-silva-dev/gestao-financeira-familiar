@@ -83,6 +83,11 @@ final class ImportedMovementInterpreter
         }
 
         $normalized = $this->normalize($description);
+
+        if ($this->isTaxGuidePayment($normalized)) {
+            return false;
+        }
+
         $tokens = ' '.$normalized.' ';
 
         return str_contains($normalized, 'transferencia')
@@ -90,6 +95,14 @@ final class ImportedMovementInterpreter
             || str_contains($normalized, 'pix transf')
             || str_contains($normalized, 'dinheiro reservado')
             || str_contains($normalized, 'dinheiro retirado');
+    }
+
+    private function isTaxGuidePayment(string $normalized): bool
+    {
+        return str_contains($normalized, 'receita federal')
+            || str_contains($normalized, 'pagamento de guia')
+            || str_contains($normalized, 'simples nacional')
+            || preg_match('/\b(darf|gps)\b/', $normalized) === 1;
     }
 
     public function descriptionSimilarity(string $left, string $right): float

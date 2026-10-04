@@ -7,6 +7,7 @@ use App\Enums\FinancialTransactionType;
 use App\Enums\PaymentMethod;
 use App\Http\Requests\CloseCreditCardInvoiceRequest;
 use App\Http\Requests\StoreCreditCardInvoicePaymentRequest;
+use App\Http\Requests\StoreCreditCardInvoicePurchaseRequest;
 use App\Http\Requests\StoreCreditCardInvoiceRequest;
 use App\Models\CardStatementEntry;
 use App\Models\Category;
@@ -187,6 +188,28 @@ class CreditCardInvoiceController extends Controller
         return to_route('credit-card-invoices.show', $invoice);
     }
 
+    public function storePurchase(
+        StoreCreditCardInvoicePurchaseRequest $request,
+        int $invoice,
+    ): RedirectResponse {
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $entry = $this->invoiceService->addPurchase(
+            $this->findInvoice($invoice),
+            $user,
+            $request->validated(),
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => $entry->is_reconciled
+                ? 'Compra lançada nesta fatura.'
+                : 'Compra adicionada à fatura. Confirme a categoria ou a conciliação da linha para concluí-la.',
+        ]);
+
+        return to_route('credit-card-invoices.show', $invoice);
+    }
+
     public function show(int $invoice): Response
     {
         $creditCardInvoice = $this->findInvoice($invoice)
@@ -201,6 +224,7 @@ class CreditCardInvoiceController extends Controller
                 'payments.movement.bankStatementEntry:id,account_movement_id',
                 'statementEntries.invoicePayment.account:id,name',
                 'statementEntries.transactionInstallment.transaction:id,description,transaction_date',
+                'statementEntries.expenseRefund.originalTransaction:id,description,transaction_date',
                 'statementEntries.reconciler:id,name',
             ]);
 
@@ -265,6 +289,20 @@ class CreditCardInvoiceController extends Controller
             'defaultPaymentAccountId' => $card->payment_account_id,
             'defaultPaymentMethod' => $card->invoice_payment_method->value,
             'defaultPaymentDate' => now()->toDateString(),
+            'categoryOptions' => $workspace->categories()
+                ->with('parent:id,name')
+                ->where('type', FinancialTransactionType::Expense->value)
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get()
+                ->map(fn (Category $category): array => [
+                    'id' => $category->id,
+                    'label' => $category->parent === null
+                        ? $category->name
+                        : "{$category->parent->name} / {$category->name}",
+                ])
+                ->values()
+                ->all(),
         ]);
     }
 
@@ -280,6 +318,18 @@ class CreditCardInvoiceController extends Controller
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => 'Fatura fechada com sucesso.',
+        ]);
+
+        return to_route('credit-card-invoices.show', $invoice);
+    }
+
+    public function reopen(int $invoice): RedirectResponse
+    {
+        $this->invoiceService->reopen($this->findInvoice($invoice));
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Fatura reaberta. Compras e o valor informado foram preservados.',
         ]);
 
         return to_route('credit-card-invoices.show', $invoice);
@@ -452,6 +502,8 @@ class CreditCardInvoiceController extends Controller
             'reconciled_purchase_entries_count' => (int) $reconciledPurchaseEntriesCount,
             'ignored_purchase_entries_count' => (int) $ignoredPurchaseEntriesCount,
             'can_close' => $invoice->status === CreditCardInvoiceStatus::Open,
+            'can_reopen' => $invoice->status === CreditCardInvoiceStatus::Closed
+                && $invoice->payments()->doesntExist(),
             'can_pay' => $invoice->status === CreditCardInvoiceStatus::Open
                 || (
                     $invoice->status !== CreditCardInvoiceStatus::Paid
@@ -519,6 +571,8 @@ class CreditCardInvoiceController extends Controller
     ): array {
         $linkedInstallment = $entry->transactionInstallment;
         $linkedTransaction = $linkedInstallment?->transaction;
+        $refund = $entry->expenseRefund;
+        $refundedTransaction = $refund?->originalTransaction;
 
         return [
             'id' => $entry->id,
@@ -544,6 +598,15 @@ class CreditCardInvoiceController extends Controller
                     'transaction_date' => $linkedTransaction->transaction_date->toDateString(),
                     'installment_number' => $linkedInstallment->installment_number,
                     'total_installments' => $linkedInstallment->total_installments,
+                ],
+            'linked_refund' => $refund === null || $refundedTransaction === null
+                ? null
+                : [
+                    'id' => $refund->id,
+                    'transaction_id' => $refundedTransaction->id,
+                    'description' => $refundedTransaction->description,
+                    'amount' => $refund->amount,
+                    'refunded_on' => $refund->refunded_on->toDateString(),
                 ],
             'candidates' => $entry->is_reconciled || $entry->is_payment
                 ? []

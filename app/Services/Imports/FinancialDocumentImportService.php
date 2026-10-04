@@ -24,12 +24,37 @@ final class FinancialDocumentImportService
         private readonly ImportTargetResolver $targets,
         private readonly OfxImportService $bankImports,
         private readonly CardStatementImportService $cardImports,
+        private readonly PdfDocumentAccess $pdfAccess,
     ) {}
 
     /**
      * @return array{status: string, import: FinancialImport, detection: FinancialDocumentDetection}
      */
     public function import(
+        Workspace $workspace,
+        User $user,
+        UploadedFile $file,
+        ?string $pdfPassword = null,
+    ): array {
+        return $this->pdfAccess->open(
+            $workspace,
+            $pdfPassword,
+            function () use ($workspace, $user, $file): array {
+                try {
+                    return $this->importOpened($workspace, $user, $file);
+                } catch (PdfPasswordException $exception) {
+                    throw ValidationException::withMessages([
+                        'files' => $exception->getMessage(),
+                    ]);
+                }
+            },
+        );
+    }
+
+    /**
+     * @return array{status: string, import: FinancialImport, detection: FinancialDocumentDetection}
+     */
+    private function importOpened(
         Workspace $workspace,
         User $user,
         UploadedFile $file,
@@ -352,12 +377,20 @@ final class FinancialDocumentImportService
             return $pending;
         }
 
-        $detection = $this->withRememberedType($workspace, $this->detectors->detect(
-            $contents,
-            $pending->source_filename,
-            $this->extension($pending->source_filename),
-            $file->getMimeType(),
-        ));
+        try {
+            $detection = $this->pdfAccess->open(
+                $workspace,
+                null,
+                fn () => $this->withRememberedType($workspace, $this->detectors->detect(
+                    $contents,
+                    $pending->source_filename,
+                    $this->extension($pending->source_filename),
+                    $file->getMimeType(),
+                )),
+            );
+        } catch (PdfPasswordException) {
+            return $pending;
+        }
 
         if ($detection->parserKey === null) {
             return $pending;
