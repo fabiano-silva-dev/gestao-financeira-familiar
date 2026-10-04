@@ -86,6 +86,80 @@ class OfxParserTest extends TestCase
         $this->assertSame('Crédito em conta', $statement->transactions[0]->memo);
     }
 
+    public function test_it_parses_sgml_header_with_already_closed_xml_tags(): void
+    {
+        $statement = (new OfxParser)->parse(<<<'OFX'
+            OFXHEADER:100
+            DATA:OFXSGML
+            VERSION:100
+            SECURITY:NONE
+            ENCODING:UTF-8
+            CHARSET:NONE
+            COMPRESSION:NONE
+            OLDFILEUID:NONE
+            NEWFILEUID:NONE
+            <OFX>
+              <SIGNONMSGSRSV1>
+                <SONRS>
+                  <STATUS>
+                    <CODE>0</CODE>
+                    <SEVERITY>INFO</SEVERITY>
+                  </STATUS>
+                  <FI>
+                    <ORG>PagSeguro Internet S/A</ORG>
+                    <FID>290</FID>
+                  </FI>
+                </SONRS>
+              </SIGNONMSGSRSV1>
+              <BANKMSGSRSV1>
+                <STMTTRNRS>
+                  <STMTRS>
+                    <CURDEF>BRL</CURDEF>
+                    <BANKACCTFROM>
+                      <BANKID>290</BANKID>
+                      <ACCTID>6022347-6</ACCTID>
+                      <ACCTTYPE>CHECKING</ACCTTYPE>
+                    </BANKACCTFROM>
+                    <BANKTRANLIST>
+                      <DTSTART>20260601000000[-3:BRT]</DTSTART>
+                      <DTEND>20260630000000[-3:BRT]</DTEND>
+                      <STMTTRN>
+                        <TRNTYPE>OUT</TRNTYPE>
+                        <DTPOSTED>20260601110006[-3:BRT]</DTPOSTED>
+                        <TRNAMT>-120.00</TRNAMT>
+                        <FITID>28802d36-c8e8-489f-b648-dbba560f88f7</FITID>
+                        <MEMO>Pix enviado - Fabiano Carvalho Da Silva</MEMO>
+                      </STMTTRN>
+                      <STMTTRN>
+                        <TRNTYPE>IN</TRNTYPE>
+                        <DTPOSTED>20260603190827[-3:BRT]</DTPOSTED>
+                        <TRNAMT>596.00</TRNAMT>
+                        <FITID>3e0a92e6-3811-4225-9ff7-fe022165b62c</FITID>
+                        <MEMO>Pix recebido - Acsm Servicos Medicos Ltda</MEMO>
+                      </STMTTRN>
+                    </BANKTRANLIST>
+                    <LEDGERBAL>
+                      <BALAMT>R$ 0,00</BALAMT>
+                      <DTASOF>03/06/2026</DTASOF>
+                    </LEDGERBAL>
+                  </STMTRS>
+                </STMTTRNRS>
+              </BANKMSGSRSV1>
+            </OFX>
+            OFX);
+
+        $this->assertSame('290', $statement->bankId);
+        $this->assertSame('6022347-6', $statement->accountId);
+        $this->assertSame('BRL', $statement->currency);
+        $this->assertSame('2026-06-01', $statement->startOn);
+        $this->assertSame('2026-06-30', $statement->endOn);
+        $this->assertCount(2, $statement->transactions);
+        $this->assertSame('-120.00', $statement->transactions[0]->amount);
+        $this->assertSame('Pix enviado - Fabiano Carvalho Da Silva', $statement->transactions[0]->description);
+        $this->assertSame('596.00', $statement->transactions[1]->amount);
+        $this->assertSame('Pix recebido - Acsm Servicos Medicos Ltda', $statement->transactions[1]->description);
+    }
+
     public function test_it_rejects_external_entity_declarations(): void
     {
         $this->expectException(OfxParseException::class);

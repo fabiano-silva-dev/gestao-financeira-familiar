@@ -25,12 +25,17 @@ final class OfxParser
         }
 
         $xml = $this->extractXml($contents);
+        $document = $this->tryLoadXml($xml);
 
-        if ($this->isSgml($contents, $xml)) {
+        if ($document === null && $this->isSgml($contents, $xml)) {
             $xml = $this->normalizeSgml($xml);
+            $document = $this->tryLoadXml($xml);
         }
 
-        $document = $this->loadXml($xml);
+        if ($document === null) {
+            throw new OfxParseException('O conteúdo do arquivo OFX está malformado.');
+        }
+
         $root = $document->documentElement;
 
         if ($root === null || strtoupper($root->localName) !== 'OFX') {
@@ -193,7 +198,7 @@ final class OfxParser
         ) ?? $xml;
 
         return preg_replace_callback(
-            '/<(?<tag>[A-Z][A-Z0-9_.:-]*)>(?<value>[^<\r\n]*\S[^<\r\n]*)(?!<\/(?P=tag)>)(?=<|[\r\n]|$)/i',
+            '/<(?<tag>[A-Z][A-Z0-9_.:-]*)>(?![^<\r\n]*<\/(?P=tag)>)(?<value>[^<\r\n]*\S[^<\r\n]*)(?=<|[\r\n]|$)/i',
             static fn (array $matches): string => sprintf(
                 '<%1$s>%2$s</%1$s>',
                 $matches['tag'],
@@ -203,7 +208,7 @@ final class OfxParser
         ) ?? $xml;
     }
 
-    private function loadXml(string $xml): DOMDocument
+    private function tryLoadXml(string $xml): ?DOMDocument
     {
         $document = new DOMDocument;
         $previous = libxml_use_internal_errors(true);
@@ -213,16 +218,12 @@ final class OfxParser
                 $xml,
                 LIBXML_NONET | LIBXML_NOCDATA | LIBXML_NOBLANKS | LIBXML_COMPACT,
             );
-
-            if (! $loaded) {
-                throw new OfxParseException('O conteúdo do arquivo OFX está malformado.');
-            }
         } finally {
             libxml_clear_errors();
             libxml_use_internal_errors($previous);
         }
 
-        return $document;
+        return $loaded ? $document : null;
     }
 
     private function requiredValue(
