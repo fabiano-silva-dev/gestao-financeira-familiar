@@ -97,6 +97,7 @@ export type FinancialEntry = {
     due_date: string | null;
     settled_on: string | null;
     is_settled: boolean;
+    has_bank_reconciliation: boolean;
     status: 'planned' | 'confirmed' | 'cancelled';
     status_label: string;
     notes: string | null;

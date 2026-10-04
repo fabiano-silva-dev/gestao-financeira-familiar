@@ -47,6 +47,13 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::patch('contas/{account}/status', [FinancialAccountController::class, 'toggleStatus'])
         ->whereNumber('account')
         ->name('accounts.toggle-status');
+    Route::delete(
+        'contas/{account}/movimentos/{movement}/conciliacao',
+        [FinancialAccountController::class, 'undoMovementReconciliation'],
+    )
+        ->whereNumber('account')
+        ->whereNumber('movement')
+        ->name('accounts.movements.reconciliation.destroy');
 
     Route::get('pessoas', [FamilyMemberController::class, 'index'])
         ->name('family-members.index');
@@ -150,6 +157,13 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
         ->whereNumber('invoice')
         ->whereNumber('payment')
         ->name('credit-card-invoices.payments.destroy');
+    Route::delete(
+        'faturas/{invoice}/pagamentos/{payment}/conciliacao',
+        [CreditCardInvoiceController::class, 'undoPaymentReconciliation'],
+    )
+        ->whereNumber('invoice')
+        ->whereNumber('payment')
+        ->name('credit-card-invoices.payments.reconciliation.destroy');
     Route::post(
         'faturas/{invoice}/pagamentos/{payment}/vincular',
         [CreditCardInvoiceController::class, 'linkPayment'],
@@ -233,6 +247,12 @@ Route::middleware(['auth', 'verified', 'workspace'])->group(function () {
     Route::delete('lancamentos/{entry}', [FinancialTransactionController::class, 'destroy'])
         ->whereNumber('entry')
         ->name('transactions.destroy');
+    Route::delete(
+        'lancamentos/{entry}/conciliacao',
+        [FinancialTransactionController::class, 'undoReconciliation'],
+    )
+        ->whereNumber('entry')
+        ->name('transactions.reconciliation.destroy');
     Route::post('lancamentos/{entry}/parcelamento-duplicado', [FinancialTransactionController::class, 'mergeInstallmentPlan'])
         ->whereNumber('entry')
         ->name('transactions.merge-installment-plan');

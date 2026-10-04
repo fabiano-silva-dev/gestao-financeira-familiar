@@ -914,10 +914,16 @@ export default function CreditCardInvoiceShow() {
                                             </p>
                                         )}
                                     </div>
-                                    <div className="flex items-center gap-3">
+                                    <div className="flex flex-wrap items-center gap-3">
                                         <p className="font-semibold tabular-nums">
                                             {currency.format(Number(payment.amount))}
                                         </p>
+                                        {payment.is_bank_reconciled && (
+                                            <UndoPaymentReconciliationForm
+                                                invoiceId={invoice.id}
+                                                paymentId={payment.id}
+                                            />
+                                        )}
                                         <Form
                                             {...CreditCardInvoiceController.linkPayment.form(
                                                 {
@@ -1182,8 +1188,8 @@ export default function CreditCardInvoiceShow() {
                                         )}
                                         {payment.is_bank_reconciled && (
                                             <p className="text-muted-foreground mt-1 text-xs">
-                                                Conciliado com o extrato.
-                                                Desfaça a conciliação para
+                                                Conciliado com o extrato. Desfaça
+                                                a conciliação nesta tela para
                                                 alterar conta, data ou valor, ou
                                                 para excluir.
                                             </p>
@@ -1195,6 +1201,12 @@ export default function CreditCardInvoiceShow() {
                                                 Number(payment.amount),
                                             )}
                                         </p>
+                                        {payment.is_bank_reconciled && (
+                                            <UndoPaymentReconciliationForm
+                                                invoiceId={invoice.id}
+                                                paymentId={payment.id}
+                                            />
+                                        )}
                                         <Button
                                             type="button"
                                             variant="outline"
@@ -1436,6 +1448,38 @@ function InvoicePurchaseDialog({
     );
 }
 
+function UndoPaymentReconciliationForm({
+    invoiceId,
+    paymentId,
+}: {
+    invoiceId: number;
+    paymentId: number;
+}) {
+    return (
+        <Form
+            {...CreditCardInvoiceController.undoPaymentReconciliation.form({
+                invoice: invoiceId,
+                payment: paymentId,
+            })}
+            options={{ preserveScroll: true }}
+        >
+            {({ processing, errors }) => (
+                <div className="grid gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={processing}
+                    >
+                        <RotateCcw />
+                        Desfazer conciliação
+                    </Button>
+                    <InputError message={errors.reconciliation} />
+                </div>
+            )}
+        </Form>
+    );
+}
+
 function InvoicePaymentEditDialog({
     invoice,
     payment,
@@ -1468,6 +1512,19 @@ function InvoicePaymentEditDialog({
                         fatura. As compras permanecem registradas.
                     </DialogDescription>
                 </DialogHeader>
+                {locked && (
+                    <div className="grid gap-3">
+                        <p className="text-muted-foreground text-sm">
+                            Este pagamento está conciliado com o extrato.
+                            Desfaça a conciliação nesta tela para liberar conta,
+                            data e valor, ou para excluir o pagamento.
+                        </p>
+                        <UndoPaymentReconciliationForm
+                            invoiceId={invoice.id}
+                            paymentId={payment.id}
+                        />
+                    </div>
+                )}
                 <Form
                     {...CreditCardInvoiceController.updatePayment.form({
                         invoice: invoice.id,
@@ -1479,13 +1536,6 @@ function InvoicePaymentEditDialog({
                 >
                     {({ processing, errors }) => (
                         <>
-                            {locked && (
-                                <p className="text-muted-foreground text-sm">
-                                    Este pagamento está conciliado com o
-                                    extrato. Conta, data e valor ficam
-                                    bloqueados até a conciliação ser desfeita.
-                                </p>
-                            )}
                             <div className="grid gap-4 md:grid-cols-2">
                                 <div className="grid gap-2">
                                     <Label htmlFor="edit_financial_account_id">

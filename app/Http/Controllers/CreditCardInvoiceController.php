@@ -19,6 +19,7 @@ use App\Models\TransactionInstallment;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Finance\CreditCardInvoiceService;
+use App\Services\Reconciliation\BankReconciliationService;
 use App\Services\Reconciliation\CardStatementReconciliationSuggestionService;
 use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
@@ -26,6 +27,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -35,6 +37,7 @@ class CreditCardInvoiceController extends Controller
         private readonly CurrentWorkspace $currentWorkspace,
         private readonly CreditCardInvoiceService $invoiceService,
         private readonly CardStatementReconciliationSuggestionService $reconciliationSuggestionService,
+        private readonly BankReconciliationService $bankReconciliation,
     ) {}
 
     public function index(Request $request): Response
@@ -391,6 +394,40 @@ class CreditCardInvoiceController extends Controller
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => 'Pagamento excluído. As compras da fatura foram preservadas.',
+        ]);
+
+        return to_route('credit-card-invoices.show', $invoice);
+    }
+
+    public function undoPaymentReconciliation(int $invoice, int $payment): RedirectResponse
+    {
+        $creditCardInvoice = $this->findInvoice($invoice);
+        $cardPayment = $this->workspace()
+            ->creditCardInvoicePayments()
+            ->where('credit_card_id', $creditCardInvoice->credit_card_id)
+            ->with('movement.bankStatementEntry')
+            ->findOrFail($payment);
+
+        if (
+            $cardPayment->credit_card_invoice_id !== null
+            && $cardPayment->credit_card_invoice_id !== $creditCardInvoice->id
+        ) {
+            abort(404);
+        }
+
+        $statementEntry = $cardPayment->movement?->bankStatementEntry;
+
+        if ($statementEntry === null) {
+            throw ValidationException::withMessages([
+                'reconciliation' => 'Este pagamento não está conciliado com o extrato.',
+            ]);
+        }
+
+        $this->bankReconciliation->undo($this->workspace(), $statementEntry);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Conciliação desfeita. O movimento do extrato voltou a ficar pendente e este pagamento pode ser alterado ou excluído.',
         ]);
 
         return to_route('credit-card-invoices.show', $invoice);

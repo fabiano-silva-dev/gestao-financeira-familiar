@@ -156,6 +156,39 @@ export default function TransactionsEdit({
                     </CardHeader>
                     <CardContent className="space-y-6">
                         <EntryOriginBanner entry={entry} />
+                        {entry.has_bank_reconciliation && (
+                            <Form
+                                {...FinancialTransactionController.undoReconciliation.form(
+                                    entry.id,
+                                )}
+                                options={{ preserveScroll: true }}
+                            >
+                                {({ processing, errors }) => (
+                                    <div className="grid gap-3 rounded-lg border p-3">
+                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                            <p className="text-muted-foreground text-sm">
+                                                Este lançamento está conciliado
+                                                com o extrato. Desfaça a
+                                                conciliação nesta tela para
+                                                alterar conta, data ou valor, ou
+                                                para excluir.
+                                            </p>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                disabled={processing}
+                                            >
+                                                <RotateCcw />
+                                                Desfazer conciliação
+                                            </Button>
+                                        </div>
+                                        <InputError
+                                            message={errors.reconciliation}
+                                        />
+                                    </div>
+                                )}
+                            </Form>
+                        )}
                         {installmentPlan != null && (
                             <div className="border-primary/20 bg-primary/5 rounded-lg border p-3 text-sm">
                                 <p className="font-medium">

@@ -268,6 +268,46 @@ class FinancialEntryService
         });
     }
 
+    public function undoBankReconciliation(FinancialTransaction $entry): void
+    {
+        $entry->load([
+            'accountMovements.bankStatementEntry',
+            'refunds.movement.bankStatementEntry',
+        ]);
+
+        $movements = $entry->accountMovements
+            ->merge($entry->refunds->map(fn ($refund) => $refund->movement))
+            ->filter(fn ($movement): bool => $movement instanceof AccountMovement)
+            ->unique('id')
+            ->values();
+        $linked = $movements->filter(
+            fn (AccountMovement $movement): bool => $movement->bankStatementEntry instanceof BankStatementEntry
+                || $movement->is_reconciled,
+        );
+
+        if ($linked->isEmpty()) {
+            throw ValidationException::withMessages([
+                'reconciliation' => 'Este lançamento não está conciliado com o extrato.',
+            ]);
+        }
+
+        $workspace = $entry->workspace()->firstOrFail();
+
+        DB::transaction(function () use ($linked, $workspace): void {
+            foreach ($linked as $movement) {
+                $statement = $movement->bankStatementEntry;
+
+                if ($statement instanceof BankStatementEntry) {
+                    $this->bankReconciliation->undo($workspace, $statement);
+
+                    continue;
+                }
+
+                $movement->update(['is_reconciled' => false]);
+            }
+        });
+    }
+
     public function deleteRecurrenceOccurrence(FinancialTransaction $entry): void
     {
         if (

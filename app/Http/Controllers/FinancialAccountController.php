@@ -10,12 +10,14 @@ use App\Http\Requests\UpdateFinancialAccountRequest;
 use App\Models\AccountMovement;
 use App\Models\FinancialAccount;
 use App\Models\Workspace;
+use App\Services\Reconciliation\BankReconciliationService;
 use App\Support\Listings\ListingQuery;
 use App\Support\Workspaces\CurrentWorkspace;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -23,6 +25,7 @@ class FinancialAccountController extends Controller
 {
     public function __construct(
         private readonly CurrentWorkspace $currentWorkspace,
+        private readonly BankReconciliationService $bankReconciliation,
     ) {}
 
     public function index(Request $request): Response
@@ -254,6 +257,54 @@ class FinancialAccountController extends Controller
         ]);
 
         return to_route('accounts.index');
+    }
+
+    public function undoMovementReconciliation(
+        Request $request,
+        int $account,
+        int $movement,
+    ): RedirectResponse {
+        $financialAccount = $this->findAccount($account);
+        $accountMovement = $financialAccount->movements()
+            ->with('bankStatementEntry')
+            ->findOrFail($movement);
+        $statementEntry = $accountMovement->bankStatementEntry;
+
+        if ($statementEntry === null) {
+            throw ValidationException::withMessages([
+                'reconciliation' => 'Este lançamento não está conciliado com o extrato.',
+            ]);
+        }
+
+        $this->bankReconciliation->undo($this->workspace(), $statementEntry);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Conciliação desfeita. O movimento do extrato voltou a ficar pendente.',
+        ]);
+
+        return to_route('accounts.show', [
+            'account' => $financialAccount->id,
+            ...$this->accountListingQuery($request),
+        ]);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function accountListingQuery(Request $request): array
+    {
+        $query = [];
+
+        foreach (['period', 'sort', 'direction', 'search', 'type'] as $key) {
+            $value = $request->query($key);
+
+            if (is_string($value) && trim($value) !== '') {
+                $query[$key] = $value;
+            }
+        }
+
+        return $query;
     }
 
     private function workspace(): Workspace

@@ -13,6 +13,7 @@ import {
     RotateCcw,
     Trash2,
 } from 'lucide-react';
+import FinancialAccountController from '@/actions/App/Http/Controllers/FinancialAccountController';
 import { MonthSelector } from '@/components/dashboard/month-selector';
 import { ListingEmpty } from '@/components/listing/listing-empty';
 import { ListingToolbar } from '@/components/listing/listing-toolbar';
@@ -45,7 +46,7 @@ import {
 } from '@/components/ui/select';
 import { edit, index, show } from '@/routes/accounts';
 import { show as showInvoice } from '@/routes/credit-card-invoices';
-import { sortListing } from '@/lib/listing';
+import { listingUrl, sortListing } from '@/lib/listing';
 import { edit as editTransaction } from '@/routes/transactions';
 import type {
     FinancialAccount,
@@ -259,6 +260,19 @@ export default function AccountShow() {
                 installment_count: 1,
             },
             options,
+        );
+    };
+
+    const undoMovementReconciliation = (movementId: number) => {
+        router.delete(
+            listingUrl(
+                FinancialAccountController.undoMovementReconciliation.url({
+                    account: account.id,
+                    movement: movementId,
+                }),
+                filters,
+            ),
+            { preserveScroll: true },
         );
     };
 
@@ -777,6 +791,21 @@ export default function AccountShow() {
                                                     content
                                                 )}
                                                 <div className="flex items-center justify-end gap-1">
+                                                    {movement.is_reconciled && (
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={() =>
+                                                                undoMovementReconciliation(
+                                                                    movement.id,
+                                                                )
+                                                            }
+                                                        >
+                                                            <RotateCcw className="size-4" />
+                                                            Desfazer
+                                                        </Button>
+                                                    )}
                                                     {href && (
                                                         <Button
                                                             type="button"
@@ -832,7 +861,7 @@ export default function AccountShow() {
                         <DialogTitle>Excluir lançamento?</DialogTitle>
                         <DialogDescription>
                             {deleteMovement?.is_reconciled
-                                ? 'Este lançamento está conciliado. Desfaça a conciliação bancária antes de excluí-lo.'
+                                ? 'Este lançamento está conciliado com o extrato. Desfaça a conciliação nesta tela para poder excluí-lo.'
                                 : deleteMovement?.transaction_type === 'transfer'
                                   ? 'A transferência será removida das duas contas. Esta ação não cria receita nem despesa.'
                                   : 'O lançamento e seu efeito no saldo da conta serão removidos.'}
@@ -860,6 +889,19 @@ export default function AccountShow() {
                         >
                             Cancelar
                         </Button>
+                        {deleteMovement?.is_reconciled && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                disabled={deletingMovement}
+                                onClick={() =>
+                                    undoMovementReconciliation(deleteMovement.id)
+                                }
+                            >
+                                <RotateCcw />
+                                Desfazer conciliação
+                            </Button>
+                        )}
                         <Button
                             type="button"
                             variant="destructive"

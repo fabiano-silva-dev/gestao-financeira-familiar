@@ -193,6 +193,77 @@ class BankReconciliationTest extends TestCase
         $this->assertFalse($movement->fresh()->is_reconciled);
     }
 
+    public function test_user_can_undo_reconciliation_from_the_account_page(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $entry = $this->bankEntry($workspace, $account, '-45.00');
+        $movement = $this->movement($workspace, $account, '-45.00');
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('reconciliation.store', $entry), [
+            'account_movement_id' => $movement->id,
+        ])->assertSessionHasNoErrors();
+
+        $request->delete(route('accounts.movements.reconciliation.destroy', [
+            'account' => $account,
+            'movement' => $movement,
+            'period' => '2026-09',
+        ]))
+            ->assertRedirect(route('accounts.show', [
+                'account' => $account->id,
+                'period' => '2026-09',
+            ]))
+            ->assertSessionHasNoErrors();
+
+        $entry->refresh();
+        $this->assertFalse($entry->is_reconciled);
+        $this->assertNull($entry->account_movement_id);
+        $this->assertFalse($movement->fresh()->is_reconciled);
+        $this->assertDatabaseHas('account_movements', ['id' => $movement->id]);
+    }
+
+    public function test_user_can_undo_reconciliation_from_the_transaction_page_without_removing_it(): void
+    {
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $transaction = app(FinancialEntryService::class)->create($workspace, [
+            'type' => FinancialTransactionType::Expense->value,
+            'transaction_date' => '2026-09-10',
+            'description' => 'Farmácia',
+            'amount' => '45.00',
+            'financial_account_id' => $account->id,
+            'credit_card_id' => null,
+            'category_id' => null,
+            'family_member_id' => null,
+            'payment_method' => PaymentMethod::Pix->value,
+            'payee_name' => null,
+            'payment_instructions' => null,
+            'due_date' => null,
+            'status' => FinancialTransactionStatus::Confirmed->value,
+            'notes' => null,
+        ]);
+        $movement = $transaction->accountMovements()->sole();
+        $entry = $this->bankEntry($workspace, $account, '-45.00');
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('reconciliation.store', $entry), [
+            'account_movement_id' => $movement->id,
+        ])->assertSessionHasNoErrors();
+
+        $request->delete(route('transactions.reconciliation.destroy', $transaction))
+            ->assertRedirect(route('transactions.edit', $transaction))
+            ->assertSessionHasNoErrors();
+
+        $entry->refresh();
+        $this->assertFalse($entry->is_reconciled);
+        $this->assertNull($entry->account_movement_id);
+        $this->assertFalse($movement->fresh()->is_reconciled);
+        $this->assertDatabaseHas('financial_transactions', ['id' => $transaction->id]);
+    }
+
     public function test_each_side_of_a_transfer_is_reconciled_with_its_own_bank_entry(): void
     {
         [$user, $workspace] = $this->userAndWorkspace();

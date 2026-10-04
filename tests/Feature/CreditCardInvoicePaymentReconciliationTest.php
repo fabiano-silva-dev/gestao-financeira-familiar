@@ -650,6 +650,48 @@ class CreditCardInvoicePaymentReconciliationTest extends TestCase
         $this->assertSame(CreditCardInvoiceStatus::Paid, $invoice->fresh()->status);
     }
 
+    public function test_user_can_undo_invoice_payment_reconciliation_from_the_invoice(): void
+    {
+        [$user, $workspace, $account, $invoice] = $this->openInvoiceScenario();
+        $entry = $this->bankEntry($workspace, $account, '-2000.00', '2026-09-15', 'PAGAMENTO NUBANK');
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('reconciliation.invoice-payment', $entry), [
+            'credit_card_invoice_id' => $invoice->id,
+        ])->assertSessionHasNoErrors();
+
+        $payment = $invoice->payments()->sole();
+
+        $request->delete(route('credit-card-invoices.payments.reconciliation.destroy', [
+            $invoice,
+            $payment,
+        ]))
+            ->assertRedirect(route('credit-card-invoices.show', $invoice))
+            ->assertSessionHasNoErrors();
+
+        $entry->refresh();
+        $payment->refresh();
+        $movement = $payment->movement()->sole();
+
+        $this->assertFalse($entry->is_reconciled);
+        $this->assertNull($entry->account_movement_id);
+        $this->assertFalse($movement->is_reconciled);
+        $this->assertSame('2000.00', $payment->amount);
+        $this->assertSame($invoice->id, $payment->credit_card_invoice_id);
+
+        $request->put(route('credit-card-invoices.payments.update', [$invoice, $payment]), [
+            'financial_account_id' => $account->id,
+            'paid_on' => '2026-09-16',
+            'amount' => '1500.00',
+            'payment_method' => PaymentMethod::Pix->value,
+            'notes' => 'Valor corrigido na fatura',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame('1500.00', $payment->fresh()->amount);
+        $this->assertSame('1500.00', $invoice->fresh()->paid_amount);
+    }
+
     /**
      * @return array{User, Workspace, FinancialAccount, CreditCardInvoice}
      */

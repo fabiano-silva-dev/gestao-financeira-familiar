@@ -445,6 +445,19 @@ class FinancialTransactionController extends Controller
             ?? to_route('transactions.index');
     }
 
+    public function undoReconciliation(int $entry): RedirectResponse
+    {
+        $financialEntry = $this->findEntry($entry);
+        $this->entryService->undoBankReconciliation($financialEntry);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Conciliação desfeita. O movimento do extrato voltou a ficar pendente e o lançamento pode ser alterado ou excluído.',
+        ]);
+
+        return to_route('transactions.edit', $entry);
+    }
+
     public function mergeInstallmentPlan(int $entry): RedirectResponse
     {
         $financialEntry = $this->findEntry($entry);
@@ -882,6 +895,7 @@ class FinancialTransactionController extends Controller
             'due_date' => $entry->due_date?->toDateString(),
             'settled_on' => $settledOn,
             'is_settled' => $settledOn !== null,
+            'has_bank_reconciliation' => $this->entryHasBankReconciliation($entry),
             'status' => $entry->status->value,
             'status_label' => $this->entryStatusLabel($entry),
             'notes' => $entry->notes,
@@ -893,6 +907,29 @@ class FinancialTransactionController extends Controller
                 && ($entry->recurrence === null || $entry->recurrence->trashed()),
             'recurrence_is_overridden' => $entry->recurrence_is_overridden,
         ];
+    }
+
+    private function entryHasBankReconciliation(FinancialTransaction $entry): bool
+    {
+        if ($entry->relationLoaded('accountMovements')) {
+            foreach ($entry->accountMovements as $movement) {
+                if ($movement->is_reconciled || $movement->bankStatementEntry !== null) {
+                    return true;
+                }
+            }
+        }
+
+        if ($entry->relationLoaded('refunds')) {
+            foreach ($entry->refunds as $refund) {
+                $movement = $refund->movement;
+
+                if ($movement?->is_reconciled || $movement?->bankStatementEntry !== null) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
