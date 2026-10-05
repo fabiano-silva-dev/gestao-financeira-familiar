@@ -27,6 +27,9 @@ export type FinancialRecurrence = {
     generation_started_on: string;
     ends_on: string | null;
     next_occurrence: string | null;
+    period_occurrence?: string | null;
+    period_status?: 'paid' | 'pending' | 'overdue' | 'cancelled';
+    period_status_label?: string;
     is_active: boolean;
     generated_transactions_count: number;
     notes: string | null;
