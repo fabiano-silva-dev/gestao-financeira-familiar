@@ -786,6 +786,68 @@ class FinancialRecurrenceTest extends TestCase
         $this->assertDatabaseCount('account_movements', 0);
     }
 
+    public function test_recurrence_index_lists_only_selected_month_and_exposes_payment_status(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-05 12:00:00'));
+
+        [$user, $workspace] = $this->userAndWorkspace();
+        $account = FinancialAccount::factory()->for($workspace)->create();
+        $request = $this->actingAs($user)
+            ->withSession([CurrentWorkspace::SESSION_KEY => $workspace->id]);
+
+        $request->post(route('recurrences.store'), [
+            ...$this->validRecurrenceData($account),
+            'description' => 'Aluguel',
+            'starts_on' => '2026-10-03',
+            'generation_started_on' => '2026-10-03',
+        ])->assertSessionHasNoErrors();
+
+        $request->post(route('recurrences.store'), [
+            ...$this->validRecurrenceData($account),
+            'description' => 'Condomínio',
+            'starts_on' => '2026-10-01',
+            'generation_started_on' => '2026-10-01',
+            'already_settled' => '1',
+        ])->assertSessionHasNoErrors();
+
+        $request->post(route('recurrences.store'), [
+            ...$this->validRecurrenceData($account),
+            'description' => 'Escola',
+            'starts_on' => '2026-10-07',
+        ])->assertSessionHasNoErrors();
+
+        $request->post(route('recurrences.store'), [
+            ...$this->validRecurrenceData($account),
+            'description' => 'Viagem futura',
+            'starts_on' => '2026-11-10',
+        ])->assertSessionHasNoErrors();
+
+        $request->post(route('recurrences.store'), [
+            ...$this->validRecurrenceData($account),
+            'description' => 'Encerrada em setembro',
+            'starts_on' => '2026-09-01',
+            'generation_started_on' => '2026-09-01',
+            'ends_on' => '2026-09-01',
+        ])->assertSessionHasNoErrors();
+
+        $request->get(route('recurrences.index', ['period' => '2026-10']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('recurrences/index')
+                ->has('recurrences', 3)
+                ->where('recurrences.0.description', 'Aluguel')
+                ->where('recurrences.0.period_occurrence', '2026-10-03')
+                ->where('recurrences.0.period_status', 'overdue')
+                ->where('recurrences.0.period_status_label', 'Vencida')
+                ->where('recurrences.1.description', 'Condomínio')
+                ->where('recurrences.1.period_status', 'paid')
+                ->where('recurrences.1.period_status_label', 'Paga')
+                ->where('recurrences.2.description', 'Escola')
+                ->where('recurrences.2.period_status', 'pending')
+                ->where('recurrences.2.period_status_label', 'Pendente')
+            );
+    }
+
     public function test_recurrence_index_returns_six_month_projection(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-09-20 12:00:00'));
