@@ -48,6 +48,8 @@ class FinancialRecurrenceController extends Controller
         }
 
         $currentPeriod = CarbonImmutable::parse("{$period}-01");
+        $periodStart = $currentPeriod->startOfMonth();
+        $periodEnd = $currentPeriod->endOfMonth();
         $query = $workspace->financialRecurrences()
             ->with([
                 'account:id,name',
@@ -55,7 +57,21 @@ class FinancialRecurrenceController extends Controller
                 'category:id,name,parent_id',
                 'category.parent:id,name',
                 'familyMember:id,name',
+                'transactions' => fn ($transactionQuery) => $transactionQuery
+                    ->whereBetween('recurrence_occurrence_date', [
+                        $periodStart->toDateString(),
+                        $periodEnd->toDateString(),
+                    ])
+                    ->orderBy('recurrence_occurrence_date'),
             ])
+            ->whereHas(
+                'transactions',
+                fn ($transactionQuery) => $transactionQuery
+                    ->whereBetween('recurrence_occurrence_date', [
+                        $periodStart->toDateString(),
+                        $periodEnd->toDateString(),
+                    ]),
+            )
             ->withCount('transactions')
             ->select('financial_recurrences.*');
         $listing->applySearch($query, ['description', 'payee_name']);
@@ -99,11 +115,13 @@ class FinancialRecurrenceController extends Controller
 
         $recurrences = $query
             ->get()
-            ->map(fn (FinancialRecurrence $recurrence): array => $this->recurrenceData($recurrence));
+            ->map(fn (FinancialRecurrence $recurrence): array => $this->periodRecurrenceData(
+                $recurrence,
+            ));
 
         if ($listing->sort === 'next') {
             $recurrences = $listing->sortMapped($recurrences, [
-                'next' => fn (array $recurrence): string => $recurrence['next_occurrence'] ?? '',
+                'next' => fn (array $recurrence): string => $recurrence['period_occurrence'] ?? '',
             ]);
         }
 
@@ -375,6 +393,74 @@ class FinancialRecurrenceController extends Controller
         }
 
         return 'Confirmado';
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function periodRecurrenceData(FinancialRecurrence $recurrence): array
+    {
+        $data = $this->recurrenceData($recurrence);
+        $occurrences = $recurrence->transactions
+            ->reject(
+                fn (FinancialTransaction $transaction): bool => $transaction->status
+                    === FinancialTransactionStatus::Cancelled,
+            )
+            ->sortBy(
+                fn (FinancialTransaction $transaction): string => (
+                    $transaction->recurrence_occurrence_date
+                    ?? $transaction->transaction_date
+                )->toDateString(),
+            )
+            ->values();
+
+        if ($occurrences->isEmpty()) {
+            return [
+                ...$data,
+                'period_occurrence' => null,
+                'period_status' => 'cancelled',
+                'period_status_label' => 'Cancelada',
+            ];
+        }
+
+        $pending = $occurrences->filter(
+            fn (FinancialTransaction $transaction): bool => $transaction->settled_on === null,
+        );
+        $today = CarbonImmutable::today()->toDateString();
+        $hasOverdue = $pending->contains(
+            function (FinancialTransaction $transaction) use ($today): bool {
+                $dueOn = $transaction->due_date
+                    ?? $transaction->recurrence_occurrence_date
+                    ?? $transaction->transaction_date;
+
+                return $dueOn->toDateString() < $today;
+            },
+        );
+
+        if ($hasOverdue) {
+            $status = 'overdue';
+            $statusLabel = 'Vencida';
+        } elseif ($pending->isEmpty()) {
+            $status = 'paid';
+            $statusLabel = $recurrence->type === FinancialTransactionType::Expense
+                ? 'Paga'
+                : 'Recebida';
+        } else {
+            $status = 'pending';
+            $statusLabel = 'Pendente';
+        }
+
+        /** @var FinancialTransaction $firstOccurrence */
+        $firstOccurrence = $occurrences->first();
+        $periodOccurrence = $firstOccurrence->recurrence_occurrence_date
+            ?? $firstOccurrence->transaction_date;
+
+        return [
+            ...$data,
+            'period_occurrence' => $periodOccurrence->toDateString(),
+            'period_status' => $status,
+            'period_status_label' => $statusLabel,
+        ];
     }
 
     /**
