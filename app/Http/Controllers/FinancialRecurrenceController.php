@@ -428,13 +428,8 @@ class FinancialRecurrenceController extends Controller
         );
         $today = CarbonImmutable::today()->toDateString();
         $hasOverdue = $pending->contains(
-            function (FinancialTransaction $transaction) use ($today): bool {
-                $dueOn = $transaction->due_date
-                    ?? $transaction->recurrence_occurrence_date
-                    ?? $transaction->transaction_date;
-
-                return $dueOn->toDateString() < $today;
-            },
+            fn (FinancialTransaction $transaction): bool => $transaction->due_date !== null
+                && $transaction->due_date->toDateString() < $today,
         );
 
         if ($hasOverdue) {
