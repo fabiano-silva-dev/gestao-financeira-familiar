@@ -203,7 +203,7 @@ export default function RecurrencesIndex({
                             <ListingEmpty />
                         ) : (
                     <Card className="gap-0 overflow-hidden py-0">
-                        <div className="text-muted-foreground hidden grid-cols-[minmax(0,1.6fr)_minmax(7rem,0.7fr)_minmax(8rem,0.8fr)_minmax(8rem,0.8fr)_minmax(7rem,0.7fr)_1.25rem] gap-3 border-b px-4 py-3 text-xs font-medium tracking-wide uppercase md:grid">
+                        <div className="text-muted-foreground hidden grid-cols-[minmax(0,1.6fr)_minmax(7rem,0.7fr)_minmax(8rem,0.8fr)_minmax(8rem,0.8fr)_minmax(7rem,0.65fr)_minmax(7rem,0.7fr)_1.25rem] gap-3 border-b px-4 py-3 text-xs font-medium tracking-wide uppercase md:grid">
                             <SortableColumn
                                 column="description"
                                 label="Recorrência"
@@ -220,7 +220,7 @@ export default function RecurrencesIndex({
                             />
                             <SortableColumn
                                 column="next"
-                                label="Próxima"
+                                label="No mês"
                                 sort={filters.sort}
                                 direction={filters.direction}
                                 onSort={onSort}
@@ -232,6 +232,7 @@ export default function RecurrencesIndex({
                                 direction={filters.direction}
                                 onSort={onSort}
                             />
+                            <span>Status</span>
                             <SortableColumn
                                 column="amount"
                                 label="Valor"
@@ -253,7 +254,7 @@ export default function RecurrencesIndex({
                                     <Link
                                         key={recurrence.id}
                                         href={edit(recurrence.id)}
-                                        className={`hover:bg-muted/40 focus-visible:ring-ring group grid grid-cols-1 gap-2 px-4 py-3 transition-colors focus-visible:ring-2 focus-visible:outline-none md:grid-cols-[minmax(0,1.6fr)_minmax(7rem,0.7fr)_minmax(8rem,0.8fr)_minmax(8rem,0.8fr)_minmax(7rem,0.7fr)_1.25rem] md:items-center md:gap-3 ${
+                                        className={`hover:bg-muted/40 focus-visible:ring-ring group grid grid-cols-1 gap-2 px-4 py-3 transition-colors focus-visible:ring-2 focus-visible:outline-none md:grid-cols-[minmax(0,1.6fr)_minmax(7rem,0.7fr)_minmax(8rem,0.8fr)_minmax(8rem,0.8fr)_minmax(7rem,0.65fr)_minmax(7rem,0.7fr)_1.25rem] md:items-center md:gap-3 ${
                                             recurrence.is_active
                                                 ? ''
                                                 : 'opacity-65'
@@ -292,8 +293,8 @@ export default function RecurrencesIndex({
                                                     {recurrence.credit_card_name ??
                                                         recurrence.financial_account_name ??
                                                         'Sem conta'}
-                                                    {recurrence.next_occurrence
-                                                        ? ` · próxima ${formatDate(recurrence.next_occurrence)}`
+                                                    {recurrence.period_occurrence
+                                                        ? ` · ocorrência ${formatDate(recurrence.period_occurrence)}`
                                                         : ''}
                                                 </p>
                                             </div>
@@ -303,16 +304,37 @@ export default function RecurrencesIndex({
                                             {recurrence.schedule_label}
                                         </p>
                                         <p className="text-muted-foreground hidden text-sm md:block md:text-foreground">
-                                            {recurrence.next_occurrence
+                                            {recurrence.period_occurrence
                                                 ? formatDate(
-                                                      recurrence.next_occurrence,
+                                                      recurrence.period_occurrence,
                                                   )
-                                                : 'Sem próxima data'}
+                                                : '—'}
                                         </p>
                                         <p className="text-muted-foreground hidden truncate text-sm md:block md:text-foreground">
                                             {recurrence.category_name ??
                                                 'Sem categoria'}
                                         </p>
+                                        <div className="hidden md:block">
+                                            <Badge
+                                                variant={
+                                                    recurrence.period_status ===
+                                                    'overdue'
+                                                        ? 'destructive'
+                                                        : recurrence.period_status ===
+                                                            'paid'
+                                                          ? 'secondary'
+                                                          : 'outline'
+                                                }
+                                                className={
+                                                    recurrence.period_status ===
+                                                    'paid'
+                                                        ? 'text-positive'
+                                                        : undefined
+                                                }
+                                            >
+                                                {recurrence.period_status_label}
+                                            </Badge>
+                                        </div>
                                         <p
                                             className={`text-right text-sm font-semibold tabular-nums ${
                                                 isExpense
