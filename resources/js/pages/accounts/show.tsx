@@ -96,7 +96,7 @@ const monthYear = new Intl.DateTimeFormat('pt-BR', {
 });
 
 const rowGridClass =
-    'md:grid-cols-[minmax(7rem,0.55fr)_minmax(0,1.7fr)_minmax(9rem,0.8fr)_minmax(8rem,0.7fr)_1.25rem]';
+    'md:grid-cols-[minmax(7rem,0.5fr)_minmax(0,1.45fr)_minmax(9rem,0.75fr)_minmax(8rem,0.85fr)_minmax(8rem,0.7fr)_auto]';
 
 function formatDate(value: string) {
     return date.format(new Date(`${value}T00:00:00Z`));
@@ -714,6 +714,7 @@ export default function AccountShow() {
                                     />
                                     <span>Lançamento</span>
                                     <span>Tipo</span>
+                                    <span>Categoria</span>
                                     <span className="text-right">Valor</span>
                                     <span className="sr-only">Abrir</span>
                                 </div>
@@ -759,6 +760,9 @@ export default function AccountShow() {
                                                 </div>
                                                 <p className="text-muted-foreground hidden truncate text-sm md:block md:text-foreground">
                                                     {movement.type_label}
+                                                </p>
+                                                <p className="text-muted-foreground hidden truncate text-sm md:block md:text-foreground">
+                                                    {movement.category_name ?? '—'}
                                                 </p>
                                                 <p
                                                     className={`text-right text-lg font-semibold tabular-nums ${
